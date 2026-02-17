@@ -21,11 +21,21 @@ const longBreak = computed({
   set: (value: number) => settingsStore.updatePomodoro({ longBreakMinutes: value })
 });
 
+// Toggle states
+const autoStartBreak = ref(false);
+const autoStartNext = ref(false);
+const notifyStart = ref(true);
+const notifyEnd = ref(true);
+const notifyBreakEnd = ref(true);
+const notifyDeadline = ref(false);
+
 const webdavUrl = ref('');
 const webdavUsername = ref('');
 const webdavPassword = ref('');
 const webdavPath = ref('/tracker/');
 const syncStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
+
+const showClearConfirm = ref(false);
 
 function testConnection(): void {
   syncStatus.value = 'testing';
@@ -54,22 +64,22 @@ function testConnection(): void {
             { key: 'data', label: '数据管理', icon: 'data' }
           ]"
           :key="tab.key"
-          class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors"
+          class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
           :class="activeTab === tab.key
             ? 'bg-blue-50 text-blue-600'
             : 'text-slate-600 hover:bg-slate-100'"
           @click="activeTab = tab.key as typeof activeTab"
         >
-          <svg v-if="tab.icon === 'timer'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-if="tab.icon === 'timer'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <svg v-else-if="tab.icon === 'sync'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-else-if="tab.icon === 'sync'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <svg v-else-if="tab.icon === 'notifications'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-else-if="tab.icon === 'notifications'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
           </svg>
-          <svg v-else-if="tab.icon === 'data'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg v-else-if="tab.icon === 'data'" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
           </svg>
           {{ tab.label }}
@@ -121,25 +131,45 @@ function testConnection(): void {
           <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="mb-4 text-lg font-semibold text-slate-800">自动化设置</h2>
             <div class="space-y-4">
-              <label class="flex items-center justify-between">
+              <div class="flex items-center justify-between">
                 <div>
                   <span class="text-sm font-medium text-slate-700">自动开始休息</span>
                   <p class="text-xs text-slate-500">专注结束后自动开始休息计时</p>
                 </div>
-                <button class="relative h-6 w-11 rounded-full bg-slate-200 transition-colors">
-                  <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform" />
+                <button
+                  role="switch"
+                  :aria-checked="autoStartBreak"
+                  aria-label="自动开始休息"
+                  class="relative h-6 w-11 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="autoStartBreak ? 'bg-blue-600' : 'bg-slate-200'"
+                  @click="autoStartBreak = !autoStartBreak"
+                >
+                  <span
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="autoStartBreak ? 'translate-x-5' : 'translate-x-1'"
+                  />
                 </button>
-              </label>
+              </div>
 
-              <label class="flex items-center justify-between">
+              <div class="flex items-center justify-between">
                 <div>
                   <span class="text-sm font-medium text-slate-700">自动开始下一个番茄</span>
                   <p class="text-xs text-slate-500">休息结束后自动开始新的专注</p>
                 </div>
-                <button class="relative h-6 w-11 rounded-full bg-slate-200 transition-colors">
-                  <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform" />
+                <button
+                  role="switch"
+                  :aria-checked="autoStartNext"
+                  aria-label="自动开始下一个番茄"
+                  class="relative h-6 w-11 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="autoStartNext ? 'bg-blue-600' : 'bg-slate-200'"
+                  @click="autoStartNext = !autoStartNext"
+                >
+                  <span
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="autoStartNext ? 'translate-x-5' : 'translate-x-1'"
+                  />
                 </button>
-              </label>
+              </div>
             </div>
           </section>
         </div>
@@ -194,13 +224,14 @@ function testConnection(): void {
 
               <div class="flex items-center gap-4 pt-2">
                 <button
-                  class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="syncStatus === 'testing'"
                   @click="testConnection"
                 >
-                  {{ syncStatus === 'testing' ? '测试中...' : '测试连接' }}
+                  {{ syncStatus === 'testing' ? '测试中…' : '测试连接' }}
                 </button>
                 <span v-if="syncStatus === 'success'" class="flex items-center gap-1 text-sm text-green-600">
-                  <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                   </svg>
                   连接成功
@@ -212,13 +243,13 @@ function testConnection(): void {
           <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="mb-4 text-lg font-semibold text-slate-800">同步操作</h2>
             <div class="flex flex-wrap gap-3">
-              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
                 立即同步
               </button>
-              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
                 上传到云端
               </button>
-              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
                 从云端下载
               </button>
             </div>
@@ -233,45 +264,85 @@ function testConnection(): void {
           <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="mb-4 text-lg font-semibold text-slate-800">通知设置</h2>
             <div class="space-y-4">
-              <label class="flex items-center justify-between">
+              <div class="flex items-center justify-between">
                 <div>
                   <span class="text-sm font-medium text-slate-700">番茄钟开始通知</span>
                   <p class="text-xs text-slate-500">开始专注时发送通知</p>
                 </div>
-                <button class="relative h-6 w-11 rounded-full bg-blue-600 transition-colors">
-                  <span class="absolute right-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform" />
+                <button
+                  role="switch"
+                  :aria-checked="notifyStart"
+                  aria-label="番茄钟开始通知"
+                  class="relative h-6 w-11 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="notifyStart ? 'bg-blue-600' : 'bg-slate-200'"
+                  @click="notifyStart = !notifyStart"
+                >
+                  <span
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="notifyStart ? 'translate-x-5' : 'translate-x-1'"
+                  />
                 </button>
-              </label>
+              </div>
 
-              <label class="flex items-center justify-between">
+              <div class="flex items-center justify-between">
                 <div>
                   <span class="text-sm font-medium text-slate-700">番茄钟结束通知</span>
                   <p class="text-xs text-slate-500">专注结束时发送通知</p>
                 </div>
-                <button class="relative h-6 w-11 rounded-full bg-blue-600 transition-colors">
-                  <span class="absolute right-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform" />
+                <button
+                  role="switch"
+                  :aria-checked="notifyEnd"
+                  aria-label="番茄钟结束通知"
+                  class="relative h-6 w-11 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="notifyEnd ? 'bg-blue-600' : 'bg-slate-200'"
+                  @click="notifyEnd = !notifyEnd"
+                >
+                  <span
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="notifyEnd ? 'translate-x-5' : 'translate-x-1'"
+                  />
                 </button>
-              </label>
+              </div>
 
-              <label class="flex items-center justify-between">
+              <div class="flex items-center justify-between">
                 <div>
                   <span class="text-sm font-medium text-slate-700">休息结束通知</span>
                   <p class="text-xs text-slate-500">休息结束时发送通知</p>
                 </div>
-                <button class="relative h-6 w-11 rounded-full bg-blue-600 transition-colors">
-                  <span class="absolute right-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform" />
+                <button
+                  role="switch"
+                  :aria-checked="notifyBreakEnd"
+                  aria-label="休息结束通知"
+                  class="relative h-6 w-11 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="notifyBreakEnd ? 'bg-blue-600' : 'bg-slate-200'"
+                  @click="notifyBreakEnd = !notifyBreakEnd"
+                >
+                  <span
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="notifyBreakEnd ? 'translate-x-5' : 'translate-x-1'"
+                  />
                 </button>
-              </label>
+              </div>
 
-              <label class="flex items-center justify-between">
+              <div class="flex items-center justify-between">
                 <div>
                   <span class="text-sm font-medium text-slate-700">任务截止提醒</span>
                   <p class="text-xs text-slate-500">任务即将截止时发送提醒</p>
                 </div>
-                <button class="relative h-6 w-11 rounded-full bg-slate-200 transition-colors">
-                  <span class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform" />
+                <button
+                  role="switch"
+                  :aria-checked="notifyDeadline"
+                  aria-label="任务截止提醒"
+                  class="relative h-6 w-11 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="notifyDeadline ? 'bg-blue-600' : 'bg-slate-200'"
+                  @click="notifyDeadline = !notifyDeadline"
+                >
+                  <span
+                    class="absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform"
+                    :class="notifyDeadline ? 'translate-x-5' : 'translate-x-1'"
+                  />
                 </button>
-              </label>
+              </div>
             </div>
           </section>
         </div>
@@ -284,10 +355,10 @@ function testConnection(): void {
               导出你的所有数据，包括任务、习惯、专注记录等。
             </p>
             <div class="flex gap-3">
-              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
                 导出为 JSON
               </button>
-              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">
                 导出为 CSV
               </button>
             </div>
@@ -298,9 +369,30 @@ function testConnection(): void {
             <p class="mb-4 text-sm text-red-600">
               以下操作不可撤销，请谨慎操作。
             </p>
-            <button class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50">
-              清空所有数据
-            </button>
+            <template v-if="!showClearConfirm">
+              <button
+                class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                @click="showClearConfirm = true"
+              >
+                清空所有数据
+              </button>
+            </template>
+            <template v-else>
+              <p class="mb-3 text-sm font-medium text-red-700">确定要清空所有数据吗？此操作不可撤销。</p>
+              <div class="flex gap-3">
+                <button
+                  class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  @click="showClearConfirm = false"
+                >
+                  取消
+                </button>
+                <button
+                  class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                >
+                  确认清空
+                </button>
+              </div>
+            </template>
           </section>
         </div>
       </div>

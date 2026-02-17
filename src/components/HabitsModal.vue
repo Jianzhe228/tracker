@@ -88,7 +88,7 @@ function addHabit() {
                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                   </svg>
                 </button>
-                <span class="text-sm text-slate-700">{{ habit.name }}</span>
+                <span class="text-sm text-slate-700">{{ habit.title }}</span>
               </div>
               <span class="text-xs text-slate-400">每日</span>
             </div>

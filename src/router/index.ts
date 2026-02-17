@@ -1,13 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import DashboardView from '../views/DashboardView.vue';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // Dashboard - 仪表盘首页
+    // Dashboard - 仪表盘首页 (eagerly loaded — default route should not be lazy)
     {
       path: '/',
       name: 'dashboard',
-      component: () => import('../views/DashboardView.vue')
+      component: DashboardView
     },
     // Smart Lists - 智能列表（任务筛选视图）
     {
@@ -52,12 +53,6 @@ const router = createRouter({
       path: '/habits',
       name: 'habits',
       component: () => import('../views/HabitsView.vue')
-    },
-    // Statistics - 统计
-    {
-      path: '/statistics',
-      name: 'statistics',
-      component: () => import('../views/StatisticsView.vue')
     },
     // Settings - 设置
     {

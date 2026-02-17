@@ -16,7 +16,6 @@ const habitTotal = computed(() => habitStore.habits.length);
 // Tabs
 type TabType = 'overview' | 'focus' | 'tasks' | 'habits';
 const activeTab = ref<TabType>('overview');
-const dateRange = ref('14d');
 
 const tabs: { key: TabType; label: string }[] = [
   { key: 'overview', label: '概览' },
@@ -191,6 +190,15 @@ const heatmapColorMap: Record<number, string> = {
   4: '#15803d'
 };
 
+// Dimmed colors for out-of-year cells (pre-computed to avoid opacity compositing)
+const heatmapColorMapDimmed: Record<number, string> = {
+  0: '#f1f5f9',
+  1: '#f1f5f9',
+  2: '#f1f5f9',
+  3: '#f1f5f9',
+  4: '#f1f5f9'
+};
+
 const weekdayLabels = ['一', '三', '五'];
 const displayYear = new Date().getFullYear();
 const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
@@ -295,21 +303,9 @@ const heatmapData = computed<HeatmapData>(() => {
     @touchcancel="handleTouchEnd"
   >
     <!-- Page Header -->
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-slate-800">仪表盘</h1>
-        <p class="mt-1 text-sm text-slate-500">数据统计与分析</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <select
-          v-model="dateRange"
-          class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="7d">近 7 天</option>
-          <option value="14d">近 14 天</option>
-          <option value="30d">近 30 天</option>
-        </select>
-      </div>
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-800">仪表盘</h1>
+      <p class="mt-1 text-sm text-slate-500">数据统计与分析</p>
     </div>
 
     <!-- KPI Cards -->
@@ -317,13 +313,13 @@ const heatmapData = computed<HeatmapData>(() => {
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-            <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
             <p class="text-sm text-slate-500">总专注时长</p>
-            <p class="text-2xl font-semibold text-slate-800">0 <span class="text-sm font-normal">分钟</span></p>
+            <p class="text-2xl font-semibold tabular-nums text-slate-800">0 <span class="text-sm font-normal">分钟</span></p>
           </div>
         </div>
       </article>
@@ -331,13 +327,13 @@ const heatmapData = computed<HeatmapData>(() => {
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-            <svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
             <p class="text-sm text-slate-500">完成番茄</p>
-            <p class="text-2xl font-semibold text-slate-800">{{ timerStore.completedPomodoros }} <span class="text-sm font-normal">个</span></p>
+            <p class="text-2xl font-semibold tabular-nums text-slate-800">{{ timerStore.completedPomodoros }} <span class="text-sm font-normal">个</span></p>
           </div>
         </div>
       </article>
@@ -345,13 +341,13 @@ const heatmapData = computed<HeatmapData>(() => {
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100">
-            <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
           </div>
           <div>
             <p class="text-sm text-slate-500">完成任务</p>
-            <p class="text-2xl font-semibold text-slate-800">{{ completedToday }} <span class="text-sm font-normal">个</span></p>
+            <p class="text-2xl font-semibold tabular-nums text-slate-800">{{ completedToday }} <span class="text-sm font-normal">个</span></p>
           </div>
         </div>
       </article>
@@ -359,13 +355,13 @@ const heatmapData = computed<HeatmapData>(() => {
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-            <svg class="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
           </div>
           <div>
             <p class="text-sm text-slate-500">习惯完成率</p>
-            <p class="text-2xl font-semibold text-slate-800">
+            <p class="text-2xl font-semibold tabular-nums text-slate-800">
               <template v-if="habitTotal > 0">{{ Math.round(habitCompletedToday / habitTotal * 100) }}%</template>
               <template v-else>0%</template>
             </p>
@@ -380,7 +376,7 @@ const heatmapData = computed<HeatmapData>(() => {
         <button
           v-for="tab in tabs"
           :key="tab.key"
-          class="border-b-2 pb-3 text-sm font-medium transition-colors"
+          class="border-b-2 pb-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
           :class="activeTab === tab.key
             ? 'border-blue-600 text-blue-600'
             : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'"
@@ -404,7 +400,7 @@ const heatmapData = computed<HeatmapData>(() => {
               </div>
             </div>
 
-            <div class="overflow-x-auto rounded-lg bg-slate-50/70 px-4 py-4" data-gesture-ignore="true">
+            <div class="overflow-x-auto rounded-lg bg-slate-50/70 px-4 py-4" data-gesture-ignore="true" style="contain: content;">
               <div class="mx-auto min-w-[760px]">
                 <div class="flex gap-2">
                   <div class="w-6" />
@@ -421,7 +417,7 @@ const heatmapData = computed<HeatmapData>(() => {
                 </div>
 
                 <div class="flex gap-2">
-                  <div class="mt-0.5 grid w-6 grid-rows-7 items-center gap-1 text-[10px] text-slate-400">
+                  <div class="mt-0.5 grid w-6 grid-rows-7 items-center gap-[3px] text-[10px] text-slate-400">
                     <span />
                     <span>{{ weekdayLabels[0] }}</span>
                     <span />
@@ -432,20 +428,20 @@ const heatmapData = computed<HeatmapData>(() => {
                   </div>
 
                   <div
-                    class="grid flex-1 gap-1"
+                    class="grid flex-1"
                     :style="{
-                      gridTemplateColumns: `repeat(${heatmapData.weekCount}, minmax(0, 1fr))`,
-                      gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
-                      gridAutoFlow: 'column'
+                      gridTemplateColumns: `repeat(${heatmapData.weekCount}, 1fr)`,
+                      gridTemplateRows: 'repeat(7, 1fr)',
+                      gridAutoFlow: 'column',
+                      gap: '3px'
                     }"
                   >
                     <span
                       v-for="cell in heatmapData.cells"
                       :key="cell.key"
-                      class="aspect-square w-full rounded-[2px] border border-white/40"
+                      class="aspect-square rounded-sm"
                       :style="{
-                        backgroundColor: heatmapColorMap[cell.level],
-                        opacity: cell.inYear ? 1 : 0.35
+                        backgroundColor: cell.inYear ? heatmapColorMap[cell.level] : heatmapColorMapDimmed[cell.level]
                       }"
                       :title="`${cell.dateLabel}：${cell.count > 0 ? '活跃' : '未活跃'}`"
                     />
@@ -454,11 +450,11 @@ const heatmapData = computed<HeatmapData>(() => {
 
                 <div class="mt-3 flex items-center justify-end gap-1 text-xs text-slate-400">
                   <span>少</span>
-                  <span class="h-3 w-3 rounded-[2px]" :style="{ backgroundColor: heatmapColorMap[0] }" />
-                  <span class="h-3 w-3 rounded-[2px]" :style="{ backgroundColor: heatmapColorMap[1] }" />
-                  <span class="h-3 w-3 rounded-[2px]" :style="{ backgroundColor: heatmapColorMap[2] }" />
-                  <span class="h-3 w-3 rounded-[2px]" :style="{ backgroundColor: heatmapColorMap[3] }" />
-                  <span class="h-3 w-3 rounded-[2px]" :style="{ backgroundColor: heatmapColorMap[4] }" />
+                  <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[0] }" />
+                  <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[1] }" />
+                  <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[2] }" />
+                  <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[3] }" />
+                  <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[4] }" />
                   <span>多</span>
                 </div>
               </div>

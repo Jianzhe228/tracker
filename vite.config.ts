@@ -5,7 +5,11 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 1420,
-    strictPort: true
+    strictPort: true,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+    },
   },
   clearScreen: false
 });

@@ -27,8 +27,8 @@ case "$MODE" in
     npm run dev
     ;;
   tauri)
-    echo "Starting Tauri desktop development app..."
-    npm run tauri:dev
+    echo "Starting Tauri desktop app (release)..."
+    cargo tauri dev --release
     ;;
   *)
     echo "Usage: ./start.sh [web|tauri]" >&2
