@@ -8,8 +8,19 @@ const taskStore = useTaskStore();
 
 const activeTasks = computed(() => taskStore.tasks.filter(t => t.status === 'todo'));
 
-function selectTask(taskId: number, taskTitle: string): void {
-  timerStore.setTask(taskId, taskTitle);
+const pauseDurationText = computed(() => {
+  const minutes = Math.floor(timerStore.pauseDurationSeconds / 60);
+  const seconds = timerStore.pauseDurationSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+});
+
+function selectTask(taskId: number, taskTitle: string): boolean {
+  const success = timerStore.setTask(taskId, taskTitle);
+  if (!success) {
+    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    return false;
+  }
+  return true;
 }
 
 function handleStart(): void {
@@ -24,18 +35,47 @@ function handleResume(): void {
   timerStore.resume();
 }
 
-function handleStop(): void {
-  timerStore.stop();
+function handleSkipBreak(): void {
+  timerStore.skipBreak();
 }
 
-function skipBreak(): void {
-  timerStore.setMode('focus');
+function handleExtendBreak(): void {
+  const extended = timerStore.extendBreak();
+  if (!extended) {
+    window.alert('休息最多可延长 3 次');
+  }
+}
+
+function handleAbandon(): void {
+  if (timerStore.mode !== 'focus') {
+    const confirmed = window.confirm('确定要结束当前休息并返回专注模式吗？');
+    if (confirmed) handleSkipBreak();
+    return;
+  }
+  if (!window.confirm('确定放弃本次专注吗？')) return;
+  const reasonPrompt = window.prompt(
+    '选择或输入放弃原因：\n1. 临时有事\n2. 被打断\n3. 任务完成\n4. 不想做了\n5. 其他（输入自定义原因）\n直接确定可跳过原因填写'
+  );
+  const presets = ['临时有事', '被打断', '任务完成', '不想做了', '其他'];
+  let reason = '';
+  if (reasonPrompt) {
+    const trimmed = reasonPrompt.trim();
+    const index = Number(trimmed);
+    if (Number.isInteger(index) && index >= 1 && index <= presets.length) {
+      reason = presets[index - 1];
+    } else {
+      reason = trimmed;
+    }
+  }
+  timerStore.abandon(reason || undefined);
 }
 
 const circumference = 2 * Math.PI * 120;
 const strokeDashoffset = computed(() => {
   return circumference - (timerStore.progress / 100) * circumference;
 });
+
+const isBreakMode = computed(() => timerStore.mode !== 'focus');
 </script>
 
 <template>
@@ -57,7 +97,7 @@ const strokeDashoffset = computed(() => {
           :class="timerStore.mode === m
             ? 'bg-blue-600 text-white'
             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
-          :disabled="timerStore.running"
+          :disabled="timerStore.running || timerStore.paused"
           @click="timerStore.setMode(m)"
         >
           {{ m === 'focus' ? '专注' : m === 'shortBreak' ? '短休息' : '长休息' }}
@@ -113,7 +153,14 @@ const strokeDashoffset = computed(() => {
           @change="(e) => {
             const target = e.target as HTMLSelectElement;
             const task = activeTasks.find(t => t.id === Number(target.value));
-            if (task) selectTask(task.id, task.title);
+            if (task) {
+              const ok = selectTask(task.id, task.title);
+              if (!ok) {
+                target.value = timerStore.currentTaskId ? String(timerStore.currentTaskId) : '';
+              }
+            } else {
+              target.value = '';
+            }
           }"
         >
           <option value="">无关联任务</option>
@@ -151,12 +198,12 @@ const strokeDashoffset = computed(() => {
           </button>
           <button
             class="flex items-center gap-2 rounded-lg bg-red-500 px-6 py-3 font-medium text-white transition-colors hover:bg-red-600"
-            @click="handleStop"
+            @click="handleAbandon"
           >
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h12v12H6z" />
             </svg>
-            结束
+            {{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}
           </button>
         </template>
 
@@ -173,24 +220,34 @@ const strokeDashoffset = computed(() => {
           </button>
           <button
             class="flex items-center gap-2 rounded-lg bg-red-500 px-6 py-3 font-medium text-white transition-colors hover:bg-red-600"
-            @click="handleStop"
+            @click="handleAbandon"
           >
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h12v12H6z" />
             </svg>
-            结束
+            {{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}
           </button>
         </template>
       </div>
 
-      <!-- Skip Break Button -->
-      <div v-if="timerStore.mode !== 'focus' && timerStore.idle" class="mt-4 text-center">
-        <button
-          class="text-sm text-slate-500 hover:text-slate-700"
-          @click="skipBreak"
-        >
-          跳过休息
-        </button>
+      <!-- Pause Info -->
+      <div v-if="timerStore.paused" class="mt-4 space-y-1 text-center text-sm text-slate-600">
+        <div>已暂停 {{ pauseDurationText }}</div>
+        <div v-if="timerStore.pauseWarning" class="text-amber-600">暂停超过 30 分钟，请尽快恢复或放弃</div>
+      </div>
+
+      <!-- Break Controls -->
+      <div v-if="isBreakMode" class="mt-4 space-y-2">
+        <div class="flex justify-center gap-4 text-sm text-slate-600">
+          <button class="text-blue-600 hover:text-blue-700" @click="handleSkipBreak">跳过休息</button>
+          <button
+            class="text-slate-600 hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
+            :disabled="timerStore.breakExtendCount >= 3"
+            @click="handleExtendBreak"
+          >
+            延长休息 (+5 分钟) · 已用 {{ timerStore.breakExtendCount }}/3
+          </button>
+        </div>
       </div>
 
       <!-- Pomodoro Count -->

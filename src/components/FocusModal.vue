@@ -12,6 +12,12 @@ const taskStore = useTaskStore();
 
 const activeTasks = computed(() => taskStore.tasks.filter(t => t.status === 'todo'));
 const selectedTaskId = ref<number | null>(timerStore.currentTaskId);
+const pauseDurationText = computed(() => {
+  const minutes = Math.floor(timerStore.pauseDurationSeconds / 60);
+  const seconds = timerStore.pauseDurationSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+});
+const isBreakMode = computed(() => timerStore.mode !== 'focus');
 
 // Circle progress
 const circumference = 2 * Math.PI * 140;
@@ -20,13 +26,21 @@ const strokeDashoffset = computed(() => {
 });
 
 function selectTask(taskId: number, taskTitle: string) {
+  const success = timerStore.setTask(taskId, taskTitle);
+  if (!success) {
+    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    return;
+  }
   selectedTaskId.value = taskId;
-  timerStore.setTask(taskId, taskTitle);
 }
 
 function clearSelectedTask() {
+  const success = timerStore.clearTask();
+  if (!success) {
+    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    return;
+  }
   selectedTaskId.value = null;
-  timerStore.clearTask();
 }
 
 function handleStart() {
@@ -41,8 +55,39 @@ function handleResume() {
   timerStore.resume();
 }
 
+function handleSkipBreak() {
+  timerStore.skipBreak();
+}
+
+function handleExtendBreak() {
+  const ok = timerStore.extendBreak();
+  if (!ok) {
+    window.alert('休息最多可延长 3 次');
+  }
+}
+
 function handleStop() {
-  timerStore.stop();
+  if (timerStore.mode !== 'focus') {
+    const confirmed = window.confirm('确定要结束当前休息并返回专注模式吗？');
+    if (confirmed) handleSkipBreak();
+    return;
+  }
+  if (!window.confirm('确定放弃本次专注吗？')) return;
+  const reasonPrompt = window.prompt(
+    '选择或输入放弃原因：\n1. 临时有事\n2. 被打断\n3. 任务完成\n4. 不想做了\n5. 其他（输入自定义原因）\n直接确定可跳过原因填写'
+  );
+  const presets = ['临时有事', '被打断', '任务完成', '不想做了', '其他'];
+  let reason = '';
+  if (reasonPrompt) {
+    const trimmed = reasonPrompt.trim();
+    const index = Number(trimmed);
+    if (Number.isInteger(index) && index >= 1 && index <= presets.length) {
+      reason = presets[index - 1];
+    } else {
+      reason = trimmed;
+    }
+  }
+  timerStore.abandon(reason || undefined);
 }
 
 function handleClose() {
@@ -194,7 +239,7 @@ onUnmounted(() => {
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M6 6h12v12H6z" />
                 </svg>
-                <span>结束</span>
+                <span>{{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}</span>
               </button>
             </div>
           </template>
@@ -216,13 +261,31 @@ onUnmounted(() => {
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M6 6h12v12H6z" />
                 </svg>
-                <span>结束</span>
+                <span>{{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}</span>
               </button>
             </div>
           </template>
         </div>
 
-        <!-- Bottom Tools (reserved for future) -->
+        <!-- Pause Info -->
+        <div v-if="timerStore.paused" class="relative z-10 mt-4 text-center text-sm text-white/70">
+          <div>已暂停 {{ pauseDurationText }}</div>
+          <div v-if="timerStore.pauseWarning" class="text-amber-300">暂停超过 30 分钟，请尽快恢复或放弃</div>
+        </div>
+
+        <!-- Break Controls -->
+        <div v-if="isBreakMode" class="relative z-10 mt-4 flex items-center gap-4 text-sm text-white/70">
+          <button class="rounded-full bg-white/10 px-4 py-2 transition-colors hover:bg-white/20" @click="handleSkipBreak">
+            跳过休息
+          </button>
+          <button
+            class="rounded-full bg-white/10 px-4 py-2 transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="timerStore.breakExtendCount >= 3"
+            @click="handleExtendBreak"
+          >
+            延长休息 (+5 分钟) · 已用 {{ timerStore.breakExtendCount }}/3
+          </button>
+        </div>
       </div>
 
       <!-- Right Sidebar -->
