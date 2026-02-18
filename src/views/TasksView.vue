@@ -981,7 +981,7 @@ async function undoDeleteTask(): Promise<void> {
 function startFocusOnTask(taskId: number, taskTitle: string): void {
   const success = timerStore.setTask(taskId, taskTitle);
   if (!success) {
-    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    window.alert('计时进行中，需先结束当前计时后再切换任务');
   }
 }
 

@@ -17,7 +17,7 @@ const pauseDurationText = computed(() => {
 function selectTask(taskId: number, taskTitle: string): boolean {
   const success = timerStore.setTask(taskId, taskTitle);
   if (!success) {
-    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    window.alert('计时进行中，需先结束当前计时后再切换任务');
     return false;
   }
   return true;
@@ -46,28 +46,10 @@ function handleExtendBreak(): void {
   }
 }
 
-function handleAbandon(): void {
-  if (timerStore.mode !== 'focus') {
-    const confirmed = window.confirm('确定要结束当前休息并返回专注模式吗？');
-    if (confirmed) handleSkipBreak();
-    return;
-  }
-  if (!window.confirm('确定放弃本次专注吗？')) return;
-  const reasonPrompt = window.prompt(
-    '选择或输入放弃原因：\n1. 临时有事\n2. 被打断\n3. 任务完成\n4. 不想做了\n5. 其他（输入自定义原因）\n直接确定可跳过原因填写'
-  );
-  const presets = ['临时有事', '被打断', '任务完成', '不想做了', '其他'];
-  let reason = '';
-  if (reasonPrompt) {
-    const trimmed = reasonPrompt.trim();
-    const index = Number(trimmed);
-    if (Number.isInteger(index) && index >= 1 && index <= presets.length) {
-      reason = presets[index - 1];
-    } else {
-      reason = trimmed;
-    }
-  }
-  timerStore.abandon(reason || undefined);
+function handleStop(): void {
+  const message = timerStore.mode === 'focus' ? '确定结束本次计时吗？' : '确定结束当前休息吗？';
+  if (!window.confirm(message)) return;
+  timerStore.stop();
 }
 
 const circumference = 2 * Math.PI * 120;
@@ -76,6 +58,7 @@ const strokeDashoffset = computed(() => {
 });
 
 const isBreakMode = computed(() => timerStore.mode !== 'focus');
+const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '倒计时' : '正计时');
 </script>
 
 <template>
@@ -101,6 +84,30 @@ const isBreakMode = computed(() => timerStore.mode !== 'focus');
           @click="timerStore.setMode(m)"
         >
           {{ m === 'focus' ? '专注' : m === 'shortBreak' ? '短休息' : '长休息' }}
+        </button>
+      </div>
+
+      <!-- Timer Kind -->
+      <div v-if="timerStore.mode === 'focus'" class="mb-4 flex justify-center gap-2">
+        <button
+          class="rounded-lg px-4 py-2 text-xs font-medium transition-colors"
+          :class="timerStore.timerKind === 'countdown'
+            ? 'bg-slate-900 text-white'
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+          :disabled="!timerStore.idle"
+          @click="timerStore.setTimerKind('countdown')"
+        >
+          倒计时
+        </button>
+        <button
+          class="rounded-lg px-4 py-2 text-xs font-medium transition-colors"
+          :class="timerStore.timerKind === 'countup'
+            ? 'bg-slate-900 text-white'
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+          :disabled="!timerStore.idle"
+          @click="timerStore.setTimerKind('countup')"
+        >
+          正计时
         </button>
       </div>
 
@@ -134,7 +141,7 @@ const isBreakMode = computed(() => timerStore.mode !== 'focus');
         <div class="absolute inset-0 flex flex-col items-center justify-center">
           <span class="font-mono text-5xl font-bold text-slate-800">{{ timerStore.display }}</span>
           <span class="mt-2 text-sm font-medium" :class="timerStore.mode === 'focus' ? 'text-blue-600' : 'text-green-600'">
-            {{ timerStore.modeLabel }}
+            {{ timerStore.mode === 'focus' ? timerKindLabel : timerStore.modeLabel }}
           </span>
         </div>
       </div>
@@ -198,12 +205,12 @@ const isBreakMode = computed(() => timerStore.mode !== 'focus');
           </button>
           <button
             class="flex items-center gap-2 rounded-lg bg-red-500 px-6 py-3 font-medium text-white transition-colors hover:bg-red-600"
-            @click="handleAbandon"
+            @click="handleStop"
           >
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h12v12H6z" />
             </svg>
-            {{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}
+            {{ timerStore.mode === 'focus' ? '结束' : '结束休息' }}
           </button>
         </template>
 
@@ -220,12 +227,12 @@ const isBreakMode = computed(() => timerStore.mode !== 'focus');
           </button>
           <button
             class="flex items-center gap-2 rounded-lg bg-red-500 px-6 py-3 font-medium text-white transition-colors hover:bg-red-600"
-            @click="handleAbandon"
+            @click="handleStop"
           >
             <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h12v12H6z" />
             </svg>
-            {{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}
+            {{ timerStore.mode === 'focus' ? '结束' : '结束休息' }}
           </button>
         </template>
       </div>
@@ -233,7 +240,7 @@ const isBreakMode = computed(() => timerStore.mode !== 'focus');
       <!-- Pause Info -->
       <div v-if="timerStore.paused" class="mt-4 space-y-1 text-center text-sm text-slate-600">
         <div>已暂停 {{ pauseDurationText }}</div>
-        <div v-if="timerStore.pauseWarning" class="text-amber-600">暂停超过 30 分钟，请尽快恢复或放弃</div>
+        <div v-if="timerStore.pauseWarning" class="text-amber-600">暂停超过 30 分钟，请尽快恢复或结束</div>
       </div>
 
       <!-- Break Controls -->

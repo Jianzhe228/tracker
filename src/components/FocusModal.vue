@@ -18,6 +18,7 @@ const pauseDurationText = computed(() => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 });
 const isBreakMode = computed(() => timerStore.mode !== 'focus');
+const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '倒计时' : '正计时');
 
 // Circle progress
 const circumference = 2 * Math.PI * 140;
@@ -28,7 +29,7 @@ const strokeDashoffset = computed(() => {
 function selectTask(taskId: number, taskTitle: string) {
   const success = timerStore.setTask(taskId, taskTitle);
   if (!success) {
-    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    window.alert('计时进行中，需先结束当前计时后再切换任务');
     return;
   }
   selectedTaskId.value = taskId;
@@ -37,7 +38,7 @@ function selectTask(taskId: number, taskTitle: string) {
 function clearSelectedTask() {
   const success = timerStore.clearTask();
   if (!success) {
-    window.alert('计时进行中，需先放弃当前番茄后再切换任务');
+    window.alert('计时进行中，需先结束当前计时后再切换任务');
     return;
   }
   selectedTaskId.value = null;
@@ -67,27 +68,9 @@ function handleExtendBreak() {
 }
 
 function handleStop() {
-  if (timerStore.mode !== 'focus') {
-    const confirmed = window.confirm('确定要结束当前休息并返回专注模式吗？');
-    if (confirmed) handleSkipBreak();
-    return;
-  }
-  if (!window.confirm('确定放弃本次专注吗？')) return;
-  const reasonPrompt = window.prompt(
-    '选择或输入放弃原因：\n1. 临时有事\n2. 被打断\n3. 任务完成\n4. 不想做了\n5. 其他（输入自定义原因）\n直接确定可跳过原因填写'
-  );
-  const presets = ['临时有事', '被打断', '任务完成', '不想做了', '其他'];
-  let reason = '';
-  if (reasonPrompt) {
-    const trimmed = reasonPrompt.trim();
-    const index = Number(trimmed);
-    if (Number.isInteger(index) && index >= 1 && index <= presets.length) {
-      reason = presets[index - 1];
-    } else {
-      reason = trimmed;
-    }
-  }
-  timerStore.abandon(reason || undefined);
+  const message = timerStore.mode === 'focus' ? '确定结束本次计时吗？' : '确定结束当前休息吗？';
+  if (!window.confirm(message)) return;
+  timerStore.stop();
 }
 
 function handleClose() {
@@ -124,6 +107,26 @@ onUnmounted(() => {
         <div
           class="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 opacity-80"
         />
+
+        <!-- Timer Kind -->
+        <div v-if="timerStore.mode === 'focus'" class="relative z-10 mb-6 flex gap-2">
+          <button
+            class="rounded-full bg-white/10 px-4 py-2 text-xs text-white transition-colors hover:bg-white/20"
+            :class="timerStore.timerKind === 'countdown' ? 'ring-2 ring-white/50' : ''"
+            :disabled="!timerStore.idle"
+            @click="timerStore.setTimerKind('countdown')"
+          >
+            倒计时
+          </button>
+          <button
+            class="rounded-full bg-white/10 px-4 py-2 text-xs text-white transition-colors hover:bg-white/20"
+            :class="timerStore.timerKind === 'countup' ? 'ring-2 ring-white/50' : ''"
+            :disabled="!timerStore.idle"
+            @click="timerStore.setTimerKind('countup')"
+          >
+            正计时
+          </button>
+        </div>
 
         <!-- Close Button -->
         <button
@@ -199,14 +202,14 @@ onUnmounted(() => {
               class="transition-[stroke-dashoffset] duration-1000 ease-linear"
             />
           </svg>
-          <!-- Timer Display -->
-          <div class="absolute inset-0 flex flex-col items-center justify-center">
-            <span class="font-mono text-6xl font-light tabular-nums tracking-wider text-white">
-              {{ timerStore.display }}
-            </span>
-            <span class="mt-2 text-sm text-white/60">{{ timerStore.modeLabel }}</span>
-          </div>
+        <!-- Timer Display -->
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <span class="font-mono text-6xl font-light tabular-nums tracking-wider text-white">
+            {{ timerStore.display }}
+          </span>
+          <span class="mt-2 text-sm text-white/60">{{ timerStore.mode === 'focus' ? timerKindLabel : timerStore.modeLabel }}</span>
         </div>
+      </div>
 
         <!-- Control Button -->
         <div class="relative z-10">
@@ -239,7 +242,7 @@ onUnmounted(() => {
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M6 6h12v12H6z" />
                 </svg>
-                <span>{{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}</span>
+                <span>{{ timerStore.mode === 'focus' ? '结束' : '结束休息' }}</span>
               </button>
             </div>
           </template>
@@ -261,7 +264,7 @@ onUnmounted(() => {
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M6 6h12v12H6z" />
                 </svg>
-                <span>{{ timerStore.mode === 'focus' ? '放弃' : '跳过休息' }}</span>
+                <span>{{ timerStore.mode === 'focus' ? '结束' : '结束休息' }}</span>
               </button>
             </div>
           </template>
@@ -270,7 +273,7 @@ onUnmounted(() => {
         <!-- Pause Info -->
         <div v-if="timerStore.paused" class="relative z-10 mt-4 text-center text-sm text-white/70">
           <div>已暂停 {{ pauseDurationText }}</div>
-          <div v-if="timerStore.pauseWarning" class="text-amber-300">暂停超过 30 分钟，请尽快恢复或放弃</div>
+          <div v-if="timerStore.pauseWarning" class="text-amber-300">暂停超过 30 分钟，请尽快恢复或结束</div>
         </div>
 
         <!-- Break Controls -->
