@@ -4,7 +4,6 @@ export type Priority = 0 | 1 | 2 | 3;
 export interface TaskItem {
   id: number;
   title: string;
-  description: string | null;
   status: TaskStatus;
   priority: Priority;
   projectId: number | null;
@@ -13,12 +12,11 @@ export interface TaskItem {
   reminderTime: string | null;
   completedAt: string | null;
   deletedAt: string | null;
-  isRecurring: boolean;
-  repeatRule: string | null;
   notes: string | null;
   pomodoroCount: number;
   pomodoroDuration: number;
   sortOrder: number;
+  recurringRuleId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,4 +56,23 @@ export interface PomodoroSettings {
   focusMinutes: number;
   shortBreakMinutes: number;
   longBreakMinutes: number;
+}
+
+export interface RecurringRuleItem {
+  id: number;
+  title: string;
+  description: string | null;
+  priority: number;
+  projectId: number | null;
+  repeatType: string;
+  repeatDays: string | null;
+  anchorDate: string;
+  reminderTime: string | null;
+  notes: string | null;
+  pomodoroCount: number;
+  pomodoroDuration: number;
+  active: boolean;
+  lastGeneratedDate: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

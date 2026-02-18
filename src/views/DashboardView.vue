@@ -200,11 +200,34 @@ const heatmapColorMapDimmed: Record<number, string> = {
 };
 
 const weekdayLabels = ['一', '三', '五'];
-const displayYear = new Date().getFullYear();
+const currentYear = new Date().getFullYear();
+const selectedYear = ref<number>(currentYear);
 const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+
+function getDateYear(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.getFullYear();
+}
+
+const availableYears = computed<number[]>(() => {
+  const years = new Set<number>([currentYear]);
+
+  for (const task of taskStore.tasks) {
+    const createdYear = getDateYear(task.createdAt);
+    if (createdYear !== null) years.add(createdYear);
+
+    const updatedYear = getDateYear(task.updatedAt);
+    if (updatedYear !== null) years.add(updatedYear);
+  }
+
+  return Array.from(years).sort((a, b) => b - a);
+});
 
 // Cache all heatmap derivations in one computed to avoid repeated heavy loops.
 const heatmapData = computed<HeatmapData>(() => {
+  const displayYear = selectedYear.value;
   const contributionByDate = new Map<string, number>();
 
   for (const task of taskStore.tasks) {
@@ -393,11 +416,20 @@ const heatmapData = computed<HeatmapData>(() => {
       <template v-if="activeTab === 'overview'">
         <div class="grid gap-6 lg:grid-cols-2">
           <div class="w-full rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
-            <div class="mb-4">
+            <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 class="font-semibold text-slate-800">年度活跃概览</h3>
-                <p class="mt-1 text-xs text-slate-500">{{ heatmapData.activeDays }} 天活跃（{{ displayYear }} 年）</p>
+                <p class="mt-1 text-xs text-slate-500">{{ heatmapData.activeDays }} 天活跃（{{ selectedYear }} 年）</p>
               </div>
+              <label class="inline-flex items-center gap-2 text-xs text-slate-500">
+                <span>年份</span>
+                <select
+                  v-model.number="selectedYear"
+                  class="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option v-for="year in availableYears" :key="year" :value="year">{{ year }} 年</option>
+                </select>
+              </label>
             </div>
 
             <div class="overflow-x-auto rounded-lg bg-slate-50/70 px-4 py-4" data-gesture-ignore="true" style="contain: content;">

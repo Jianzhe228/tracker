@@ -173,7 +173,8 @@ Pinia stores 充当"应用状态 + 领域操作"层。
 ### 6.3 核心表（规划）
 - `user_settings`
 - `projects`、`tags`
-- `tasks`（`parent_id` 支持一级子任务；`deleted_at` 支持 10 秒撤销窗口）
+- `tasks`（`parent_id` 支持一级子任务；`deleted_at` 支持 10 秒撤销窗口；`recurring_rule_id` 关联重复规则）
+- `recurring_rules`（重复任务模板：规则类型/周期/锚点日期/生成状态）
 - `task_tags`
 - `focus_sessions`
 - `ai_logs`

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 console.time('[app] script setup → mounted');
 import { ref, computed, onMounted } from 'vue';
-import { RouterLink, RouterView, useRoute } from 'vue-router';
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import { APP_NAME } from './utils/constants';
 import { useTimerStore } from './stores/timerStore';
@@ -10,6 +10,9 @@ import { useHabitStore } from './stores/habitStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { appInit } from './services/commands/init';
 import FocusModal from './components/FocusModal.vue';
+import ProjectContextMenu from './components/ProjectContextMenu.vue';
+import ProjectFormPopover from './components/ProjectFormPopover.vue';
+import type { ProjectItem } from './types/domain';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -18,6 +21,7 @@ console.time('[init] appInit');
 const initPromise = isTauri ? appInit() : null;
 
 const route = useRoute();
+const router = useRouter();
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
 const habitStore = useHabitStore();
@@ -31,6 +35,7 @@ onMounted(async () => {
   settingsStore.loadFromData(data.settings);
   taskStore.loadFromData(data.tasks);
   taskStore.loadProjectsFromData(data.projects);
+  taskStore.loadRecurringRulesFromData(data.recurringRules);
   habitStore.loadFromData(data.habits);
 });
 
@@ -55,6 +60,8 @@ const smartLists = [
 
 const isActive = (path: string) => route.path === path;
 const isSmartListActive = () => route.path.startsWith('/tasks/');
+const noMainBottomPaddingRoutes = new Set(['today', 'tomorrow', 'week', 'all', 'completed', 'project']);
+const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(String(route.name || '')));
 
 function toDateInputValue(date: Date): string {
   const year = date.getFullYear();
@@ -78,7 +85,7 @@ function isDateInRecent7Days(value: string | null): boolean {
 
 // Get task counts
 const getTaskCount = (filter: string) => {
-  const tasks = taskStore.tasks;
+  const tasks = taskStore.tasks.filter(task => task.parentId === null);
   switch (filter) {
     case 'today':
       return tasks.filter(t => t.status === 'todo' && t.dueAt === getDateKeyFromToday(0)).length;
@@ -96,7 +103,7 @@ const getTaskCount = (filter: string) => {
 };
 
 const getProjectTaskCount = (projectId: number) => {
-  return taskStore.tasks.filter(task => task.projectId === projectId && task.status === 'todo').length;
+  return taskStore.tasks.filter(task => task.parentId === null && task.projectId === projectId && task.status === 'todo').length;
 };
 
 function openFocusModal() {
@@ -105,6 +112,66 @@ function openFocusModal() {
 
 function closeFocusModal() {
   showFocusModal.value = false;
+}
+
+// Project management state
+const showProjectForm = ref(false);
+const projectFormAnchorEl = ref<HTMLElement | null>(null);
+const editingProject = ref<ProjectItem | null>(null);
+const showProjectContextMenu = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+const contextMenuProject = ref<ProjectItem | null>(null);
+
+function openCreateProject(event: MouseEvent) {
+  editingProject.value = null;
+  projectFormAnchorEl.value = event.currentTarget as HTMLElement;
+  showProjectForm.value = true;
+}
+
+function onProjectContextMenu(event: MouseEvent, project: ProjectItem) {
+  if (project.id === 1) return; // Protect inbox
+  event.preventDefault();
+  contextMenuX.value = event.clientX;
+  contextMenuY.value = event.clientY;
+  contextMenuProject.value = project;
+  showProjectContextMenu.value = true;
+}
+
+function handleProjectContextAction(key: string) {
+  const project = contextMenuProject.value;
+  if (!project) return;
+  if (key === 'edit') {
+    editingProject.value = project;
+    // Anchor to the project link element
+    const el = document.querySelector(`[data-project-id="${project.id}"]`) as HTMLElement | null;
+    projectFormAnchorEl.value = el;
+    showProjectForm.value = true;
+  } else if (key === 'delete') {
+    confirmDeleteProject(project);
+  }
+}
+
+function confirmDeleteProject(project: ProjectItem) {
+  const taskCount = taskStore.tasks.filter(t => t.projectId === project.id && t.status === 'todo').length;
+  const message = taskCount > 0
+    ? `确定删除清单「${project.title}」吗？其中 ${taskCount} 个任务将移至收集箱。`
+    : `确定删除清单「${project.title}」吗？`;
+  if (!window.confirm(message)) return;
+  // Navigate away if viewing the deleted project
+  if (route.path === `/project/${project.id}`) {
+    router.push('/tasks/all');
+  }
+  taskStore.removeProject(project.id);
+}
+
+async function handleProjectFormSave(data: { title: string; color: string }) {
+  if (editingProject.value) {
+    await taskStore.updateProject(editingProject.value.id, { title: data.title, color: data.color });
+  } else {
+    await taskStore.addProject(data.title, data.color);
+  }
+  showProjectForm.value = false;
 }
 
 const focusButtonTime = computed(() => {
@@ -121,10 +188,10 @@ const focusButtonLabel = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-slate-50">
+  <div class="flex h-full min-h-screen bg-slate-50">
     <!-- Sidebar -->
     <aside
-      class="flex flex-col border-r border-slate-200 bg-white transition-[width] duration-200 will-change-[width]"
+      class="flex flex-col border-r border-slate-200 bg-white transition-[width] duration-200"
       :class="sidebarCollapsed ? 'w-16' : 'w-60'"
     >
       <!-- App Brand -->
@@ -212,7 +279,7 @@ const focusButtonLabel = computed(() => {
         <div class="mb-2">
           <div v-if="!sidebarCollapsed" class="mb-1 flex items-center justify-between px-3">
             <span class="text-xs font-medium text-slate-400">清单</span>
-            <button class="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="新增清单">
+            <button class="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="新增清单" @click="openCreateProject($event)">
               <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
               </svg>
@@ -223,6 +290,7 @@ const focusButtonLabel = computed(() => {
             v-for="project in taskStore.projects"
             :key="project.id"
             :to="`/project/${project.id}`"
+            :data-project-id="project.id"
             class="flex items-center rounded-lg text-sm transition-colors"
             :class="[
               sidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-3 py-2',
@@ -231,6 +299,7 @@ const focusButtonLabel = computed(() => {
                 : 'text-slate-600 hover:bg-slate-50'
             ]"
             :title="sidebarCollapsed ? project.title : undefined"
+            @contextmenu="onProjectContextMenu($event, project)"
           >
             <div class="flex items-center" :class="sidebarCollapsed ? '' : 'gap-3'">
               <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: project.color || '#6b7280' }" />
@@ -311,7 +380,7 @@ const focusButtonLabel = computed(() => {
     <!-- Main Content -->
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Router View -->
-      <main class="flex-1 overflow-auto pb-20">
+      <main class="flex-1 overflow-auto" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
         <RouterView />
       </main>
     </div>
@@ -336,5 +405,27 @@ const focusButtonLabel = computed(() => {
 
     <!-- Focus Modal -->
     <FocusModal v-if="showFocusModal" @close="closeFocusModal" />
+
+    <!-- Project Context Menu -->
+    <ProjectContextMenu
+      v-if="showProjectContextMenu"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :items="[
+        { key: 'edit', label: '编辑' },
+        { key: 'delete', label: '删除', danger: true },
+      ]"
+      @select="handleProjectContextAction"
+      @close="showProjectContextMenu = false"
+    />
+
+    <!-- Project Form Popover -->
+    <ProjectFormPopover
+      v-if="showProjectForm"
+      :project="editingProject"
+      :anchor-el="projectFormAnchorEl"
+      @save="handleProjectFormSave"
+      @close="showProjectForm = false"
+    />
   </div>
 </template>

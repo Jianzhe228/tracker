@@ -168,7 +168,6 @@ CREATE TABLE tags (
 CREATE TABLE tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
-    description TEXT,
     status TEXT NOT NULL DEFAULT 'todo', -- todo | in_progress | done | cancelled
     priority INTEGER DEFAULT 0, -- 0: 无 | 1: 低 | 2: 中 | 3: 高
 
@@ -177,14 +176,10 @@ CREATE TABLE tasks (
     parent_id INTEGER,
 
     -- 时间信息
-    due_at DATETIME,                 -- 截止时间（精确到分钟）
+    due_at DATETIME,                 -- 本次截止日期（当前实现按天存储，格式 YYYY-MM-DD）
     reminder_time DATETIME,          -- 提醒时间（具体日期时间）
     completed_at DATETIME,
     deleted_at DATETIME,               -- 软删除时间（用于10秒撤销窗口）
-
-    -- 重复任务
-    is_recurring BOOLEAN DEFAULT 0,  -- 是否重复任务
-    repeat_rule TEXT,               -- 重复规则：'daily' | 'weekly' | 'monthly'
 
     -- 备注
     notes TEXT,                      -- 任务备注（多行文本）
@@ -193,25 +188,55 @@ CREATE TABLE tasks (
     pomodoro_count INTEGER DEFAULT 1, -- 番茄个数
     pomodoro_duration INTEGER DEFAULT 25, -- 每个番茄的时间（分钟）
 
-    -- 排序与追踪
+    -- 排序
     sort_order INTEGER DEFAULT 0,    -- 清单内拖拽排序顺序（自定义排序使用）
-    due_at_postpone_count INTEGER DEFAULT 0, -- 截止时间后延次数（用于AI分析）
+
+    -- 重复规则关联
+    recurring_rule_id INTEGER,       -- 关联 recurring_rules 表（由调度生成器写入）
 
     -- 创建与更新
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
-    FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE
+    FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (recurring_rule_id) REFERENCES recurring_rules(id) ON DELETE SET NULL
 );
 ```
 
-**重复任务（基于完成时间生成下一次）**
-- `is_recurring = 1` 时要求 `due_at` 非空，否则不允许开启重复
-- 当任务从 `in_progress/todo` 变为 `done` 时写入 `completed_at`，并生成下一条重复任务：
-  - `due_at = completed_at + repeat_rule`
-  - 月度规则遇到不存在的日期则取月末，时间部分保持不变
-- 当任务变为 `cancelled` 时不生成下一条重复任务
+**重复任务（模板表 + 调度生成方案）**
+- 重复任务使用独立的 `recurring_rules` 模板表管理规则
+- 任务通过 `recurring_rule_id` 外键关联到规则
+- 启用重复时，要求任务 `due_at` 非空，并将其作为规则 `anchor_date`
+- 应用启动时（`app_init`）自动为活跃规则增量生成缺失任务（`last_generated_date + 1` 到当天）
+- 支持类型：`daily`（每天）、`weekdays`（工作日）、`weekly`（每周）、`monthly`（每月）、`custom`（自定义周几）
+- 月度规则遇到不存在的日期则取月末
+- 若同一规则同一 `due_at` 已存在任务（且未软删除），则跳过创建
+- 任务完成/取消不直接触发“立即生成下一条”，由规则调度统一生成
+- 取消重复 = 停用规则（`active = 0`），已生成的任务不受影响
+
+#### 3.1.4.1 重复规则表 (recurring_rules)
+```sql
+CREATE TABLE recurring_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority INTEGER DEFAULT 0,
+    project_id INTEGER,
+    repeat_type TEXT NOT NULL,       -- 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'custom'
+    repeat_days TEXT,                -- custom 类型时的 JSON 数组，如 '[1,3,5]'（1=周一..7=周日）
+    anchor_date TEXT NOT NULL,       -- 锚点日期 YYYY-MM-DD，用于 weekly/monthly 匹配
+    reminder_time TEXT,
+    notes TEXT,
+    pomodoro_count INTEGER DEFAULT 1,
+    pomodoro_duration INTEGER DEFAULT 25,
+    active BOOLEAN DEFAULT 1,
+    last_generated_date TEXT,        -- 最后生成日期，用于增量生成
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+);
+```
 
 #### 3.1.5 任务-标签关联表 (task_tags)
 ```sql
@@ -516,6 +541,17 @@ classDiagram
     +due_at: datetime?
     +completed_at: datetime?
     +deleted_at: datetime?
+    +recurring_rule_id: integer?
+  }
+
+  class RecurringRule {
+    +id: integer
+    +title: string
+    +repeat_type: string
+    +repeat_days: string?
+    +anchor_date: string
+    +active: boolean
+    +last_generated_date: string?
   }
 
   class Tag {
@@ -606,6 +642,9 @@ classDiagram
   Task "0..1" --> "0..*" Task : parent_of
   Task "1" --> "0..*" TaskTag : tagged_by
   Tag "1" --> "0..*" TaskTag : tag_of
+
+  RecurringRule "1" --> "0..*" Task : generates
+  RecurringRule "0..1" --> Project : project
 
   Task "1" --> "0..*" FocusSession : focus
   Task "1" --> "0..*" TaskCompletionLog : completion_logs
@@ -1246,7 +1285,7 @@ async fn get_tasks(filters: TaskFilters) -> Result<Vec<Task>, String> { /* ... *
 **任务领域约束（Rust commands 必须硬校验）**
 - 子任务仅支持一层：`parent_id` 只能为空或指向顶层任务（顶层任务要求 `parent_id IS NULL`）
 - 每个父任务最多 50 个子任务（超出返回明确错误）
-- 启用重复任务时要求 `due_at` 非空（否则返回明确错误）
+- 启用重复任务时要求 `due_at` 非空（作为 `anchor_date`，否则返回明确错误）
 
 ### 8.3 习惯相关
 ```rust

@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::commands::habit::HabitRow;
 use crate::commands::project::ProjectRow;
+use crate::commands::recurring::RecurringRuleRow;
 use crate::commands::settings::SettingEntry;
 use crate::commands::task::TaskRow;
 use crate::db::AppState;
@@ -14,6 +15,7 @@ pub struct AppInitData {
   pub habits: Vec<HabitRow>,
   pub settings: Vec<SettingEntry>,
   pub projects: Vec<ProjectRow>,
+  pub recurring_rules: Vec<RecurringRuleRow>,
 }
 
 #[tauri::command]
@@ -21,10 +23,15 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
   let db = state.db().lock().map_err(|e| e.to_string())?;
   let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
+  crate::commands::task::cleanup_expired_soft_deleted_tasks(&db)?;
+
+  // Generate recurring task instances for today
+  crate::services::recurring::generate_recurring_tasks(&db, &today)?;
+
   // Tasks (excluding soft-deleted)
   let mut stmt = db
     .prepare(
-      "SELECT id, title, description, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, is_recurring, repeat_rule, notes, pomodoro_count, pomodoro_duration, sort_order, created_at, updated_at
+      "SELECT id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
        FROM tasks
        WHERE deleted_at IS NULL
        ORDER BY sort_order ASC, created_at DESC",
@@ -35,23 +42,21 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
       Ok(TaskRow {
         id: row.get(0)?,
         title: row.get(1)?,
-        description: row.get(2)?,
-        status: row.get(3)?,
-        priority: row.get(4)?,
-        project_id: row.get(5)?,
-        parent_id: row.get(6)?,
-        due_at: row.get(7)?,
-        reminder_time: row.get(8)?,
-        completed_at: row.get(9)?,
-        deleted_at: row.get(10)?,
-        is_recurring: row.get::<_, i32>(11)? != 0,
-        repeat_rule: row.get(12)?,
-        notes: row.get(13)?,
-        pomodoro_count: row.get(14)?,
-        pomodoro_duration: row.get(15)?,
-        sort_order: row.get(16)?,
-        created_at: row.get(17)?,
-        updated_at: row.get(18)?,
+        status: row.get(2)?,
+        priority: row.get(3)?,
+        project_id: row.get(4)?,
+        parent_id: row.get(5)?,
+        due_at: row.get(6)?,
+        reminder_time: row.get(7)?,
+        completed_at: row.get(8)?,
+        deleted_at: row.get(9)?,
+        notes: row.get(10)?,
+        pomodoro_count: row.get(11)?,
+        pomodoro_duration: row.get(12)?,
+        sort_order: row.get(13)?,
+        recurring_rule_id: row.get(14)?,
+        created_at: row.get(15)?,
+        updated_at: row.get(16)?,
       })
     })
     .map_err(|e| e.to_string())?
@@ -131,10 +136,45 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| e.to_string())?;
 
+  // Recurring rules (active only)
+  let mut stmt = db
+    .prepare(
+      "SELECT id, title, description, priority, project_id, repeat_type, repeat_days, anchor_date, reminder_time, notes, pomodoro_count, pomodoro_duration, active, last_generated_date, created_at, updated_at
+       FROM recurring_rules
+       WHERE active = 1
+       ORDER BY id ASC",
+    )
+    .map_err(|e| e.to_string())?;
+  let recurring_rules: Vec<RecurringRuleRow> = stmt
+    .query_map([], |row| {
+      Ok(RecurringRuleRow {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        description: row.get(2)?,
+        priority: row.get(3)?,
+        project_id: row.get(4)?,
+        repeat_type: row.get(5)?,
+        repeat_days: row.get(6)?,
+        anchor_date: row.get(7)?,
+        reminder_time: row.get(8)?,
+        notes: row.get(9)?,
+        pomodoro_count: row.get(10)?,
+        pomodoro_duration: row.get(11)?,
+        active: row.get::<_, i32>(12)? != 0,
+        last_generated_date: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
+      })
+    })
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
   Ok(AppInitData {
     tasks,
     habits,
     settings,
     projects,
+    recurring_rules,
   })
 }

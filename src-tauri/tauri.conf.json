@@ -16,7 +16,8 @@
         "title": "Smart Focus Tracker",
         "width": 1280,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "backgroundColor": [248, 250, 252, 255]
       }
     ],
     "security": {
