@@ -83,6 +83,11 @@ const strokeDashoffset = computed(() => {
 
 const isBreakMode = computed(() => timerStore.mode !== 'focus');
 const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '倒计时' : '正计时');
+const statusLabel = computed(() => {
+  if (timerStore.running) return '计时中';
+  if (timerStore.paused) return '已暂停';
+  return '待开始';
+});
 </script>
 
 <template>
@@ -97,7 +102,7 @@ const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '�
         </div>
         <div class="hidden items-center gap-3 rounded-full bg-white/10 px-3 py-2 text-xs text-white/80 backdrop-blur sm:flex">
           <span class="h-2 w-2 rounded-full bg-emerald-300" />
-          <span>{{ timerStore.running ? '计时中' : timerStore.paused ? '已暂停' : '待开始' }}</span>
+          <span>{{ statusLabel }}</span>
         </div>
       </header>
 
@@ -279,27 +284,6 @@ const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '�
                   </button>
                 </template>
               </div>
-
-              <div v-if="timerStore.paused" class="rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-700">
-                <div class="flex items-center gap-2">
-                  <span class="h-2 w-2 rounded-full bg-amber-500" />
-                  已暂停 {{ pauseDurationText }}
-                </div>
-                <div v-if="timerStore.pauseWarning" class="mt-1">暂停超过 30 分钟，请尽快恢复或结束</div>
-              </div>
-
-              <div v-if="isBreakMode" class="rounded-lg bg-slate-50 px-4 py-3">
-                <div class="flex items-center justify-between text-sm text-slate-700">
-                  <button class="text-blue-600 hover:text-blue-700" @click="handleSkipBreak">跳过休息</button>
-                  <button
-                    class="text-slate-700 hover:text-slate-900 disabled:cursor-not-allowed disabled:text-slate-400"
-                    :disabled="timerStore.breakExtendCount >= 3"
-                    @click="handleExtendBreak"
-                  >
-                    延长休息 (+5 分钟) · 已用 {{ timerStore.breakExtendCount }}/3
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -342,6 +326,39 @@ const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '�
                 {{ task.title }}
               </button>
               <span v-if="activeTasks.length === 0" class="text-xs text-slate-400">暂无待办</span>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-100 bg-white/90 p-5 shadow">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-semibold text-slate-800">状态与休息控制</p>
+              <span class="text-xs text-slate-500">{{ statusLabel }}</span>
+            </div>
+            <div v-if="timerStore.paused" class="mt-3 rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-700">
+              <div class="flex items-center gap-2">
+                <span class="h-2 w-2 rounded-full bg-amber-500" />
+                已暂停 {{ pauseDurationText }}
+              </div>
+              <div v-if="timerStore.pauseWarning" class="mt-1">暂停超过 30 分钟，请尽快恢复或结束</div>
+            </div>
+            <div v-else class="mt-3 text-xs text-slate-500">
+              {{ timerStore.running ? '保持投入，完成本次计时' : '准备好后开始下一轮专注' }}
+            </div>
+
+            <div v-if="isBreakMode" class="mt-4 flex flex-wrap gap-2">
+              <button
+                class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-blue-500 hover:text-blue-600"
+                @click="handleSkipBreak"
+              >
+                跳过休息
+              </button>
+              <button
+                class="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-500 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="timerStore.breakExtendCount >= 3"
+                @click="handleExtendBreak"
+              >
+                延长 +5 分钟 · {{ timerStore.breakExtendCount }}/3
+              </button>
             </div>
           </div>
         </div>
