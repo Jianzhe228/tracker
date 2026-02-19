@@ -2,26 +2,21 @@
 import { ref, computed, onUnmounted } from 'vue';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
-import { useHabitStore } from '../stores/habitStore';
 
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
-const habitStore = useHabitStore();
 
 // Stats
 const completedToday = computed(() => taskStore.tasks.filter(t => t.status === 'done').length);
-const habitCompletedToday = computed(() => habitStore.habits.filter(h => h.checkedToday).length);
-const habitTotal = computed(() => habitStore.habits.length);
 
 // Tabs
-type TabType = 'overview' | 'focus' | 'tasks' | 'habits';
+type TabType = 'overview' | 'focus' | 'tasks';
 const activeTab = ref<TabType>('overview');
 
 const tabs: { key: TabType; label: string }[] = [
   { key: 'overview', label: '概览' },
   { key: 'focus', label: '专注分析' },
-  { key: 'tasks', label: '任务分析' },
-  { key: 'habits', label: '习惯洞察' }
+  { key: 'tasks', label: '任务分析' }
 ];
 
 const tabOrder: TabType[] = tabs.map(tab => tab.key);
@@ -249,7 +244,7 @@ const heatmapData = computed<HeatmapData>(() => {
   const today = new Date();
   if (today.getFullYear() === displayYear) {
     const todayKey = toDateKey(today);
-    const todayScore = (contributionByDate.get(todayKey) || 0) + timerStore.completedPomodoros + habitCompletedToday.value;
+    const todayScore = (contributionByDate.get(todayKey) || 0) + timerStore.completedPomodoros;
     contributionByDate.set(todayKey, todayScore);
   }
 
@@ -332,7 +327,7 @@ const heatmapData = computed<HeatmapData>(() => {
     </div>
 
     <!-- KPI Cards -->
-    <div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
@@ -375,22 +370,6 @@ const heatmapData = computed<HeatmapData>(() => {
         </div>
       </article>
 
-      <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-            <svg class="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
-          </div>
-          <div>
-            <p class="text-sm text-slate-500">习惯完成率</p>
-            <p class="text-2xl font-semibold tabular-nums text-slate-800">
-              <template v-if="habitTotal > 0">{{ Math.round(habitCompletedToday / habitTotal * 100) }}%</template>
-              <template v-else>0%</template>
-            </p>
-          </div>
-        </div>
-      </article>
     </div>
 
     <!-- Tabs -->
@@ -568,39 +547,6 @@ const heatmapData = computed<HeatmapData>(() => {
         </div>
       </template>
 
-      <!-- Habits Tab -->
-      <template v-else-if="activeTab === 'habits'">
-        <div class="grid gap-6 lg:grid-cols-3">
-          <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
-            <h3 class="mb-4 font-semibold text-slate-800">习惯打卡热力图</h3>
-            <div class="flex h-48 items-center justify-center rounded-lg bg-slate-50">
-              <p class="text-sm text-slate-400">暂无打卡记录</p>
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p class="text-sm text-slate-500">当前连续</p>
-              <p class="text-2xl font-semibold text-slate-800">0 天</p>
-            </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p class="text-sm text-slate-500">最佳连续</p>
-              <p class="text-2xl font-semibold text-slate-800">0 天</p>
-            </div>
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p class="text-sm text-slate-500">习惯强度</p>
-              <p class="text-2xl font-semibold text-slate-800">0%</p>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
-            <h3 class="mb-4 font-semibold text-slate-800">周达成趋势</h3>
-            <div class="flex h-48 items-center justify-center rounded-lg bg-slate-50">
-              <p class="text-sm text-slate-400">暂无数据</p>
-            </div>
-          </div>
-        </div>
-      </template>
     </div>
   </div>
 </template>

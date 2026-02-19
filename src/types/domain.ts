@@ -31,27 +31,6 @@ export interface ProjectItem {
   updatedAt: string;
 }
 
-export interface HabitItem {
-  id: number;
-  title: string;
-  description: string | null;
-  icon: string | null;
-  color: string | null;
-  type: string;
-  targetValue: number;
-  targetUnit: string | null;
-  frequencyType: string;
-  frequencyValue: number | null;
-  frequencyDays: string | null;
-  maxSkipsPerMonth: number;
-  reminderEnabled: boolean;
-  reminderTime: string | null;
-  archived: boolean;
-  checkedToday: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface PomodoroSettings {
   focusMinutes: number;
   shortBreakMinutes: number;

@@ -1,7 +1,6 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::commands::habit::HabitRow;
 use crate::commands::project::ProjectRow;
 use crate::commands::recurring::RecurringRuleRow;
 use crate::commands::settings::SettingEntry;
@@ -12,7 +11,6 @@ use crate::db::AppState;
 #[serde(rename_all = "camelCase")]
 pub struct AppInitData {
   pub tasks: Vec<TaskRow>,
-  pub habits: Vec<HabitRow>,
   pub settings: Vec<SettingEntry>,
   pub projects: Vec<ProjectRow>,
   pub recurring_rules: Vec<RecurringRuleRow>,
@@ -57,44 +55,6 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
         recurring_rule_id: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
-      })
-    })
-    .map_err(|e| e.to_string())?
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| e.to_string())?;
-
-  // Habits
-  let mut stmt = db
-    .prepare(
-      "SELECT h.id, h.title, h.description, h.icon, h.color, h.type, h.target_value, h.target_unit, h.frequency_type, h.frequency_value, h.frequency_days, h.max_skips_per_month, h.reminder_enabled, h.reminder_time, h.archived, h.created_at, h.updated_at,
-              CASE WHEN hl.id IS NOT NULL THEN 1 ELSE 0 END AS checked_today
-       FROM habits h
-       LEFT JOIN habit_logs hl ON hl.habit_id = h.id AND hl.check_in_date = ?1 AND hl.status = 'completed'
-       WHERE h.archived = 0
-       ORDER BY h.created_at DESC",
-    )
-    .map_err(|e| e.to_string())?;
-  let habits: Vec<HabitRow> = stmt
-    .query_map(rusqlite::params![today], |row| {
-      Ok(HabitRow {
-        id: row.get(0)?,
-        title: row.get(1)?,
-        description: row.get(2)?,
-        icon: row.get(3)?,
-        color: row.get(4)?,
-        habit_type: row.get(5)?,
-        target_value: row.get(6)?,
-        target_unit: row.get(7)?,
-        frequency_type: row.get(8)?,
-        frequency_value: row.get(9)?,
-        frequency_days: row.get(10)?,
-        max_skips_per_month: row.get(11)?,
-        reminder_enabled: row.get::<_, i32>(12)? != 0,
-        reminder_time: row.get(13)?,
-        archived: row.get::<_, i32>(14)? != 0,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
-        checked_today: row.get::<_, i32>(17)? != 0,
       })
     })
     .map_err(|e| e.to_string())?
@@ -172,7 +132,6 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
 
   Ok(AppInitData {
     tasks,
-    habits,
     settings,
     projects,
     recurring_rules,

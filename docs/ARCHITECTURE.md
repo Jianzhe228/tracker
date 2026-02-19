@@ -132,7 +132,7 @@ Pinia stores 充当"应用状态 + 领域操作"层。
 - `syncStore`：WebDAV 配置与同步状态；通过 Rust commands 执行同步。
 
 #### 服务（`src/services/*`）
-- `src/services/commands/*`：封装 `invoke()`（tasks/habits/statistics/settings/sync）。
+- `src/services/commands/*`：封装 `invoke()`（tasks/~~habits~~/statistics/settings/sync）。
 - `src/services/notification.ts`：封装 `@tauri-apps/plugin-notification`。
 - `src/services/ai/*`：上下文构建和 **模拟 AI** 调用。
 
@@ -143,11 +143,11 @@ Pinia stores 充当"应用状态 + 领域操作"层。
 ### 5.1 命令边界（前端 ↔ Rust）
 前端使用 `invoke()` 调用特权原生功能。
 
-建议命令接口覆盖：tasks/habits/statistics/settings/sync 等能力，WebDAV 同步为其中之一。
+建议命令接口覆盖：tasks/~~habits~~/statistics/settings/sync 等能力，WebDAV 同步为其中之一。
 
 ### 5.2 Rust 模块（建议）
 - `src-tauri/src/commands/*`
-  - 对前端暴露的 Tauri commands（任务/习惯/统计/设置/同步）。
+  - 对前端暴露的 Tauri commands（任务/~~习惯~~/统计/设置/同步）。
 - `src-tauri/src/db/*`
   - SQLite 打开、迁移、查询与事务封装。
 - `src-tauri/src/services/sync.rs`
@@ -181,10 +181,10 @@ Pinia stores 充当"应用状态 + 领域操作"层。
 - `notification_logs`（通知中心历史）
 - `task_completion_logs`、`task_deletion_logs`
 - `daily_summaries`
-- `habits`、`habit_logs`、`habit_stats`
+- ~~`habits`、`habit_logs`、`habit_stats`~~（习惯模块暂缓）
 
-### 6.4 习惯（需求 vs 规划）
-- 习惯子系统为 `REQUIREMENTS.md v2.5` 的 P1 必需模块，应纳入数据库基础 schema 与迁移策略。
+### 6.4 ~~习惯（需求 vs 规划，暂缓）~~
+- ~~习惯子系统为 `REQUIREMENTS.md v2.5` 的 P1 必需模块，应纳入数据库基础 schema 与迁移策略。~~
 
 ### 6.5 数据管理（导出/导入/清空/每日备份）
 为满足可迁移与可恢复诉求，建议由 Rust 侧提供数据管理 commands：
@@ -224,7 +224,7 @@ Pinia stores 充当"应用状态 + 领域操作"层。
 4. 暂存到临时文件，验证解压 + DB 打开。
 5. 安全点检查：如存在运行中的番茄钟且需要替换 DB，则标记为待应用（deferred apply）。
 6. 带备份原子交换文件（在安全点执行）。
-7. 替换完成后通知前端刷新 stores（任务/统计/习惯），计时器状态不受影响。
+7. 替换完成后通知前端刷新 stores（任务/统计/~~习惯~~），计时器状态不受影响。
 
 ### 7.5 同步决策流程图
 ```mermaid
@@ -310,7 +310,7 @@ graph TD
 同步交互：
 - 计时器继续运行，无论同步如何。
 - 番茄钟运行中允许上传；如需下载/替换 DB，则延迟到安全点执行（番茄钟结束/放弃后）。
-- DB 替换完成后，通知前端刷新 DB 支持的 stores（任务/统计/习惯）；计时器状态保持本地不变。
+- DB 替换完成后，通知前端刷新 DB 支持的 stores（任务/统计/~~习惯~~）；计时器状态保持本地不变。
 - 若 DB 替换后 `taskId` 不存在，UI 使用 `taskTitleSnapshot` 继续展示当前任务，写入 `focus_sessions` 时允许 `task_id` 为空。
 
 ---
@@ -444,10 +444,10 @@ sequenceDiagram
 
 ## 12. 扩展点与路线图
 
-### 12.1 习惯（必需）
-- 在数据库基础迁移中纳入习惯表（`habits`/`habit_logs`/`habit_stats`）。
-- 添加 `habitStore` 和 `/habits` 路由。
-- 将持续时间习惯与完成的专注会话集成。
+### 12.1 ~~习惯（必需，暂缓）~~
+- ~~在数据库基础迁移中纳入习惯表（`habits`/`habit_logs`/`habit_stats`）。~~
+- ~~添加 `habitStore` 和 `/habits` 路由。~~
+- ~~将持续时间习惯与完成的专注会话集成。~~
 
 ### 12.2 自动同步 + 冲突解决
 - 添加 Rust 命令：`sync_status`、`sync_run`、`sync_metadata`、`resolve_conflict`。
@@ -472,7 +472,7 @@ sequenceDiagram
 
 **规划实现顺序（与 `REQUIREMENTS.md v2.5` 对齐）**
 - P0：任务管理、番茄钟、SQLite 持久化、系统通知
-- P1：习惯模块
+- ~~P1：习惯模块~~（暂缓）
 - P2：数据可视化与统计工作区
 - P3：WebDAV 同步（含冲突/备份/安全点）
 - P4：AI 智能模块（可选）

@@ -187,64 +187,6 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
--- 3.1.11 habits
-CREATE TABLE IF NOT EXISTS habits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    icon TEXT,
-    color TEXT,
-    type TEXT NOT NULL DEFAULT 'boolean',
-    target_value INTEGER DEFAULT 1,
-    target_unit TEXT,
-    frequency_type TEXT NOT NULL DEFAULT 'daily',
-    frequency_value INTEGER,
-    frequency_days TEXT,
-    max_skips_per_month INTEGER DEFAULT 3,
-    linked_to_pomodoro BOOLEAN DEFAULT 0,
-    linked_project_id INTEGER,
-    linked_tag_id INTEGER,
-    reminder_enabled BOOLEAN DEFAULT 0,
-    reminder_time TEXT,
-    archived BOOLEAN DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (linked_project_id) REFERENCES projects(id) ON DELETE SET NULL,
-    FOREIGN KEY (linked_tag_id) REFERENCES tags(id) ON DELETE SET NULL
-);
-
--- 3.1.12 habit_logs
-CREATE TABLE IF NOT EXISTS habit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    habit_id INTEGER NOT NULL,
-    check_in_date DATE NOT NULL,
-    status TEXT NOT NULL,
-    value INTEGER DEFAULT 1,
-    skip_reason TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE,
-    UNIQUE (habit_id, check_in_date)
-);
-
-CREATE INDEX IF NOT EXISTS idx_habit_logs_habit_date ON habit_logs(habit_id, check_in_date);
-CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(check_in_date);
-
--- 3.1.13 habit_stats
-CREATE TABLE IF NOT EXISTS habit_stats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    habit_id INTEGER NOT NULL UNIQUE,
-    current_streak INTEGER DEFAULT 0,
-    best_streak INTEGER DEFAULT 0,
-    month_completed INTEGER DEFAULT 0,
-    month_skipped INTEGER DEFAULT 0,
-    month_total INTEGER DEFAULT 0,
-    habit_score INTEGER DEFAULT 0,
-    total_completed INTEGER DEFAULT 0,
-    last_check_in_date DATE,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
-);
 ";
 
 fn run_migrations(conn: &Connection) {
@@ -332,5 +274,19 @@ fn run_migrations(conn: &Connection) {
         ",
       )
       .expect("failed to run migration v4");
+  }
+
+  if version < 5 {
+    conn
+      .execute_batch(
+        "
+        DROP TABLE IF EXISTS habit_stats;
+        DROP TABLE IF EXISTS habit_logs;
+        DROP TABLE IF EXISTS habits;
+
+        PRAGMA user_version = 5;
+        ",
+      )
+      .expect("failed to run migration v5");
   }
 }

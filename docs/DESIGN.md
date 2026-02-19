@@ -56,14 +56,14 @@
 | 阶段 | 内容 | 优先级 |
 |-----|------|-------|
 | **P0 核心功能** | 项目初始化、数据库设计、任务 CRUD、番茄钟计时器、本地数据持久化、系统通知 | 最高 |
-| **P1 习惯模块** | 习惯 CRUD、打卡、统计、热力图、跳过机制 | 高 |
+| ~~**P1 习惯模块**~~ | ~~习惯 CRUD、打卡、统计、热力图、跳过机制~~ | ~~高~~ |
 | **P2 数据可视化** | 统计卡片、热力图、时间轴、趋势图表、详情页 | 高 |
 | **P3 云同步** | WebDAV 配置、压缩上传、下载解压、自动同步、冲突解决 | 中 |
 | **P4 AI 智能模块** | AI 触发引擎、场景化提示、分析报告、周期性分析 | 低（最后开发） |
 
 ### 为什么 AI 模块最后开发？
 
-1. **数据基础**：需要积累足够的任务、番茄钟、习惯数据才能提供有意义的 AI 分析
+1. **数据基础**：需要积累足够的任务、番茄钟、~~习惯~~数据才能提供有意义的 AI 分析
 2. **用户体验**：确保基础功能稳定可靠，AI 才是锦上添花而非干扰
 3. **成本控制**：避免早期频繁调用 AI API 增加开发成本
 4. **需求验证**：先验证用户对基础功能的使用情况，再决定 AI 功能的具体价值
@@ -89,7 +89,7 @@ src/                            # Vue 前端
 ├── components/
 │   ├── charts/                 # ECharts 图表组件
 │   ├── task/                   # 任务相关组件
-│   ├── habit/                  # 习惯相关组件
+│   ├── ~~habit/~~              # 习惯相关组件（暂缓）
 │   ├── timer/                  # 番茄钟组件
 │   └── ui/                     # 基础 UI 组件
 ├── composables/                # 组合式函数
@@ -100,7 +100,7 @@ src/                            # Vue 前端
 │   └── notification.ts         # 通知封装
 ├── stores/                     # Pinia 状态管理
 │   ├── taskStore.ts
-│   ├── habitStore.ts
+│   ├── ~~habitStore.ts~~
 │   ├── timerStore.ts
 │   └── settingsStore.ts
 ├── types/                      # TypeScript 类型定义
@@ -378,7 +378,7 @@ CREATE TABLE daily_summaries (
 );
 ```
 
-#### 3.1.11 习惯表 (habits)
+#### 3.1.11 ~~习惯表 (habits)（暂缓）~~
 ```sql
 CREATE TABLE habits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1020,7 +1020,7 @@ export const useSyncStore = defineStore('sync', () => {
 | Store | 职责 |
 |-------|------|
 | **taskStore** | 任务、项目、标签的 CRUD，筛选，排序 |
-| **habitStore** | 习惯 CRUD，打卡，跳过，统计计算 |
+| ~~**habitStore**~~ | ~~习惯 CRUD，打卡，跳过，统计计算~~ |
 | **timerStore** | 番茄钟状态（运行中/暂停/停止），计时器逻辑 |
 | **settingsStore** | 用户设置（番茄钟时长、通知、AI 配置） |
 | **syncStore** | WebDAV 配置、同步状态、手动同步、自动同步 |
@@ -1287,7 +1287,7 @@ async fn get_tasks(filters: TaskFilters) -> Result<Vec<Task>, String> { /* ... *
 - 每个父任务最多 50 个子任务（超出返回明确错误）
 - 启用重复任务时要求 `due_at` 非空（作为 `anchor_date`，否则返回明确错误）
 
-### 8.3 习惯相关
+### 8.3 ~~习惯相关（暂缓）~~
 ```rust
 // 习惯 CRUD
 #[tauri::command]
@@ -1328,7 +1328,7 @@ async fn recalculate_habit_stats(habit_id: i64) -> Result<HabitStats, String> { 
 
 ---
 
-## 10. 习惯强度计算算法
+## 10. ~~习惯强度计算算法（暂缓）~~
 
 ### 9.1 连续天数（Streak）计算
 
@@ -1753,11 +1753,11 @@ function calculateWeeklyStreak(logs: HabitLog[], targetPerWeek: number): number 
 | Dashboard - Up Next | 还没有待办任务 | 添加任务 |
 | Tasks - 任务列表 | 还没有任务，点击上方添加你的第一个任务 | - |
 | Tasks - 搜索无结果 | 未找到匹配的任务 | 清除搜索 |
-| Habits - 习惯列表 | 创建一个习惯开始培养好习惯 | 新建习惯 |
+| ~~Habits - 习惯列表~~ | ~~创建一个习惯开始培养好习惯~~ | ~~新建习惯~~ |
 | Statistics - Overview | 完成一些番茄钟后，这里会显示你的专注数据 | 开始专注 |
 | Statistics - Focus | 还没有专注记录 | 开始专注 |
 | Statistics - Tasks | 还没有已完成的任务 | 查看任务 |
-| Statistics - Habits | 还没有习惯打卡记录 | 查看习惯 |
+| ~~Statistics - Habits~~ | ~~还没有习惯打卡记录~~ | ~~查看习惯~~ |
 | Timer - 无任务选择 | 选择一个任务开始专注 | 选择任务 |
 
 **错误状态规范**：

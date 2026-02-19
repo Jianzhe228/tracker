@@ -111,7 +111,7 @@ const statusLabel = computed(() => {
         <div class="rounded-2xl border border-slate-100 bg-white/80 shadow-lg backdrop-blur">
           <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
             <div class="flex items-center gap-2">
-              <span class="rounded-full px-3 py-1 text-xs font-medium" :class="accent.value.chip">
+              <span class="rounded-full px-3 py-1 text-xs font-medium" :class="accent.chip">
                 {{ timerStore.mode === 'focus' ? '专注' : timerStore.mode === 'shortBreak' ? '短休息' : '长休息' }}
               </span>
               <span v-if="timerStore.mode === 'focus'" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
@@ -129,7 +129,7 @@ const statusLabel = computed(() => {
               <div class="relative flex h-72 w-72 items-center justify-center">
                 <div
                   class="absolute inset-0 rounded-full bg-gradient-to-br opacity-80 blur-3xl"
-                  :class="`${accent.value.from} ${accent.value.to}`"
+                  :class="`${accent.from} ${accent.to}`"
                 />
                 <svg class="relative z-10 h-full w-full -rotate-90 transform" viewBox="0 0 256 256">
                   <circle cx="128" cy="128" r="118" fill="none" stroke="#e2e8f0" stroke-width="10" />
@@ -148,7 +148,7 @@ const statusLabel = computed(() => {
                 </svg>
                 <div class="absolute inset-0 z-20 flex flex-col items-center justify-center text-center">
                   <span class="font-mono text-6xl font-semibold text-slate-900">{{ timerStore.display }}</span>
-                  <span :class="`mt-2 text-xs font-semibold uppercase tracking-[0.2em] ${accent.value.text}`">
+                  <span :class="`mt-2 text-xs font-semibold uppercase tracking-[0.2em] ${accent.text}`">
                     {{ timerStore.mode === 'focus' ? timerKindLabel : timerStore.modeLabel }}
                   </span>
                 </div>
@@ -181,7 +181,7 @@ const statusLabel = computed(() => {
                       v-for="m in (['focus', 'shortBreak', 'longBreak'] as const)"
                       :key="m"
                       class="rounded-full px-3 py-1 transition-colors"
-                      :class="timerStore.mode === m ? accent.value.chip : 'bg-white text-slate-600 hover:bg-slate-100'"
+                      :class="timerStore.mode === m ? accent.chip : 'bg-white text-slate-600 hover:bg-slate-100'"
                       :disabled="timerStore.running || timerStore.paused"
                       @click="timerStore.setMode(m)"
                     >
@@ -234,7 +234,7 @@ const statusLabel = computed(() => {
                 <template v-if="timerStore.idle">
                   <button
                     class="flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow transition"
-                    :class="accent.value.button"
+                    :class="accent.button"
                     @click="handleStart"
                   >
                     <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">

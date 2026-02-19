@@ -1,4 +1,4 @@
-import type { TaskItem, HabitItem, ProjectItem, RecurringRuleItem } from '../../types/domain';
+import type { TaskItem, ProjectItem, RecurringRuleItem } from '../../types/domain';
 import { invokeCommand } from './invoke';
 
 interface SettingEntry {
@@ -8,7 +8,6 @@ interface SettingEntry {
 
 export interface AppInitData {
   tasks: TaskItem[];
-  habits: HabitItem[];
   settings: SettingEntry[];
   projects: ProjectItem[];
   recurringRules: RecurringRuleItem[];

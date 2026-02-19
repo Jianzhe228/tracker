@@ -6,7 +6,6 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 import { APP_NAME } from './utils/constants';
 import { useTimerStore } from './stores/timerStore';
 import { useTaskStore } from './stores/taskStore';
-import { useHabitStore } from './stores/habitStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { appInit } from './services/commands/init';
 import FocusModal from './components/FocusModal.vue';
@@ -24,7 +23,6 @@ const route = useRoute();
 const router = useRouter();
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
-const habitStore = useHabitStore();
 const settingsStore = useSettingsStore();
 
 onMounted(async () => {
@@ -36,7 +34,6 @@ onMounted(async () => {
   taskStore.loadFromData(data.tasks);
   taskStore.loadProjectsFromData(data.projects);
   taskStore.loadRecurringRulesFromData(data.recurringRules);
-  habitStore.loadFromData(data.habits);
 });
 
 // Modal states
@@ -306,26 +303,6 @@ const focusButtonLabel = computed(() => {
               <span v-if="!sidebarCollapsed">{{ project.title }}</span>
             </div>
             <span v-if="!sidebarCollapsed" class="text-xs text-slate-400">{{ getProjectTaskCount(project.id) }}</span>
-          </RouterLink>
-        </div>
-
-        <!-- Habits - 习惯 -->
-        <div class="mb-2 border-t border-slate-100 pt-2">
-          <RouterLink
-            to="/habits"
-            class="flex items-center rounded-lg text-sm transition-colors"
-            :class="[
-              sidebarCollapsed ? 'justify-center px-0 py-2' : 'gap-3 px-3 py-2',
-              isActive('/habits')
-                ? 'bg-slate-100 text-slate-900'
-                : 'text-slate-600 hover:bg-slate-50'
-            ]"
-            :title="sidebarCollapsed ? '习惯打卡' : undefined"
-          >
-            <svg class="h-4 w-4 shrink-0 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
-            <span v-if="!sidebarCollapsed">习惯打卡</span>
           </RouterLink>
         </div>
 

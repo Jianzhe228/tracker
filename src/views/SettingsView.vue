@@ -352,7 +352,7 @@ function testConnection(): void {
           <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="mb-4 text-lg font-semibold text-slate-800">数据导出</h2>
             <p class="mb-4 text-sm text-slate-500">
-              导出你的所有数据，包括任务、习惯、专注记录等。
+              导出你的所有数据，包括任务、专注记录等。
             </p>
             <div class="flex gap-3">
               <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40">

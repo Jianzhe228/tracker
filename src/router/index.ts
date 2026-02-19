@@ -48,12 +48,6 @@ const router = createRouter({
       component: () => import('../views/TasksView.vue'),
       props: true
     },
-    // Habits - 习惯
-    {
-      path: '/habits',
-      name: 'habits',
-      component: () => import('../views/HabitsView.vue')
-    },
     // Settings - 设置
     {
       path: '/settings',

@@ -8,7 +8,7 @@
 
 - 前端基础工程（Vite + Vue Router + Pinia + Tailwind）
 - `src-tauri` 基础工程（Tauri v2 配置 + Rust 命令入口）
-- 基础页面：仪表盘、任务、习惯、设置
+- 基础页面：仪表盘、任务、~~习惯~~、设置（习惯模块暂缓）
 - 前后端命令边界示例：`health_check` / `app_version`
 
 ## 本地初始化命令（你执行）
