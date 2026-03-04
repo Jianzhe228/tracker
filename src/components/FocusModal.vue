@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import { useTimerStore } from '../stores/timerStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useUiStore } from '../stores/uiStore';
 
 const emit = defineEmits<{
   close: []
@@ -9,14 +10,26 @@ const emit = defineEmits<{
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
+const uiStore = useUiStore();
 
 const activeTasks = computed(() => taskStore.tasks.filter(t => t.status === 'todo'));
-const selectedTaskId = ref<number | null>(timerStore.currentTaskId);
 const pauseDurationText = computed(() => {
   const minutes = Math.floor(timerStore.pauseDurationSeconds / 60);
   const seconds = timerStore.pauseDurationSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 });
+const currentFocusElapsedSeconds = computed(() => (
+  timerStore.mode === 'focus' && (timerStore.running || timerStore.paused)
+    ? (
+      timerStore.timerKind === 'countdown'
+        ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
+        : Math.max(0, timerStore.elapsedSeconds)
+    )
+    : 0
+));
+const focusMinutesToday = computed(() =>
+  Math.floor((timerStore.focusSecondsToday + currentFocusElapsedSeconds.value) / 60)
+);
 const isBreakMode = computed(() => timerStore.mode !== 'focus');
 const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '倒计时' : '正计时');
 
@@ -27,21 +40,11 @@ const strokeDashoffset = computed(() => {
 });
 
 function selectTask(taskId: number, taskTitle: string) {
-  const success = timerStore.setTask(taskId, taskTitle);
-  if (!success) {
-    window.alert('计时进行中，需先结束当前计时后再切换任务');
-    return;
-  }
-  selectedTaskId.value = taskId;
+  timerStore.setTask(taskId, taskTitle);
 }
 
 function clearSelectedTask() {
-  const success = timerStore.clearTask();
-  if (!success) {
-    window.alert('计时进行中，需先结束当前计时后再切换任务');
-    return;
-  }
-  selectedTaskId.value = null;
+  timerStore.clearTask();
 }
 
 function handleStart() {
@@ -63,13 +66,14 @@ function handleSkipBreak() {
 function handleExtendBreak() {
   const ok = timerStore.extendBreak();
   if (!ok) {
-    window.alert('休息最多可延长 3 次');
+    uiStore.notify('休息最多可延长 3 次');
   }
 }
 
-function handleStop() {
+async function handleStop() {
   const message = timerStore.mode === 'focus' ? '确定结束本次计时吗？' : '确定结束当前休息吗？';
-  if (!window.confirm(message)) return;
+  const confirmed = await uiStore.confirm(message, { title: '结束计时' });
+  if (!confirmed) return;
   timerStore.stop();
 }
 
@@ -148,6 +152,9 @@ onUnmounted(() => {
               从右侧任务列表中选择…
             </span>
             <span v-else class="text-sm text-white">{{ timerStore.currentTaskTitle }}</span>
+            <span v-if="timerStore.segmentSwitchCount > 0" class="rounded-full bg-indigo-500/30 px-2 py-0.5 text-xs text-indigo-200">
+              已切换 {{ timerStore.segmentSwitchCount }} 次
+            </span>
             <div v-if="timerStore.currentTaskTitle" class="flex gap-1" aria-hidden="true">
               <span class="h-2 w-2 rounded-full bg-red-400" />
               <span class="h-2 w-2 rounded-full bg-red-400" />
@@ -300,7 +307,7 @@ onUnmounted(() => {
             今日专注时间
           </div>
           <div class="mt-2 text-3xl font-light tabular-nums text-white">
-            <span class="text-4xl">{{ timerStore.completedPomodoros * 25 }}</span>
+            <span class="text-4xl">{{ focusMinutesToday }}</span>
             <span class="ml-1 text-lg text-white/60">分钟</span>
           </div>
         </div>
@@ -319,7 +326,7 @@ onUnmounted(() => {
               >
                 <button
                   class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-slate-700/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-                  :class="selectedTaskId === task.id ? 'bg-slate-700' : ''"
+                  :class="timerStore.currentTaskId === task.id ? 'bg-slate-700 ring-1 ring-emerald-500/50' : ''"
                   @click="selectTask(task.id, task.title)"
                 >
                   <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-500" aria-hidden="true" />

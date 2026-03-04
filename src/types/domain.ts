@@ -9,6 +9,7 @@ export interface TaskItem {
   projectId: number | null;
   parentId: number | null;
   dueAt: string | null;
+  startAt: string | null;
   reminderTime: string | null;
   completedAt: string | null;
   deletedAt: string | null;
@@ -54,4 +55,166 @@ export interface RecurringRuleItem {
   lastGeneratedDate: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FocusSession {
+  id: number;
+  taskId: number | null;
+  startTime: string;
+  endTime: string | null;
+  durationSeconds: number;
+  type: string;
+  status: string;
+  interruptionReason: string | null;
+  pomodoroCount: number;
+  createdAt: string;
+}
+
+export interface FocusSessionSegment {
+  id: number;
+  sessionId: number;
+  taskId: number | null;
+  startTime: string;
+  durationSeconds: number;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface NotificationSettings {
+  notifyFocusStart: boolean;
+  notifyFocusEnd: boolean;
+  notifyBreakEnd: boolean;
+  notifyDeadline: boolean;
+}
+
+export interface NotificationLogItem {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  payload: string | null;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface TimerSettings extends PomodoroSettings {
+  longBreakInterval: number;
+  autoStartBreak: boolean;
+  autoStartNext: boolean;
+}
+
+export interface HourlyBucket {
+  hour: number;
+  totalSeconds: number;
+  sessionCount: number;
+}
+
+export interface DailyTotal {
+  date: string;
+  totalSeconds: number;
+  pomodoroCount: number;
+  sessionCount: number;
+}
+
+export interface FocusSessionStats {
+  totalFocusSeconds: number;
+  totalPomodoros: number;
+  sessionCount: number;
+  hourlyDistribution: HourlyBucket[];
+  dailyTotals: DailyTotal[];
+}
+
+export interface ProjectTimeStat {
+  projectId: number | null;
+  projectTitle: string;
+  totalSeconds: number;
+  sessionCount: number;
+}
+
+export interface HeatmapEntry {
+  date: string;
+  focusSeconds: number;
+  taskCount: number;
+  pomodoroCount: number;
+}
+
+export interface DayHourDistributionEntry {
+  date: string;
+  hour: number;
+  totalSeconds: number;
+  sessionCount: number;
+  pomodoroCount: number;
+}
+
+export interface TaskCompletionStats {
+  total: number;
+  done: number;
+  todo: number;
+  cancelled: number;
+  overdue: number;
+}
+
+export interface EstimationComparison {
+  taskId: number;
+  taskTitle: string;
+  estimatedSeconds: number;
+  actualSeconds: number;
+  deviationPercentage: number;
+  completedAt: string;
+}
+
+export interface ExportResult {
+  path: string;
+  sizeBytes: number;
+}
+
+export interface SyncStatusResult {
+  lastSyncAt: string | null;
+}
+
+// AI dispatch architecture types (canonical definitions in services/ai/types.ts)
+export type { AiSkill, AiJob, AiAction } from '../services/ai/types';
+
+// ── Subtask Pattern (template library) ──────────────────────────────
+
+export interface SubtaskPattern {
+  id: number;
+  name: string;
+  keywords: string[];
+  subtasks: string[];
+  projectId: number | null;
+  isBuiltin: boolean;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Learn suggestion ────────────────────────────────────────────────
+
+export interface LearnSuggestion {
+  title: string;
+  score: number;
+  lastUsedAt: string;
+}
+
+// ── Keyword cluster ─────────────────────────────────────────────────
+
+export interface KeywordCluster {
+  id: number;
+  name: string;
+  keywords: string[];
+  confirmed: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Suggestion pipeline result ──────────────────────────────────────
+
+export type SuggestionSource = 'pattern' | 'learning' | 'ai' | 'none';
+
+export interface SuggestionResult {
+  source: SuggestionSource;
+  suggestions: string[];
+  patternName?: string;
 }

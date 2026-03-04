@@ -1,17 +1,23 @@
 <script setup lang="ts">
 console.time('[app] script setup → mounted');
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import { APP_NAME } from './utils/constants';
 import { useTimerStore } from './stores/timerStore';
 import { useTaskStore } from './stores/taskStore';
 import { useSettingsStore } from './stores/settingsStore';
+import { useUiStore } from './stores/uiStore';
+import { useAiStore } from './stores/aiStore';
 import { appInit } from './services/commands/init';
 import FocusModal from './components/FocusModal.vue';
+import AppFeedbackLayer from './components/AppFeedbackLayer.vue';
 import ProjectContextMenu from './components/ProjectContextMenu.vue';
 import ProjectFormPopover from './components/ProjectFormPopover.vue';
+import NotificationCenter from './components/NotificationCenter.vue';
 import type { ProjectItem } from './types/domain';
+import { ensureNotificationPermission } from './services/notification';
+import { webdavUpload, webdavDownload } from './services/commands/sync';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -24,6 +30,8 @@ const router = useRouter();
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
 const settingsStore = useSettingsStore();
+const uiStore = useUiStore();
+const aiStore = useAiStore();
 
 onMounted(async () => {
   console.timeEnd('[app] script setup → mounted');
@@ -34,10 +42,19 @@ onMounted(async () => {
   taskStore.loadFromData(data.tasks);
   taskStore.loadProjectsFromData(data.projects);
   taskStore.loadRecurringRulesFromData(data.recurringRules);
+  taskStore.startDeadlineWatcher();
+  ensureNotificationPermission().catch(console.error);
+  aiStore.init().catch(console.error);
 });
 
 // Modal states
 const showFocusModal = ref(false);
+
+// Reset scroll position on route change
+const mainRef = ref<HTMLElement | null>(null);
+watch(() => route.path, () => {
+  if (mainRef.value) mainRef.value.scrollTop = 0;
+});
 
 // Sidebar collapse
 const sidebarCollapsed = ref(false);
@@ -50,14 +67,12 @@ function toggleSidebar() {
 const smartLists = [
   { path: '/tasks/today', name: 'today', label: '今天', icon: 'sun', color: 'text-amber-500' },
   { path: '/tasks/tomorrow', name: 'tomorrow', label: '明天', icon: 'sunrise', color: 'text-orange-400' },
-  { path: '/tasks/week', name: 'week', label: '最近7天', icon: 'calendar', color: 'text-blue-500' },
   { path: '/tasks/all', name: 'all', label: '全部', icon: 'inbox', color: 'text-slate-500' },
-  { path: '/tasks/completed', name: 'completed', label: '已完成', icon: 'check', color: 'text-green-500' },
 ];
 
 const isActive = (path: string) => route.path === path;
 const isSmartListActive = () => route.path.startsWith('/tasks/');
-const noMainBottomPaddingRoutes = new Set(['today', 'tomorrow', 'week', 'all', 'completed', 'project']);
+const noMainBottomPaddingRoutes = new Set(['today', 'tomorrow', 'all', 'project']);
 const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(String(route.name || '')));
 
 function toDateInputValue(date: Date): string {
@@ -88,12 +103,8 @@ const getTaskCount = (filter: string) => {
       return tasks.filter(t => t.status === 'todo' && t.dueAt === getDateKeyFromToday(0)).length;
     case 'tomorrow':
       return tasks.filter(t => t.status === 'todo' && t.dueAt === getDateKeyFromToday(1)).length;
-    case 'week':
-      return tasks.filter(t => t.status === 'todo' && isDateInRecent7Days(t.dueAt)).length;
     case 'all':
-      return tasks.filter(t => t.status === 'todo').length;
-    case 'completed':
-      return tasks.filter(t => t.status === 'done').length;
+      return tasks.filter(t => t.status !== 'cancelled').length;
     default:
       return 0;
   }
@@ -109,6 +120,44 @@ function openFocusModal() {
 
 function closeFocusModal() {
   showFocusModal.value = false;
+}
+
+// WebDAV sync
+const syncing = ref(false);
+const downloading = ref(false);
+
+async function handleWebDavSync(): Promise<void> {
+  const { url, username, password, path } = settingsStore.webdav;
+  if (!url || syncing.value) return;
+  syncing.value = true;
+  try {
+    await webdavUpload(url, username, password, path);
+    uiStore.notify('同步成功');
+  } catch (e: any) {
+    uiStore.notify(`同步失败：${e?.message || e}`, 5000);
+  } finally {
+    syncing.value = false;
+  }
+}
+
+async function handleWebDavDownload(): Promise<void> {
+  const { url, username, password, path } = settingsStore.webdav;
+  if (!url || downloading.value) return;
+  const confirmed = await uiStore.confirm(
+    '从云端拉取将覆盖本地数据（已自动备份），确定继续？',
+    { title: '拉取云端数据', confirmText: '确认拉取' },
+  );
+  if (!confirmed) return;
+  downloading.value = true;
+  try {
+    const msg = await webdavDownload(url, username, password, path);
+    uiStore.notify(msg + '，页面即将刷新…');
+    setTimeout(() => window.location.reload(), 1000);
+  } catch (e: any) {
+    uiStore.notify(`拉取失败：${e?.message || e}`, 5000);
+  } finally {
+    downloading.value = false;
+  }
 }
 
 // Project management state
@@ -145,16 +194,17 @@ function handleProjectContextAction(key: string) {
     projectFormAnchorEl.value = el;
     showProjectForm.value = true;
   } else if (key === 'delete') {
-    confirmDeleteProject(project);
+    void confirmDeleteProject(project);
   }
 }
 
-function confirmDeleteProject(project: ProjectItem) {
+async function confirmDeleteProject(project: ProjectItem): Promise<void> {
   const taskCount = taskStore.tasks.filter(t => t.projectId === project.id && t.status === 'todo').length;
   const message = taskCount > 0
     ? `确定删除清单「${project.title}」吗？其中 ${taskCount} 个任务将移至收集箱。`
     : `确定删除清单「${project.title}」吗？`;
-  if (!window.confirm(message)) return;
+  const confirmed = await uiStore.confirm(message, { title: '删除清单', confirmText: '删除' });
+  if (!confirmed) return;
   // Navigate away if viewing the deleted project
   if (route.path === `/project/${project.id}`) {
     router.push('/tasks/all');
@@ -181,6 +231,40 @@ const focusButtonLabel = computed(() => {
   if (timerStore.running) return '专注中';
   if (timerStore.paused) return '已暂停';
   return '开始专注';
+});
+
+const focusButtonSubLabel = computed(() => {
+  if (timerStore.running) return '专注进行中';
+  if (timerStore.paused) return '已暂停，点击继续管理';
+  return '打开专注面板';
+});
+
+const focusButtonTone = computed(() => {
+  if (timerStore.running) {
+    return {
+      shell: 'border-slate-700/80 bg-slate-900/95',
+      chip: 'border-emerald-300/30 bg-emerald-500/15 text-emerald-100',
+      subLabel: 'text-emerald-200/80',
+      pulse: 'bg-emerald-300',
+      arrow: 'bg-emerald-500/20 ring-1 ring-emerald-300/35',
+    };
+  }
+  if (timerStore.paused) {
+    return {
+      shell: 'border-slate-700/80 bg-slate-900/95',
+      chip: 'border-amber-300/30 bg-amber-500/15 text-amber-100',
+      subLabel: 'text-amber-200/80',
+      pulse: 'bg-amber-200',
+      arrow: 'bg-amber-500/20 ring-1 ring-amber-300/35',
+    };
+  }
+  return {
+    shell: 'border-slate-700/80 bg-slate-900/95',
+    chip: 'border-sky-300/30 bg-sky-500/15 text-sky-100',
+    subLabel: 'text-slate-300/80',
+    pulse: 'bg-sky-200',
+    arrow: 'bg-slate-700/70 ring-1 ring-white/20',
+  };
 });
 </script>
 
@@ -305,50 +389,53 @@ const focusButtonLabel = computed(() => {
             <span v-if="!sidebarCollapsed" class="text-xs text-slate-400">{{ getProjectTaskCount(project.id) }}</span>
           </RouterLink>
         </div>
+      </nav>
 
-        <!-- Settings - 设置 -->
-        <div>
+      <!-- Bottom toolbar: Notification, Settings, Sync -->
+      <div class="border-t border-slate-100 p-3" :class="sidebarCollapsed ? 'px-1.5' : ''">
+        <div
+          class="flex items-center rounded-lg"
+          :class="sidebarCollapsed ? 'flex-col gap-2 px-0 py-2' : 'gap-1 px-2 py-1.5'"
+        >
+          <NotificationCenter />
           <RouterLink
             to="/settings"
-            class="flex items-center rounded-lg text-sm transition-colors"
-            :class="[
-              sidebarCollapsed ? 'justify-center px-0 py-2' : 'gap-3 px-3 py-2',
-              isActive('/settings')
-                ? 'bg-slate-100 text-slate-900'
-                : 'text-slate-600 hover:bg-slate-50'
-            ]"
-            :title="sidebarCollapsed ? '设置' : undefined"
+            class="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            :class="isActive('/settings') ? 'bg-slate-100 text-slate-900' : ''"
+            :title="'设置'"
+            aria-label="设置"
           >
-            <svg class="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span v-if="!sidebarCollapsed">设置</span>
           </RouterLink>
-        </div>
-      </nav>
-
-      <!-- User Profile & Sync -->
-      <div class="border-t border-slate-100 p-3" :class="sidebarCollapsed ? 'px-1.5' : ''">
-        <div
-          class="flex items-center rounded-lg hover:bg-slate-50"
-          :class="sidebarCollapsed ? 'justify-center px-0 py-2' : 'gap-3 px-2 py-2'"
-        >
-          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200">
-            <svg class="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </div>
           <template v-if="!sidebarCollapsed">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-slate-700">用户</p>
-              <p class="text-xs text-slate-400">未登录</p>
-            </div>
-            <button class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="同步">
+            <button
+              class="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              :class="{ 'animate-pulse text-blue-500': syncing }"
+              :disabled="syncing || !settingsStore.webdav.url"
+              :title="settingsStore.webdav.url ? '上传到云端' : '请先在设置中配置 WebDAV'"
+              aria-label="WebDAV 上传"
+              @click="handleWebDavSync"
+            >
               <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
             </button>
+            <button
+              class="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              :class="{ 'animate-pulse text-blue-500': downloading }"
+              :disabled="downloading || !settingsStore.webdav.url"
+              :title="settingsStore.webdav.url ? '从云端拉取' : '请先在设置中配置 WebDAV'"
+              aria-label="WebDAV 拉取"
+              @click="handleWebDavDownload"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+              </svg>
+            </button>
+            <span v-if="syncing || downloading" class="ml-1 text-xs text-slate-400">{{ syncing ? '上传中…' : '拉取中…' }}</span>
           </template>
         </div>
       </div>
@@ -357,26 +444,42 @@ const focusButtonLabel = computed(() => {
     <!-- Main Content -->
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Router View -->
-      <main class="flex-1 overflow-auto" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
+      <main ref="mainRef" class="flex-1 overflow-auto" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
         <RouterView />
       </main>
     </div>
 
     <!-- Bottom Focus Button -->
-    <div class="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
+    <div class="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
       <button
-        class="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-800 px-5 py-2.5 text-white shadow-lg transition-colors hover:bg-slate-700"
+        class="pointer-events-auto group relative inline-flex w-full max-w-[21rem] items-center gap-3 overflow-hidden rounded-full border border-slate-700/70 px-3 py-2.5 text-white shadow-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40"
+        :class="focusButtonTone.shell"
         @click="openFocusModal"
       >
-        <div class="flex h-6 min-w-[3rem] items-center justify-center rounded bg-slate-700 px-2 text-xs font-bold">
+        <div
+          class="relative flex h-10 min-w-[4.75rem] items-center justify-center rounded-xl border px-2.5 font-mono text-lg font-semibold leading-none tabular-nums tracking-tight"
+          :class="focusButtonTone.chip"
+        >
           {{ focusButtonTime }}
         </div>
-        <span class="max-w-32 truncate text-sm">
-          {{ focusButtonLabel }}
-        </span>
-        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8 5v14l11-7z" />
-        </svg>
+
+        <div class="relative min-w-0 flex-1 text-left">
+          <p class="truncate text-sm font-semibold leading-tight text-white/95">
+            {{ focusButtonLabel }}
+          </p>
+          <p class="mt-0.5 text-[11px] font-medium" :class="focusButtonTone.subLabel">
+            {{ focusButtonSubLabel }}
+          </p>
+        </div>
+
+        <div class="relative flex items-center gap-2 pr-1">
+          <span class="h-2 w-2 rounded-full opacity-90" :class="focusButtonTone.pulse" />
+          <span class="flex h-8 w-8 items-center justify-center rounded-full transition-colors group-hover:bg-white/16" :class="focusButtonTone.arrow">
+            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+        </div>
       </button>
     </div>
 
@@ -404,5 +507,7 @@ const focusButtonLabel = computed(() => {
       @save="handleProjectFormSave"
       @close="showProjectForm = false"
     />
+
+    <AppFeedbackLayer />
   </div>
 </template>

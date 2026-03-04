@@ -1,11 +1,23 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 import { useSettingsStore } from './settingsStore';
-import { notify } from '../services/notification';
+import { useUiStore } from './uiStore';
+import { sendNotification } from '../services/notification';
+import { createFocusSession } from '../services/commands/focusSession';
+
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 export type TimerMode = 'focus' | 'shortBreak' | 'longBreak';
 export type TimerStatus = 'idle' | 'running' | 'paused';
 export type TimerKind = 'countdown' | 'countup';
+
+export type TimerSegment = {
+  taskId: number | null;
+  taskTitle: string | null;
+  startedAt: number; // Date.now()
+  durationMs: number; // accumulated duration in ms (finalized when segment is closed)
+  closed: boolean;
+};
 
 type PersistedTimerState = {
   version: number;
@@ -16,6 +28,7 @@ type PersistedTimerState = {
   elapsedSeconds: number;
   totalSeconds: number;
   completedPomodoros: number;
+  focusSecondsToday: number;
   pomodoroDateKey: string;
   breakExtendCount: number;
   currentTaskId: number | null;
@@ -25,6 +38,8 @@ type PersistedTimerState = {
   pauseStartedAt: number | null;
   pauseDurationSeconds: number;
   accumulatedPauseMs: number;
+  segments: Array<{ taskId: number | null; taskTitle: string | null; startedAt: number; durationMs: number; closed: boolean }>;
+  segmentSwitchCount: number;
 };
 
 type SessionStatus = 'completed' | 'stopped' | 'breakSkipped';
@@ -83,6 +98,7 @@ function playTone(kind: 'start' | 'complete' | 'breakEnd'): void {
 
 export const useTimerStore = defineStore('timer', () => {
   const settingsStore = useSettingsStore();
+  const uiStore = useUiStore();
 
   const status = ref<TimerStatus>('idle');
   const mode = ref<TimerMode>('focus');
@@ -91,6 +107,7 @@ export const useTimerStore = defineStore('timer', () => {
   const remainingSeconds = ref<number>(0);
   const elapsedSeconds = ref<number>(0);
   const completedPomodoros = ref(0);
+  const focusSecondsToday = ref(0);
   const pomodoroDateKey = ref(getTodayKey());
   const breakExtendCount = ref(0);
   const pauseWarning = ref(false);
@@ -100,6 +117,9 @@ export const useTimerStore = defineStore('timer', () => {
   const currentTaskTitle = ref<string | null>(null);
   const awaitingRecovery = ref(false);
   const recoveryTargetStatus = ref<TimerStatus | null>(null);
+  const lastFocusSessionSavedAt = ref<number>(0);
+  const segments = ref<TimerSegment[]>([]);
+  const segmentSwitchCount = ref(0);
 
   const startedAt = ref<number | null>(null);
   const lastTickAt = ref<number | null>(null);
@@ -159,7 +179,39 @@ export const useTimerStore = defineStore('timer', () => {
     if (pomodoroDateKey.value !== todayKey) {
       pomodoroDateKey.value = todayKey;
       completedPomodoros.value = 0;
+      focusSecondsToday.value = 0;
     }
+  }
+
+  function closeCurrentSegment(): void {
+    const segs = segments.value;
+    if (segs.length === 0) return;
+    const last = segs[segs.length - 1];
+    if (last.closed) return;
+    // Calculate duration: time from startedAt to now, minus any current pause
+    const now = Date.now();
+    let elapsed = now - last.startedAt;
+    // Subtract current ongoing pause if paused
+    if (pauseStartedAt.value) {
+      elapsed -= (now - pauseStartedAt.value);
+    }
+    last.durationMs = Math.max(0, elapsed);
+    last.closed = true;
+  }
+
+  function openNewSegment(taskId: number | null, taskTitle: string | null): void {
+    segments.value.push({
+      taskId,
+      taskTitle,
+      startedAt: Date.now(),
+      durationMs: 0,
+      closed: false,
+    });
+  }
+
+  function resetSegments(): void {
+    segments.value = [];
+    segmentSwitchCount.value = 0;
   }
 
   function saveState(force = false): void {
@@ -177,6 +229,7 @@ export const useTimerStore = defineStore('timer', () => {
       elapsedSeconds: elapsedSeconds.value,
       totalSeconds: totalSeconds.value,
       completedPomodoros: completedPomodoros.value,
+      focusSecondsToday: focusSecondsToday.value,
       pomodoroDateKey: pomodoroDateKey.value,
       breakExtendCount: breakExtendCount.value,
       currentTaskId: currentTaskId.value,
@@ -185,7 +238,9 @@ export const useTimerStore = defineStore('timer', () => {
       lastTickAt: lastTickAt.value,
       pauseStartedAt: pauseStartedAt.value,
       pauseDurationSeconds: pauseDurationSeconds.value,
-      accumulatedPauseMs: accumulatedPauseMs.value
+      accumulatedPauseMs: accumulatedPauseMs.value,
+      segments: segments.value.map(s => ({ taskId: s.taskId, taskTitle: s.taskTitle, startedAt: s.startedAt, durationMs: s.durationMs, closed: s.closed })),
+      segmentSwitchCount: segmentSwitchCount.value,
     };
 
     for (let i = 0; i < 3; i++) {
@@ -226,14 +281,32 @@ export const useTimerStore = defineStore('timer', () => {
     }
   }
 
-  function recordSession(statusLabel: SessionStatus, pomodoros: number, note?: string): void {
+  function recordSession(statusLabel: SessionStatus, spentSeconds: number, pomodoros: number, note?: string): void {
     const finishedAt = new Date().toISOString();
-    const spentSeconds = timerKind.value === 'countdown'
-      ? Math.max(0, totalSeconds.value - remainingSeconds.value)
-      : elapsedSeconds.value;
+
+    // Close last segment before building payload
+    closeCurrentSegment();
+
+    // Determine the primary task_id: the task with the longest total duration across segments
+    let primaryTaskId = currentTaskId.value;
+    if (segments.value.length > 1) {
+      const taskDurations = new Map<number | null, number>();
+      for (const seg of segments.value) {
+        const prev = taskDurations.get(seg.taskId) || 0;
+        taskDurations.set(seg.taskId, prev + seg.durationMs);
+      }
+      let maxDuration = -1;
+      for (const [tid, dur] of taskDurations) {
+        if (dur > maxDuration) {
+          maxDuration = dur;
+          primaryTaskId = tid;
+        }
+      }
+    }
+
     const entry: SessionLog = {
       id: `${Date.now()}`,
-      taskId: currentTaskId.value,
+      taskId: primaryTaskId,
       taskTitle: currentTaskTitle.value,
       status: statusLabel,
       note,
@@ -243,6 +316,43 @@ export const useTimerStore = defineStore('timer', () => {
       pomodoros
     };
     appendSessionLog(entry);
+
+    // Persist focus sessions to SQLite (fire-and-forget)
+    if (isTauri && spentSeconds > 0 && mode.value === 'focus') {
+      const sessionStartTime = startedAt.value
+        ? new Date(startedAt.value).toISOString()
+        : new Date(Date.now() - spentSeconds * 1000).toISOString();
+
+      // Build segments payload
+      const segmentsPayload = segments.value.length > 0
+        ? segments.value.map((seg, idx) => ({
+            taskId: seg.taskId,
+            startTime: new Date(seg.startedAt).toISOString(),
+            durationSeconds: Math.max(0, Math.round(seg.durationMs / 1000)),
+            sortOrder: idx,
+          }))
+        : undefined;
+
+      createFocusSession({
+        taskId: primaryTaskId,
+        startTime: sessionStartTime,
+        endTime: finishedAt,
+        durationSeconds: spentSeconds,
+        type: 'focus',
+        status: statusLabel,
+        interruptionReason: note,
+        pomodoroCount: pomodoros,
+        segments: segmentsPayload,
+      })
+        .then(() => {
+          lastFocusSessionSavedAt.value = Date.now();
+        })
+        .catch((err) => {
+          console.warn('[timer] failed to persist focus session to SQLite', err);
+        });
+    }
+
+    resetSegments();
   }
 
   function startTicker(): void {
@@ -276,6 +386,7 @@ export const useTimerStore = defineStore('timer', () => {
     accumulatedPauseMs.value = 0;
     awaitingRecovery.value = false;
     recoveryTargetStatus.value = null;
+    resetSegments();
     stopTicker();
     saveState(true);
   }
@@ -323,9 +434,20 @@ export const useTimerStore = defineStore('timer', () => {
     accumulatedPauseMs.value = 0;
     awaitingRecovery.value = false;
     recoveryTargetStatus.value = null;
+    // Initialize segments for focus mode
+    if (mode.value === 'focus') {
+      resetSegments();
+      openNewSegment(currentTaskId.value, currentTaskTitle.value);
+    }
     startTicker();
     if (mode.value === 'focus') {
-      notify(`开始专注：${currentTaskTitle.value || '专注任务'}`);
+      if (settingsStore.notification.notifyFocusStart) {
+        sendNotification({
+          type: 'focusStart',
+          title: 'Tracker',
+          body: `开始专注：${currentTaskTitle.value || '专注任务'}`,
+        });
+      }
       playTone('start');
     }
     saveState(true);
@@ -363,16 +485,40 @@ export const useTimerStore = defineStore('timer', () => {
     const spentSeconds = timerKind.value === 'countdown'
       ? Math.max(0, totalSeconds.value - remainingSeconds.value)
       : elapsedSeconds.value;
-    const pomodorosEarned = Math.max(1, Math.ceil(spentSeconds / focusSeconds));
+    const pomodorosEarned = statusLabel === 'completed'
+      ? Math.max(1, Math.floor(spentSeconds / focusSeconds))
+      : Math.max(0, Math.floor(spentSeconds / focusSeconds));
+    focusSecondsToday.value += spentSeconds;
     completedPomodoros.value += pomodorosEarned;
-    recordSession(statusLabel, pomodorosEarned, note);
+    recordSession(statusLabel, spentSeconds, pomodorosEarned, note);
 
-    if (startBreak) {
-      const useLongBreak = completedPomodoros.value > 0 && completedPomodoros.value % 4 === 0;
+    const longBreakInterval = settingsStore.timer.longBreakInterval || 4;
+    if (startBreak && settingsStore.timer.autoStartBreak !== false) {
+      const useLongBreak = completedPomodoros.value > 0 && completedPomodoros.value % longBreakInterval === 0;
       const nextBreak: TimerMode = useLongBreak ? 'longBreak' : 'shortBreak';
-      notify(`专注结束，进入${useLongBreak ? '长休息' : '休息'} (${useLongBreak ? 15 : 5} 分钟)`);
+      if (settingsStore.notification.notifyFocusEnd) {
+        const breakMinutes = useLongBreak
+          ? settingsStore.timer.longBreakMinutes
+          : settingsStore.timer.shortBreakMinutes;
+        sendNotification({
+          type: 'focusEnd',
+          title: 'Tracker',
+          body: `专注结束，进入${useLongBreak ? '长休息' : '休息'} (${breakMinutes} 分钟)`,
+        });
+      }
       playTone('complete');
       startBreakCountdown(nextBreak);
+    } else if (startBreak) {
+      // autoStartBreak is off: notify and go idle
+      if (settingsStore.notification.notifyFocusEnd) {
+        sendNotification({
+          type: 'focusEnd',
+          title: 'Tracker',
+          body: '专注结束',
+        });
+      }
+      playTone('complete');
+      resetToIdleFocus();
     } else {
       resetToIdleFocus();
     }
@@ -415,7 +561,11 @@ export const useTimerStore = defineStore('timer', () => {
       );
       pauseWarning.value = pauseDurationSeconds.value >= PAUSE_WARNING_SECONDS;
       if (mode.value === 'focus' && pauseDurationSeconds.value >= PAUSE_FORCE_STOP_SECONDS) {
-        notify('暂停超时，已自动结束本次计时');
+        sendNotification({
+          type: 'pauseTimeout',
+          title: 'Tracker',
+          body: '暂停超时，已自动结束本次计时',
+        });
         finalizeFocusSession('stopped', false, 'pause_timeout');
         return;
       }
@@ -441,14 +591,25 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   function completeBreak(): void {
-    notify('休息结束，开始下一个番茄');
+    if (settingsStore.notification.notifyBreakEnd) {
+      sendNotification({
+        type: 'breakEnd',
+        title: 'Tracker',
+        body: '休息结束，开始下一个番茄',
+      });
+    }
     playTone('breakEnd');
-    resetToIdleFocus();
+    if (settingsStore.timer.autoStartNext) {
+      resetToIdleFocus();
+      start();
+    } else {
+      resetToIdleFocus();
+    }
   }
 
   function skipBreak(): void {
     if (mode.value === 'focus') return;
-    recordSession('breakSkipped', 0);
+    recordSession('breakSkipped', 0, 0);
     resetToIdleFocus();
   }
 
@@ -464,17 +625,38 @@ export const useTimerStore = defineStore('timer', () => {
 
   function stop(): void {
     if (mode.value === 'focus') {
-      finalizeFocusSession('completed', true);
+      finalizeFocusSession('stopped', false, 'manual_stop');
       return;
     }
     skipBreak();
   }
 
   function setTask(taskId: number, taskTitle: string): boolean {
+    const isTimerActive = !idle.value && mode.value === 'focus';
     const switchingTask = currentTaskId.value !== null && currentTaskId.value !== taskId;
-    if (!idle.value && switchingTask) {
-      return false;
+
+    if (isTimerActive && switchingTask) {
+      // Close current segment and open a new one
+      closeCurrentSegment();
+      currentTaskId.value = taskId;
+      currentTaskTitle.value = taskTitle;
+      openNewSegment(taskId, taskTitle);
+      segmentSwitchCount.value++;
+      saveState(true);
+      return true;
     }
+
+    if (isTimerActive && currentTaskId.value === null) {
+      // Assigning a task mid-session (was null before)
+      closeCurrentSegment();
+      currentTaskId.value = taskId;
+      currentTaskTitle.value = taskTitle;
+      openNewSegment(taskId, taskTitle);
+      segmentSwitchCount.value++;
+      saveState(true);
+      return true;
+    }
+
     currentTaskId.value = taskId;
     currentTaskTitle.value = taskTitle;
     saveState(true);
@@ -482,9 +664,19 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   function clearTask(): boolean {
-    if (!idle.value && currentTaskId.value !== null) {
-      return false;
+    const isTimerActive = !idle.value && mode.value === 'focus';
+
+    if (isTimerActive && currentTaskId.value !== null) {
+      // Close current segment, open a null-task segment
+      closeCurrentSegment();
+      currentTaskId.value = null;
+      currentTaskTitle.value = null;
+      openNewSegment(null, null);
+      segmentSwitchCount.value++;
+      saveState(true);
+      return true;
     }
+
     currentTaskId.value = null;
     currentTaskTitle.value = null;
     saveState(true);
@@ -503,6 +695,7 @@ export const useTimerStore = defineStore('timer', () => {
 
     pomodoroDateKey.value = restored.pomodoroDateKey || getTodayKey();
     completedPomodoros.value = pomodoroDateKey.value === getTodayKey() ? restored.completedPomodoros : 0;
+    focusSecondsToday.value = pomodoroDateKey.value === getTodayKey() ? (restored.focusSecondsToday || 0) : 0;
     mode.value = restored.mode || 'focus';
     timerKind.value = restored.timerKind || 'countdown';
     totalSeconds.value = restored.totalSeconds || getDefaultSeconds(mode.value);
@@ -516,6 +709,14 @@ export const useTimerStore = defineStore('timer', () => {
     pauseStartedAt.value = restored.pauseStartedAt ?? null;
     pauseDurationSeconds.value = restored.pauseDurationSeconds ?? 0;
     accumulatedPauseMs.value = restored.accumulatedPauseMs ?? 0;
+    segments.value = (restored.segments || []).map(s => ({
+      taskId: s.taskId,
+      taskTitle: s.taskTitle,
+      startedAt: s.startedAt,
+      durationMs: s.durationMs,
+      closed: s.closed,
+    }));
+    segmentSwitchCount.value = restored.segmentSwitchCount || 0;
 
     if (restored.status === 'running') {
       const elapsed = restored.lastTickAt ? Math.max(0, Math.floor((Date.now() - restored.lastTickAt) / 1000)) : 0;
@@ -539,7 +740,9 @@ export const useTimerStore = defineStore('timer', () => {
       awaitingRecovery.value = true;
       recoveryTargetStatus.value = 'running';
       startTicker();
-      setTimeout(promptRecovery, 0);
+      setTimeout(() => {
+        void promptRecovery();
+      }, 0);
     } else if (restored.status === 'paused') {
       status.value = 'paused';
       const pausedSeconds = pauseStartedAt.value ? Math.floor((Date.now() - pauseStartedAt.value) / 1000) : pauseDurationSeconds.value;
@@ -548,7 +751,9 @@ export const useTimerStore = defineStore('timer', () => {
       awaitingRecovery.value = true;
       recoveryTargetStatus.value = 'paused';
       startTicker();
-      setTimeout(promptRecovery, 0);
+      setTimeout(() => {
+        void promptRecovery();
+      }, 0);
     } else {
       status.value = 'idle';
     }
@@ -556,9 +761,14 @@ export const useTimerStore = defineStore('timer', () => {
     saveState(true);
   }
 
-  function promptRecovery(): void {
+  async function promptRecovery(): Promise<void> {
     if (!awaitingRecovery.value) return;
-    const confirmResume = window.confirm('检测到未完成的番茄钟，是否继续？');
+    const confirmResume = await uiStore.confirm('检测到未完成的番茄钟，是否继续？', {
+      title: '恢复计时',
+      confirmText: '继续',
+      cancelText: '放弃',
+    });
+    if (!awaitingRecovery.value) return;
     awaitingRecovery.value = false;
     if (!confirmResume) {
       resetToIdleFocus();
@@ -590,12 +800,16 @@ export const useTimerStore = defineStore('timer', () => {
     elapsedSeconds,
     totalSeconds,
     completedPomodoros,
+    focusSecondsToday,
+    lastFocusSessionSavedAt,
     currentTaskId,
     currentTaskTitle,
     breakExtendCount,
     pauseWarning,
     pauseDurationSeconds,
     awaitingRecovery,
+    segments,
+    segmentSwitchCount,
     running,
     paused,
     idle,

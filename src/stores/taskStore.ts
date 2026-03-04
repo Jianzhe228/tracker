@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import type { TaskItem, ProjectItem, RecurringRuleItem } from '../types/domain';
+import type { TaskItem, ProjectItem, RecurringRuleItem, TaskStatus } from '../types/domain';
 import {
   listTasks as listTasksCmd,
   createTask as createTaskCmd,
@@ -10,6 +10,8 @@ import {
   restoreTask as restoreTaskCmd,
 } from '../services/commands/task';
 import { createProject as createProjectCmd, updateProject as updateProjectCmd, deleteProject as deleteProjectCmd } from '../services/commands/project';
+import { sendNotification } from '../services/notification';
+import { useSettingsStore } from './settingsStore';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -19,6 +21,14 @@ type PendingUndoDeletion = {
   expiresAt: number;
   removedTasks: TaskItem[];
   previousOrder: number[];
+};
+
+type ToggleTaskResult = {
+  ok: boolean;
+  reason?: 'not_found' | 'has_incomplete_subtasks' | 'sync_failed';
+  taskId?: number;
+  parentId?: number | null;
+  shouldPromptCompleteParent?: boolean;
 };
 
 export const useTaskStore = defineStore('task', () => {
@@ -43,6 +53,7 @@ export const useTaskStore = defineStore('task', () => {
       projectId: options.projectId ?? null,
       parentId: options.parentId ?? null,
       dueAt: options.dueAt ?? null,
+      startAt: options.startAt ?? null,
       reminderTime: options.reminderTime ?? null,
       completedAt: null,
       deletedAt: null,
@@ -124,30 +135,62 @@ export const useTaskStore = defineStore('task', () => {
     tasks.value = await listTasksCmd();
   }
 
-  async function addTask(title: string, options: TaskCreateOptions = {}): Promise<void> {
+  async function addTask(title: string, options: TaskCreateOptions = {}): Promise<TaskItem> {
     const task = buildTask(title, options);
     if (isTauri) {
       const created = await createTaskCmd(task);
       tasks.value.unshift(created);
-      return;
+      return created;
     }
     tasks.value.unshift(task);
+    return task;
   }
 
-  function cascadeComplete(parentId: number, now: string): void {
-    for (const task of tasks.value) {
-      if (task.parentId === parentId && task.status !== 'done' && task.status !== 'cancelled') {
-        task.status = 'done';
-        task.completedAt = now;
-        task.updatedAt = now;
-        cascadeComplete(task.id, now);
-      }
+  function getDirectSubtasks(parentId: number): TaskItem[] {
+    return tasks.value.filter((task) => task.parentId === parentId);
+  }
+
+  function hasIncompleteDirectSubtasks(parentId: number): boolean {
+    return getDirectSubtasks(parentId).some((task) => task.status !== 'done' && task.status !== 'cancelled');
+  }
+
+  function areAllDirectSubtasksDone(parentId: number): boolean {
+    const subtasks = getDirectSubtasks(parentId);
+    if (subtasks.length === 0) return false;
+    return subtasks.every((task) => task.status === 'done' || task.status === 'cancelled');
+  }
+
+  function completeOverdueRecurringSiblings(ruleId: number, excludeId: number): void {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const now = new Date().toISOString();
+    const siblings = tasks.value.filter(
+      (t) => t.recurringRuleId === ruleId
+        && t.id !== excludeId
+        && t.status === 'todo'
+        && t.dueAt != null
+        && t.dueAt < todayKey
+    );
+    for (const sibling of siblings) {
+      sibling.status = 'done';
+      sibling.completedAt = now;
+      sibling.updatedAt = now;
+    }
+    if (isTauri && siblings.length > 0) {
+      // Fire-and-forget backend sync
+      Promise.all(
+        siblings.map((s) => updateTaskCmd({ id: s.id, status: 'done', completedAt: now, updatedAt: now }))
+      ).catch((err) => console.error('Failed to cascade-complete recurring siblings:', err));
     }
   }
 
-  async function toggleTask(id: number): Promise<boolean> {
+  async function toggleTask(id: number): Promise<ToggleTaskResult> {
     const target = tasks.value.find((task) => task.id === id);
-    if (!target) return false;
+    if (!target) {
+      return {
+        ok: false,
+        reason: 'not_found',
+      };
+    }
 
     const snapshot = tasks.value.map((task) => ({
       id: task.id,
@@ -156,16 +199,51 @@ export const useTaskStore = defineStore('task', () => {
       updatedAt: task.updatedAt,
     }));
 
-    const now = new Date().toISOString();
-    const wasTodo = target.status === 'todo';
-    target.status = wasTodo ? 'done' : 'todo';
-    target.updatedAt = now;
-    target.completedAt = wasTodo ? now : null;
-    if (wasTodo) {
-      cascadeComplete(id, now);
+    const nextStatus = target.status === 'done' ? 'todo' : 'done';
+    if (nextStatus === 'done' && hasIncompleteDirectSubtasks(target.id)) {
+      return {
+        ok: false,
+        reason: 'has_incomplete_subtasks',
+        taskId: id,
+      };
     }
 
-    if (!isTauri) return true;
+    const now = new Date().toISOString();
+
+    target.status = nextStatus;
+    target.updatedAt = now;
+    target.completedAt = nextStatus === 'done' ? now : null;
+
+    if (target.parentId != null && nextStatus !== 'done') {
+      // Propagate not-done status up the entire ancestor chain
+      let currentId: number | null = target.parentId;
+      while (currentId != null) {
+        const ancestor = tasks.value.find((task) => task.id === currentId);
+        if (!ancestor || ancestor.status !== 'done') break;
+        ancestor.status = 'todo';
+        ancestor.completedAt = null;
+        ancestor.updatedAt = now;
+        currentId = ancestor.parentId;
+      }
+    }
+
+    const shouldPromptCompleteParent = target.parentId != null
+      && nextStatus === 'done'
+      && areAllDirectSubtasksDone(target.parentId);
+
+    // Cascade-complete overdue siblings of the same recurring rule
+    if (nextStatus === 'done' && target.recurringRuleId != null) {
+      completeOverdueRecurringSiblings(target.recurringRuleId, id);
+    }
+
+    if (!isTauri) {
+      return {
+        ok: true,
+        taskId: id,
+        parentId: target.parentId,
+        shouldPromptCompleteParent,
+      };
+    }
 
     try {
       await updateTaskCmd({
@@ -174,7 +252,12 @@ export const useTaskStore = defineStore('task', () => {
         updatedAt: now,
         completedAt: target.completedAt,
       });
-      return true;
+      return {
+        ok: true,
+        taskId: id,
+        parentId: target.parentId,
+        shouldPromptCompleteParent,
+      };
     } catch (error) {
       console.error(error);
       const snapshotById = new Map(snapshot.map((item) => [item.id, item]));
@@ -185,7 +268,19 @@ export const useTaskStore = defineStore('task', () => {
         task.completedAt = saved.completedAt;
         task.updatedAt = saved.updatedAt;
       }
-      return false;
+
+      const message = typeof error === 'string'
+        ? error
+        : (error instanceof Error ? error.message : '');
+      const reason = message.includes('unfinished subtasks')
+        ? 'has_incomplete_subtasks'
+        : 'sync_failed';
+
+      return {
+        ok: false,
+        reason,
+        taskId: id,
+      };
     }
   }
 
@@ -193,11 +288,24 @@ export const useTaskStore = defineStore('task', () => {
     const target = tasks.value.find((task) => task.id === id);
     if (!target) return;
 
+    if (payload.status === 'done' && hasIncompleteDirectSubtasks(id)) {
+      throw new Error('has_incomplete_subtasks');
+    }
+
     const snapshot = tasks.value.map((task) => ({ ...task }));
     const now = new Date().toISOString();
     Object.assign(target, payload, { updatedAt: now });
-    if (payload.status === 'done') {
-      cascadeComplete(id, now);
+
+    if (payload.status && payload.status !== 'done' && target.parentId != null) {
+      let currentId: number | null = target.parentId;
+      while (currentId != null) {
+        const ancestor = tasks.value.find((task) => task.id === currentId);
+        if (!ancestor || ancestor.status !== 'done') break;
+        ancestor.status = 'todo';
+        ancestor.completedAt = null;
+        ancestor.updatedAt = now;
+        currentId = ancestor.parentId;
+      }
     }
 
     if (!isTauri) return;
@@ -274,9 +382,17 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  async function reorderTasks(taskIds: number[]): Promise<boolean> {
+  type ReorderTasksOptions = {
+    parentId?: number | null;
+    status?: TaskStatus | null;
+  };
+
+  async function reorderTasks(taskIds: number[], options: ReorderTasksOptions = {}): Promise<boolean> {
     if (taskIds.length === 0) return true;
     if (new Set(taskIds).size !== taskIds.length) return false;
+
+    const targetParentId = options.parentId ?? null;
+    const targetStatus = options.status === undefined ? 'todo' : options.status;
 
     const taskById = new Map<number, TaskItem>(tasks.value.map((task) => [task.id, task]));
     const previousOrder = tasks.value.map((task) => task.id);
@@ -303,6 +419,14 @@ export const useTaskStore = defineStore('task', () => {
     for (const id of taskIds) {
       const task = taskById.get(id);
       if (!task) {
+        restorePreviousState();
+        return false;
+      }
+      if (task.parentId !== targetParentId) {
+        restorePreviousState();
+        return false;
+      }
+      if (targetStatus != null && task.status !== targetStatus) {
         restorePreviousState();
         return false;
       }
@@ -334,7 +458,11 @@ export const useTaskStore = defineStore('task', () => {
     const now = new Date().toISOString();
     const changedTasks: TaskItem[] = [];
 
-    const sortableTasks = nextTasks.filter((task) => task.parentId === null && task.status === 'todo');
+    const sortableTasks = nextTasks.filter((task) => {
+      if (task.parentId !== targetParentId) return false;
+      if (targetStatus != null && task.status !== targetStatus) return false;
+      return true;
+    });
     sortableTasks.forEach((task, index) => {
       const nextSortOrder = index + 1;
       const snapshot = previousMeta.get(task.id);
@@ -411,6 +539,104 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
+  // Deadline watcher — batches notifications to avoid spam
+  const deadlineNotified = new Set<string>();
+  let deadlineWatcherInterval: ReturnType<typeof setInterval> | null = null;
+
+  function checkDeadlines(): void {
+    const settingsStore = useSettingsStore();
+    if (!settingsStore.notification.notifyDeadline) return;
+
+    const now = Date.now();
+    const ONE_HOUR = 60 * 60 * 1000;
+    const ONE_DAY = 24 * ONE_HOUR;
+
+    const urgentTasks: TaskItem[] = [];  // due within 1 hour
+    const todayTasks: TaskItem[] = [];   // due within today
+
+    for (const task of tasks.value) {
+      if (!task.dueAt || task.status === 'done' || task.status === 'cancelled') continue;
+
+      // dueAt is a date string like "2026-02-19", parse as end of day local time
+      const dueDate = new Date(task.dueAt + 'T23:59:59');
+      const diff = dueDate.getTime() - now;
+      if (diff < 0) continue;
+
+      if (diff <= ONE_HOUR) {
+        const key = `${task.id}:1h`;
+        if (!deadlineNotified.has(key)) {
+          deadlineNotified.add(key);
+          urgentTasks.push(task);
+        }
+      } else if (diff <= ONE_DAY) {
+        const key = `${task.id}:1d`;
+        if (!deadlineNotified.has(key)) {
+          deadlineNotified.add(key);
+          todayTasks.push(task);
+        }
+      }
+    }
+
+    // Send ONE batched notification per urgency level
+    if (urgentTasks.length === 1) {
+      sendNotification({
+        type: 'deadline',
+        title: '任务即将截止',
+        body: `「${urgentTasks[0].title}」将在 1 小时内截止`,
+        payload: JSON.stringify({ taskIds: urgentTasks.map(t => t.id) }),
+      });
+    } else if (urgentTasks.length > 1) {
+      const names = urgentTasks.slice(0, 3).map(t => `「${t.title}」`).join('、');
+      const suffix = urgentTasks.length > 3 ? ` 等 ${urgentTasks.length} 个任务` : '';
+      sendNotification({
+        type: 'deadline',
+        title: '多个任务即将截止',
+        body: `${names}${suffix}将在 1 小时内截止`,
+        payload: JSON.stringify({ taskIds: urgentTasks.map(t => t.id) }),
+      });
+    }
+
+    if (todayTasks.length === 1) {
+      sendNotification({
+        type: 'deadline',
+        title: '任务即将截止',
+        body: `「${todayTasks[0].title}」将在今天截止`,
+        payload: JSON.stringify({ taskIds: todayTasks.map(t => t.id) }),
+      });
+    } else if (todayTasks.length > 1) {
+      const names = todayTasks.slice(0, 3).map(t => `「${t.title}」`).join('、');
+      const suffix = todayTasks.length > 3 ? ` 等 ${todayTasks.length} 个任务` : '';
+      sendNotification({
+        type: 'deadline',
+        title: '今日截止提醒',
+        body: `${names}${suffix}将在今天截止`,
+        payload: JSON.stringify({ taskIds: todayTasks.map(t => t.id) }),
+      });
+    }
+  }
+
+  function startDeadlineWatcher(): void {
+    if (deadlineWatcherInterval) return;
+    checkDeadlines();
+    deadlineWatcherInterval = setInterval(checkDeadlines, 60_000);
+  }
+
+  function stopDeadlineWatcher(): void {
+    if (!deadlineWatcherInterval) return;
+    clearInterval(deadlineWatcherInterval);
+    deadlineWatcherInterval = null;
+  }
+
+  async function rescheduleToToday(id: number): Promise<void> {
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await updateTask(id, { dueAt: todayKey, startAt: null });
+  }
+
+  async function rescheduleOverdueToToday(ids: number[]): Promise<void> {
+    await Promise.all(ids.map((id) => rescheduleToToday(id)));
+  }
+
   return {
     tasks,
     projects,
@@ -433,5 +659,9 @@ export const useTaskStore = defineStore('task', () => {
     addProject,
     updateProject,
     removeProject,
+    startDeadlineWatcher,
+    stopDeadlineWatcher,
+    rescheduleToToday,
+    rescheduleOverdueToToday,
   };
 });

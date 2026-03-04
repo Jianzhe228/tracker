@@ -1,6 +1,14 @@
+pub mod ai;
+pub mod data;
+pub mod focus_session;
 pub mod health;
 pub mod init;
+pub mod learning;
+pub mod notification;
+pub mod pattern;
 pub mod project;
 pub mod recurring;
 pub mod settings;
+pub mod statistics;
+pub mod sync;
 pub mod task;

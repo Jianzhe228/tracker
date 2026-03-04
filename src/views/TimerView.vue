@@ -2,9 +2,11 @@
 import { computed } from 'vue';
 import { useTimerStore } from '../stores/timerStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useUiStore } from '../stores/uiStore';
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
+const uiStore = useUiStore();
 
 const activeTasks = computed(() => taskStore.tasks.filter(t => t.status === 'todo'));
 
@@ -39,11 +41,7 @@ const pauseDurationText = computed(() => {
 });
 
 function selectTask(taskId: number, taskTitle: string): boolean {
-  const success = timerStore.setTask(taskId, taskTitle);
-  if (!success) {
-    window.alert('计时进行中，需先结束当前计时后再切换任务');
-    return false;
-  }
+  timerStore.setTask(taskId, taskTitle);
   return true;
 }
 
@@ -66,13 +64,14 @@ function handleSkipBreak(): void {
 function handleExtendBreak(): void {
   const extended = timerStore.extendBreak();
   if (!extended) {
-    window.alert('休息最多可延长 3 次');
+    uiStore.notify('休息最多可延长 3 次');
   }
 }
 
-function handleStop(): void {
+async function handleStop(): Promise<void> {
   const message = timerStore.mode === 'focus' ? '确定结束本次计时吗？' : '确定结束当前休息吗？';
-  if (!window.confirm(message)) return;
+  const confirmed = await uiStore.confirm(message, { title: '结束计时' });
+  if (!confirmed) return;
   timerStore.stop();
 }
 
@@ -198,27 +197,30 @@ const statusLabel = computed(() => {
               <div class="rounded-xl border border-dashed border-slate-200 px-4 py-3">
                 <div class="mb-2 flex items-center justify-between">
                   <p class="text-sm font-semibold text-slate-800">任务</p>
-                  <span v-if="timerStore.currentTaskTitle" class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                    已关联
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span v-if="timerStore.segmentSwitchCount > 0" class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600">
+                      已切换 {{ timerStore.segmentSwitchCount }} 次
+                    </span>
+                    <span v-if="timerStore.currentTaskTitle" class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+                      已关联
+                    </span>
+                  </div>
                 </div>
-                <div v-if="timerStore.currentTaskTitle" class="text-sm font-medium text-slate-800">
+                <div v-if="timerStore.currentTaskTitle" class="mb-2 text-sm font-medium text-slate-800">
                   {{ timerStore.currentTaskTitle }}
                 </div>
-                <div v-else class="space-y-2">
-                  <p class="text-xs text-slate-500">选择一个任务并开始专注</p>
+                <div class="space-y-2">
+                  <p v-if="!timerStore.currentTaskTitle" class="text-xs text-slate-500">选择一个任务并开始专注</p>
                   <select
                     class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    :value="timerStore.currentTaskId || ''"
                     @change="(e) => {
                       const target = e.target as HTMLSelectElement;
                       const task = activeTasks.find(t => t.id === Number(target.value));
                       if (task) {
-                        const ok = selectTask(task.id, task.title);
-                        if (!ok) {
-                          target.value = timerStore.currentTaskId ? String(timerStore.currentTaskId) : '';
-                        }
+                        selectTask(task.id, task.title);
                       } else {
-                        target.value = '';
+                        timerStore.clearTask();
                       }
                     }"
                   >
@@ -311,7 +313,12 @@ const statusLabel = computed(() => {
           <div class="rounded-2xl border border-slate-100 bg-white/90 p-5 shadow">
             <div class="flex items-center justify-between">
               <p class="text-sm font-semibold text-slate-800">关联任务</p>
-              <span class="text-xs text-slate-500">{{ timerStore.currentTaskTitle ? '已关联' : '未关联' }}</span>
+              <div class="flex items-center gap-2">
+                <span v-if="timerStore.segmentSwitchCount > 0" class="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-600">
+                  {{ timerStore.segmentSwitchCount }} 次切换
+                </span>
+                <span class="text-xs text-slate-500">{{ timerStore.currentTaskTitle ? '已关联' : '未关联' }}</span>
+              </div>
             </div>
             <p class="mt-3 text-sm font-medium text-slate-800">
               {{ timerStore.currentTaskTitle || '选择一个任务来记录专注' }}
@@ -320,7 +327,8 @@ const statusLabel = computed(() => {
               <button
                 v-for="task in activeTasks.slice(0, 4)"
                 :key="task.id"
-                class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700 hover:bg-slate-200"
+                class="rounded-full px-3 py-1 text-xs transition"
+                :class="timerStore.currentTaskId === task.id ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
                 @click="selectTask(task.id, task.title)"
               >
                 {{ task.title }}

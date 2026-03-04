@@ -6,6 +6,7 @@ use tauri::State;
 use crate::db::AppState;
 
 const MAX_SUBTASKS_PER_TASK: i64 = 50;
+const MAX_TASK_DEPTH: i64 = 10;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +18,7 @@ pub struct TaskRow {
   pub project_id: Option<i64>,
   pub parent_id: Option<i64>,
   pub due_at: Option<String>,
+  pub start_at: Option<String>,
   pub reminder_time: Option<String>,
   pub completed_at: Option<String>,
   pub deleted_at: Option<String>,
@@ -38,6 +40,7 @@ pub struct TaskCreatePayload {
   pub project_id: Option<i64>,
   pub parent_id: Option<i64>,
   pub due_at: Option<String>,
+  pub start_at: Option<String>,
   pub reminder_time: Option<String>,
   pub notes: Option<String>,
   pub pomodoro_count: Option<i64>,
@@ -58,6 +61,7 @@ pub struct TaskUpdatePayload {
   pub project_id: Option<Option<i64>>,
   pub parent_id: Option<Option<i64>>,
   pub due_at: Option<Option<String>>,
+  pub start_at: Option<Option<String>>,
   pub reminder_time: Option<Option<String>>,
   pub completed_at: Option<Option<String>>,
   pub deleted_at: Option<Option<String>>,
@@ -117,6 +121,42 @@ fn validate_title(title: &str) -> Result<(), String> {
   Ok(())
 }
 
+/// Returns how many ancestors the given task has (0 = root task).
+fn get_ancestor_depth(conn: &Connection, task_id: i64) -> Result<i64, String> {
+  conn
+    .query_row(
+      "WITH RECURSIVE ancestors(id, parent_id, depth) AS (
+         SELECT id, parent_id, 0 FROM tasks WHERE id = ?1 AND deleted_at IS NULL
+         UNION ALL
+         SELECT t.id, t.parent_id, a.depth + 1
+         FROM tasks t JOIN ancestors a ON t.id = a.parent_id
+         WHERE t.deleted_at IS NULL
+       )
+       SELECT COALESCE(MAX(depth), 0) FROM ancestors",
+      rusqlite::params![task_id],
+      |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Returns the maximum depth of the subtree rooted at the given task (0 = leaf).
+fn get_subtree_max_depth(conn: &Connection, task_id: i64) -> Result<i64, String> {
+  conn
+    .query_row(
+      "WITH RECURSIVE subtree(id, depth) AS (
+         SELECT id, 0 FROM tasks WHERE id = ?1 AND deleted_at IS NULL
+         UNION ALL
+         SELECT t.id, s.depth + 1
+         FROM tasks t JOIN subtree s ON t.parent_id = s.id
+         WHERE t.deleted_at IS NULL
+       )
+       SELECT COALESCE(MAX(depth), 0) FROM subtree",
+      rusqlite::params![task_id],
+      |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn validate_parent_assignment(
   conn: &Connection,
   task_id: Option<i64>,
@@ -128,31 +168,60 @@ fn validate_parent_assignment(
     }
   }
 
-  let parent_parent_id: Option<i64> = conn
+  // Verify parent exists
+  let _parent_exists: bool = conn
     .query_row(
-      "SELECT parent_id FROM tasks WHERE id = ?1 AND deleted_at IS NULL",
+      "SELECT COUNT(*) > 0 FROM tasks WHERE id = ?1 AND deleted_at IS NULL",
       rusqlite::params![parent_id],
       |row| row.get(0),
     )
-    .optional()
-    .map_err(|e| e.to_string())?
-    .ok_or_else(|| "Parent task does not exist".to_string())?;
+    .map_err(|e| e.to_string())?;
 
-  if parent_parent_id.is_some() {
-    return Err("Subtasks only support one nesting level".to_string());
+  if !_parent_exists {
+    return Err("Parent task does not exist".to_string());
   }
 
+  // Prevent circular reference: ensure parent_id is not a descendant of task_id
   if let Some(id) = task_id {
-    let has_children: bool = conn
+    let is_descendant: bool = conn
       .query_row(
-        "SELECT COUNT(*) > 0 FROM tasks WHERE parent_id = ?1 AND deleted_at IS NULL",
-        rusqlite::params![id],
+        "WITH RECURSIVE subtree(id) AS (
+           SELECT id FROM tasks WHERE id = ?1 AND deleted_at IS NULL
+           UNION ALL
+           SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+           WHERE t.deleted_at IS NULL
+         )
+         SELECT COUNT(*) > 0 FROM subtree WHERE id = ?2",
+        rusqlite::params![id, parent_id],
         |row| row.get(0),
       )
       .map_err(|e| e.to_string())?;
 
-    if has_children {
-      return Err("Task with subtasks cannot be converted into a subtask".to_string());
+    if is_descendant {
+      return Err("Cannot create circular parent reference".to_string());
+    }
+  }
+
+  // Check depth: parent's ancestor depth + 1 (for the child) must be < MAX_TASK_DEPTH
+  let parent_depth = get_ancestor_depth(conn, parent_id)?;
+
+  if let Some(id) = task_id {
+    // Moving an existing task (which may have its own subtree) under parent_id
+    let subtree_depth = get_subtree_max_depth(conn, id)?;
+    // Total depth = parent's depth from root + 1 (for this task) + its subtree depth
+    if parent_depth + 1 + subtree_depth >= MAX_TASK_DEPTH {
+      return Err(format!(
+        "Maximum nesting depth is {} levels",
+        MAX_TASK_DEPTH
+      ));
+    }
+  } else {
+    // Creating a new task (leaf) under parent_id
+    if parent_depth + 1 >= MAX_TASK_DEPTH {
+      return Err(format!(
+        "Maximum nesting depth is {} levels",
+        MAX_TASK_DEPTH
+      ));
     }
   }
 
@@ -198,33 +267,18 @@ fn ensure_due_at_for_recurring(
   Ok(())
 }
 
-fn collect_descendant_ids_to_complete(
-  tx: &rusqlite::Transaction<'_>,
-  parent_id: i64,
-) -> Result<Vec<i64>, String> {
-  let mut stmt = tx
-    .prepare(
-      "WITH RECURSIVE subtree(id) AS (
-         SELECT id FROM tasks WHERE parent_id = ?1 AND deleted_at IS NULL
-         UNION ALL
-         SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id WHERE t.deleted_at IS NULL
-       )
-       SELECT t.id
-       FROM tasks t
-       JOIN subtree s ON t.id = s.id
-       WHERE t.status NOT IN ('done', 'cancelled')",
+fn has_incomplete_direct_subtasks(conn: &Connection, parent_id: i64) -> Result<bool, String> {
+  conn
+    .query_row(
+      "SELECT COUNT(*) > 0
+       FROM tasks
+       WHERE parent_id = ?1
+         AND deleted_at IS NULL
+         AND status NOT IN ('done', 'cancelled')",
+      rusqlite::params![parent_id],
+      |row| row.get(0),
     )
-    .map_err(|e| e.to_string())?;
-
-  let rows = stmt
-    .query_map(rusqlite::params![parent_id], |row| row.get::<_, i64>(0))
-    .map_err(|e| e.to_string())?;
-
-  let mut ids = Vec::new();
-  for row in rows {
-    ids.push(row.map_err(|e| e.to_string())?);
-  }
-  Ok(ids)
+    .map_err(|e| e.to_string())
 }
 
 fn insert_completion_log(
@@ -298,7 +352,7 @@ pub fn task_list(state: State<'_, AppState>, limit: Option<i64>, offset: Option<
 
   let mut stmt = db
     .prepare(
-      "SELECT id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
+      "SELECT id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
        FROM tasks
        WHERE deleted_at IS NULL
        ORDER BY sort_order ASC, created_at DESC
@@ -316,16 +370,17 @@ pub fn task_list(state: State<'_, AppState>, limit: Option<i64>, offset: Option<
         project_id: row.get(4)?,
         parent_id: row.get(5)?,
         due_at: row.get(6)?,
-        reminder_time: row.get(7)?,
-        completed_at: row.get(8)?,
-        deleted_at: row.get(9)?,
-        notes: row.get(10)?,
-        pomodoro_count: row.get(11)?,
-        pomodoro_duration: row.get(12)?,
-        sort_order: row.get(13)?,
-        recurring_rule_id: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
+        start_at: row.get(7)?,
+        reminder_time: row.get(8)?,
+        completed_at: row.get(9)?,
+        deleted_at: row.get(10)?,
+        notes: row.get(11)?,
+        pomodoro_count: row.get(12)?,
+        pomodoro_duration: row.get(13)?,
+        sort_order: row.get(14)?,
+        recurring_rule_id: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
       })
     })
     .map_err(|e| e.to_string())?;
@@ -360,7 +415,7 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
   ensure_due_at_for_recurring(payload.recurring_rule_id, payload.due_at.as_deref())?;
 
   db.execute(
-    "INSERT INTO tasks (id, title, status, priority, project_id, parent_id, due_at, reminder_time, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at) VALUES (?1, ?2, 'todo', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+    "INSERT INTO tasks (id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at) VALUES (?1, ?2, 'todo', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
     rusqlite::params![
       payload.id,
       title,
@@ -368,6 +423,7 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
       payload.project_id,
       payload.parent_id,
       payload.due_at,
+      payload.start_at,
       payload.reminder_time,
       payload.notes,
       pomodoro_count,
@@ -388,6 +444,7 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
     project_id: payload.project_id,
     parent_id: payload.parent_id,
     due_at: payload.due_at,
+    start_at: payload.start_at,
     reminder_time: payload.reminder_time,
     completed_at: None,
     deleted_at: None,
@@ -416,16 +473,18 @@ pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Re
     validate_priority(priority)?;
   }
 
-  let current_task: Option<(Option<String>, Option<i64>)> = db
+  let current_task: Option<(Option<String>, Option<i64>, String, Option<i64>)> = db
     .query_row(
-      "SELECT due_at, recurring_rule_id FROM tasks WHERE id = ?1 AND deleted_at IS NULL",
+      "SELECT due_at, recurring_rule_id, status, parent_id
+       FROM tasks
+       WHERE id = ?1 AND deleted_at IS NULL",
       rusqlite::params![payload.id],
-      |row| Ok((row.get(0)?, row.get(1)?)),
+      |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
     )
     .optional()
     .map_err(|e| e.to_string())?;
 
-  let Some((current_due_at, current_recurring_rule_id)) = current_task else {
+  let Some((current_due_at, current_recurring_rule_id, current_status, current_parent_id)) = current_task else {
     return Err("Task not found".to_string());
   };
 
@@ -472,7 +531,14 @@ pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Re
     validate_parent_assignment(&db, Some(payload.id), parent_id)?;
   }
 
-  let cascade_done = payload.status.as_deref() == Some("done");
+  if payload.status.as_deref() == Some("done") && has_incomplete_direct_subtasks(&db, payload.id)? {
+    return Err("Cannot complete task with unfinished subtasks".to_string());
+  }
+
+  let mark_as_done = payload.status.as_deref() == Some("done");
+  let mark_as_not_done = payload.status.as_deref().is_some_and(|status| status != "done");
+  let should_insert_completion_log = mark_as_done && current_status != "done" && current_status != "cancelled";
+
   let task_id = payload.id;
   let updated_at = payload.updated_at.clone();
 
@@ -502,6 +568,10 @@ pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Re
   if let Some(ref due_at) = payload.due_at {
     sets.push("due_at = ?");
     params.push(Box::new(due_at.clone()));
+  }
+  if let Some(ref start_at) = payload.start_at {
+    sets.push("start_at = ?");
+    params.push(Box::new(start_at.clone()));
   }
   if let Some(ref reminder_time) = payload.reminder_time {
     sets.push("reminder_time = ?");
@@ -544,46 +614,31 @@ pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Re
   let sql = format!("UPDATE tasks SET {} WHERE id = ?", sets.join(", "));
   let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
-  if cascade_done {
+  if should_insert_completion_log || (mark_as_not_done && current_parent_id.is_some()) {
     let tx = db.transaction().map_err(|e| e.to_string())?;
-
-    let previous_status: Option<String> = tx
-      .query_row(
-        "SELECT status FROM tasks WHERE id = ?1",
-        rusqlite::params![task_id],
-        |row| row.get(0),
-      )
-      .optional()
-      .map_err(|e| e.to_string())?;
-
-    let descendant_ids_to_log = collect_descendant_ids_to_complete(&tx, task_id)?;
 
     tx.execute(&sql, param_refs.as_slice())
       .map_err(|e| e.to_string())?;
 
-    tx.execute(
-      "WITH RECURSIVE subtree(id) AS (
-         SELECT id FROM tasks WHERE parent_id = ?1 AND deleted_at IS NULL
-         UNION ALL
-         SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id WHERE t.deleted_at IS NULL
-       )
-       UPDATE tasks
-       SET status = 'done', completed_at = ?2, updated_at = ?2
-       WHERE id IN (SELECT id FROM subtree) AND status NOT IN ('done', 'cancelled')",
-      rusqlite::params![task_id, updated_at],
-    )
-    .map_err(|e| e.to_string())?;
-
-    let mut completed_ids = Vec::new();
-    if let Some(status) = previous_status {
-      if status != "done" && status != "cancelled" {
-        completed_ids.push(task_id);
-      }
+    if should_insert_completion_log {
+      insert_completion_log(&tx, task_id, &updated_at)?;
     }
-    completed_ids.extend(descendant_ids_to_log);
 
-    for done_task_id in completed_ids {
-      insert_completion_log(&tx, done_task_id, &updated_at)?;
+    if mark_as_not_done {
+      if current_parent_id.is_some() {
+        tx.execute(
+          "WITH RECURSIVE ancestors(id) AS (
+             SELECT parent_id FROM tasks WHERE id = ?1 AND deleted_at IS NULL AND parent_id IS NOT NULL
+             UNION ALL
+             SELECT t.parent_id FROM tasks t JOIN ancestors a ON t.id = a.id
+             WHERE t.parent_id IS NOT NULL AND t.deleted_at IS NULL
+           )
+           UPDATE tasks SET status = 'todo', completed_at = NULL, updated_at = ?2
+           WHERE id IN (SELECT id FROM ancestors) AND status = 'done' AND deleted_at IS NULL",
+          rusqlite::params![task_id, updated_at],
+        )
+        .map_err(|e| e.to_string())?;
+      }
     }
 
     tx.commit().map_err(|e| e.to_string())?;

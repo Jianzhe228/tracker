@@ -29,7 +29,7 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
   // Tasks (excluding soft-deleted)
   let mut stmt = db
     .prepare(
-      "SELECT id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
+      "SELECT id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
        FROM tasks
        WHERE deleted_at IS NULL
        ORDER BY sort_order ASC, created_at DESC",
@@ -45,16 +45,17 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
         project_id: row.get(4)?,
         parent_id: row.get(5)?,
         due_at: row.get(6)?,
-        reminder_time: row.get(7)?,
-        completed_at: row.get(8)?,
-        deleted_at: row.get(9)?,
-        notes: row.get(10)?,
-        pomodoro_count: row.get(11)?,
-        pomodoro_duration: row.get(12)?,
-        sort_order: row.get(13)?,
-        recurring_rule_id: row.get(14)?,
-        created_at: row.get(15)?,
-        updated_at: row.get(16)?,
+        start_at: row.get(7)?,
+        reminder_time: row.get(8)?,
+        completed_at: row.get(9)?,
+        deleted_at: row.get(10)?,
+        notes: row.get(11)?,
+        pomodoro_count: row.get(12)?,
+        pomodoro_duration: row.get(13)?,
+        sort_order: row.get(14)?,
+        recurring_rule_id: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
       })
     })
     .map_err(|e| e.to_string())?

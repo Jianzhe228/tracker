@@ -5,7 +5,11 @@ import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { validateTaskTitle } from '../utils/validation';
 import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } from '../services/commands/recurring';
-import type { TaskItem, Priority } from '../types/domain';
+import type { TaskItem, Priority, TaskStatus } from '../types/domain';
+import { useAiStore } from '../stores/aiStore';
+import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../services/suggestion';
+import type { SuggestionResult } from '../types/domain';
+import TaskSubtreeItem from '../components/TaskSubtreeItem.vue';
 
 const props = defineProps<{
   filter?: string;
@@ -15,9 +19,15 @@ const props = defineProps<{
 const route = useRoute();
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
+const aiStore = useAiStore();
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 const title = ref('');
+const newTaskDate = ref('');
+const showNewTaskCalendar = ref(false);
+const newTaskCalYear = ref(new Date().getFullYear());
+const newTaskCalMonth = ref(new Date().getMonth());
+const newTaskCalendarWrap = ref<HTMLElement | null>(null);
 const selectedTaskId = ref<number | null>(null);
 const draggingTaskId = ref<number | null>(null);
 const dragOverTaskId = ref<number | null>(null);
@@ -26,6 +36,14 @@ const suppressTaskClick = ref(false);
 const taskListWrap = ref<HTMLElement | null>(null);
 const dragPreviewIds = ref<number[] | null>(null);
 const dragStartOrderIds = ref<number[] | null>(null);
+const draggingSubtaskId = ref<number | null>(null);
+const draggingSubtaskParentId = ref<number | null>(null);
+const draggingSubtaskStatus = ref<TaskStatus | null>(null);
+const subtaskDragOverId = ref<number | null>(null);
+const isSubtaskDragging = ref(false);
+const suppressSubtaskClick = ref(false);
+const subtaskDragPreviewIds = ref<number[] | null>(null);
+const subtaskDragStartOrderIds = ref<number[] | null>(null);
 
 let activePointerId: number | null = null;
 let pointerStartX = 0;
@@ -35,6 +53,14 @@ let dragPreviewInsertIndex = -1;
 let dragLatestClientX = 0;
 let dragLatestClientY = 0;
 let dragLastShiftAt = 0;
+let activeSubtaskPointerId: number | null = null;
+let subtaskPointerStartX = 0;
+let subtaskPointerStartY = 0;
+let subtaskDragMoveRafId = 0;
+let subtaskDragPreviewInsertIndex = -1;
+let subtaskDragLatestClientX = 0;
+let subtaskDragLatestClientY = 0;
+let subtaskDragLastShiftAt = 0;
 
 const DETAIL_MIN_WIDTH = 320;
 const DETAIL_MAX_WIDTH = 560;
@@ -67,6 +93,25 @@ function isDateInRecent7Days(value: string | null): boolean {
   return value >= today && value <= day7;
 }
 
+// Check if a task is active on a given date:
+// - exact match on dueAt or startAt
+// - OR the date falls within [startAt, dueAt] range (for multi-day tasks)
+function isTaskActiveOnDate(task: TaskItem, dateKey: string): boolean {
+  if (task.dueAt === dateKey || task.startAt === dateKey) return true;
+  if (task.startAt && task.dueAt && task.startAt <= dateKey && dateKey <= task.dueAt) return true;
+  return false;
+}
+
+// Check if a task is active on any date within a range [fromKey, toKey]
+function isTaskActiveInRange(task: TaskItem, fromKey: string, toKey: string): boolean {
+  // Exact date falls within range
+  if (task.dueAt && task.dueAt >= fromKey && task.dueAt <= toKey) return true;
+  if (task.startAt && task.startAt >= fromKey && task.startAt <= toKey) return true;
+  // Task spans across the range: startAt before range and dueAt after range start
+  if (task.startAt && task.dueAt && task.startAt <= toKey && task.dueAt >= fromKey) return true;
+  return false;
+}
+
 const activeTaskFilter = computed(() => {
   return props.filter || String(route.name || '');
 });
@@ -91,7 +136,6 @@ const pageTitle = computed(() => {
     case 'tomorrow': return '明天';
     case 'week': return '本周';
     case 'all': return '全部';
-    case 'completed': return '已完成';
     default: return '任务';
   }
 });
@@ -104,33 +148,45 @@ const filteredTasks = computed(() => {
 
   switch (activeTaskFilter.value) {
     case 'today':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && t.dueAt === getDateKeyFromToday(0));
+      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isTaskActiveOnDate(t, getDateKeyFromToday(0)));
     case 'tomorrow':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && t.dueAt === getDateKeyFromToday(1));
+      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isTaskActiveOnDate(t, getDateKeyFromToday(1)));
     case 'week':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isDateInRecent7Days(t.dueAt));
+      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isTaskActiveInRange(t, getDateKeyFromToday(0), getDateKeyFromToday(6)));
     case 'all':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo');
-    case 'completed':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'done');
+      return taskStore.tasks.filter(t => t.parentId === null && t.status !== 'cancelled');
     default:
       return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo');
   }
 });
 
-// Completed tasks grouped by date (timeline view)
-interface CompletedDateGroup {
-  dateKey: string;
-  label: string;
-  tasks: TaskItem[];
+const NO_DATE_GROUP_KEY = '__no_date__';
+
+function toDateKeyFromTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return toDateInputValue(new Date());
+  return toDateInputValue(date);
 }
 
-function formatCompletionDateLabel(dateKey: string): string {
+function getTimelineDateKey(task: TaskItem): string {
+  if (task.status === 'done') {
+    return toDateKeyFromTimestamp(task.completedAt || task.updatedAt || task.createdAt);
+  }
+  if (task.startAt) return task.startAt;
+  if (task.dueAt) return task.dueAt;
+  return NO_DATE_GROUP_KEY;
+}
+
+function formatTimelineDateLabel(dateKey: string): string {
+  if (dateKey === NO_DATE_GROUP_KEY) return '无日期';
+
   const today = toDateInputValue(new Date());
   const yesterday = toDateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const tomorrow = toDateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
   if (dateKey === today) return '今天';
   if (dateKey === yesterday) return '昨天';
+  if (dateKey === tomorrow) return '明天';
 
   const [year, month, day] = dateKey.split('-');
   const currentYear = new Date().getFullYear().toString();
@@ -139,40 +195,6 @@ function formatCompletionDateLabel(dateKey: string): string {
   }
   return `${year}年${Number(month)}月${Number(day)}日`;
 }
-
-const completedTasksByDate = computed<CompletedDateGroup[]>(() => {
-  if (activeTaskFilter.value !== 'completed') return [];
-
-  const doneTasks = taskStore.tasks.filter(t => t.parentId === null && t.status === 'done');
-  const groups = new Map<string, TaskItem[]>();
-
-  for (const task of doneTasks) {
-    const timestamp = task.completedAt || task.updatedAt || task.createdAt;
-    const dateKey = toDateInputValue(new Date(timestamp));
-
-    if (!groups.has(dateKey)) {
-      groups.set(dateKey, []);
-    }
-    groups.get(dateKey)!.push(task);
-  }
-
-  const sortedKeys = Array.from(groups.keys()).sort((a, b) => b.localeCompare(a));
-
-  return sortedKeys.map(dateKey => {
-    const tasks = groups.get(dateKey)!;
-    tasks.sort((a, b) => {
-      const timeA = a.completedAt || a.updatedAt;
-      const timeB = b.completedAt || b.updatedAt;
-      return timeB.localeCompare(timeA);
-    });
-
-    return {
-      dateKey,
-      label: formatCompletionDateLabel(dateKey),
-      tasks
-    };
-  });
-});
 
 function formatDuration(minutes: number): { value: string; unit: string } {
   if (minutes >= 60) {
@@ -198,10 +220,14 @@ const elapsedTime = computed(() => {
   const currentFocusElapsedSeconds = (
     timerStore.mode === 'focus' && (timerStore.running || timerStore.paused)
   )
-    ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
+    ? (
+      timerStore.timerKind === 'countdown'
+        ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
+        : Math.max(0, timerStore.elapsedSeconds)
+    )
     : 0;
 
-  const elapsedMinutes = (timerStore.completedPomodoros * 25) + Math.floor(currentFocusElapsedSeconds / 60);
+  const elapsedMinutes = Math.floor((timerStore.focusSecondsToday + currentFocusElapsedSeconds) / 60);
   return formatDuration(elapsedMinutes);
 });
 
@@ -209,9 +235,28 @@ const completedTasks = computed(() => {
   return taskStore.tasks.filter(t => t.parentId === null && t.status === 'done').length;
 });
 
-const canDragSort = computed(() => activeTaskFilter.value !== 'completed');
+const canDragSort = computed(() => activeTaskFilter.value !== 'all');
+
+function compareTimelineDateKey(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a === NO_DATE_GROUP_KEY) return 1;
+  if (b === NO_DATE_GROUP_KEY) return -1;
+  return b.localeCompare(a);
+}
 
 const displayTasks = computed(() => {
+  if (activeTaskFilter.value === 'all') {
+    const sorted = [...filteredTasks.value];
+    sorted.sort((a, b) => {
+      const dateCmp = compareTimelineDateKey(getTimelineDateKey(a), getTimelineDateKey(b));
+      if (dateCmp !== 0) return dateCmp;
+      if (a.status !== b.status) return a.status === 'done' ? 1 : -1;
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return a.createdAt.localeCompare(b.createdAt);
+    });
+    return sorted;
+  }
+
   if (!dragPreviewIds.value || !isTaskDragging.value) return filteredTasks.value;
   const visibleTaskMap = new Map(filteredTasks.value.map((task) => [task.id, task]));
   const ordered = dragPreviewIds.value
@@ -219,6 +264,136 @@ const displayTasks = computed(() => {
     .filter((task): task is TaskItem => task != null);
   return ordered.length === filteredTasks.value.length ? ordered : filteredTasks.value;
 });
+
+const timelineGroupCounts = computed(() => {
+  const map = new Map<string, number>();
+  if (activeTaskFilter.value !== 'all') return map;
+  for (const task of displayTasks.value) {
+    const dateKey = getTimelineDateKey(task);
+    map.set(dateKey, (map.get(dateKey) || 0) + 1);
+  }
+  return map;
+});
+
+function shouldRenderTimelineHeader(taskIndex: number): boolean {
+  if (activeTaskFilter.value !== 'all') return false;
+  if (taskIndex === 0) return true;
+  const current = displayTasks.value[taskIndex];
+  const previous = displayTasks.value[taskIndex - 1];
+  if (!current || !previous) return false;
+  return getTimelineDateKey(current) !== getTimelineDateKey(previous);
+}
+
+function getTimelineHeaderLabel(task: TaskItem): string {
+  return formatTimelineDateLabel(getTimelineDateKey(task));
+}
+
+function getTimelineHeaderCount(task: TaskItem): number {
+  return timelineGroupCounts.value.get(getTimelineDateKey(task)) || 0;
+}
+
+function isTimelineGroupOverdue(task: TaskItem): boolean {
+  const dateKey = getTimelineDateKey(task);
+  if (dateKey === NO_DATE_GROUP_KEY) return false;
+  return dateKey < getDateKeyFromToday(0);
+}
+
+function getOverdueTaskIdsInGroup(task: TaskItem): number[] {
+  const dateKey = getTimelineDateKey(task);
+  return displayTasks.value
+    .filter((t) => getTimelineDateKey(t) === dateKey && t.status !== 'done' && t.status !== 'cancelled')
+    .map((t) => t.id);
+}
+
+async function rescheduleGroupToToday(task: TaskItem): Promise<void> {
+  const ids = getOverdueTaskIdsInGroup(task);
+  if (ids.length > 0) {
+    await taskStore.rescheduleOverdueToToday(ids);
+  }
+}
+
+const subtasksByParent = computed(() => {
+  const map = new Map<number, TaskItem[]>();
+  for (const task of taskStore.tasks) {
+    if (task.parentId == null) continue;
+    const siblings = map.get(task.parentId) || [];
+    siblings.push(task);
+    map.set(task.parentId, siblings);
+  }
+
+  for (const [, siblings] of map) {
+    siblings.sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'done' ? 1 : -1;
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return a.createdAt.localeCompare(b.createdAt);
+    });
+  }
+
+  return map;
+});
+
+function getTaskSubtasks(parentId: number): TaskItem[] {
+  return subtasksByParent.value.get(parentId) || [];
+}
+
+function getSortableSubtasks(parentId: number, status: TaskStatus): TaskItem[] {
+  return getTaskSubtasks(parentId).filter((subtask) => subtask.status === status);
+}
+
+function getDisplaySubtasks(parentId: number): TaskItem[] {
+  const subtasks = getTaskSubtasks(parentId);
+  if (
+    !isSubtaskDragging.value
+    || draggingSubtaskParentId.value !== parentId
+    || draggingSubtaskStatus.value == null
+    || !subtaskDragPreviewIds.value
+  ) {
+    return subtasks;
+  }
+
+  const status = draggingSubtaskStatus.value;
+  const scopedMap = new Map(
+    subtasks
+      .filter((subtask) => subtask.status === status)
+      .map((subtask) => [subtask.id, subtask] as const)
+  );
+  const reorderedScoped = subtaskDragPreviewIds.value
+    .map((id) => scopedMap.get(id))
+    .filter((subtask): subtask is TaskItem => subtask != null);
+
+  if (reorderedScoped.length !== scopedMap.size) {
+    return subtasks;
+  }
+
+  const queue = [...reorderedScoped];
+  return subtasks.map((subtask) => (subtask.status === status ? queue.shift() || subtask : subtask));
+}
+
+function hasTaskSubtasks(parentId: number): boolean {
+  return getTaskSubtasks(parentId).length > 0;
+}
+
+function getTaskSubtaskDoneCount(parentId: number): number {
+  return getTaskSubtasks(parentId).filter((subtask) => subtask.status === 'done').length;
+}
+
+function isTaskExpanded(taskId: number): boolean {
+  return expandedTaskIds.value.has(taskId);
+}
+
+function setTaskExpanded(taskId: number, expanded: boolean): void {
+  const next = new Set(expandedTaskIds.value);
+  if (expanded) {
+    next.add(taskId);
+  } else {
+    next.delete(taskId);
+  }
+  expandedTaskIds.value = next;
+}
+
+function toggleTaskExpanded(taskId: number): void {
+  setTaskExpanded(taskId, !isTaskExpanded(taskId));
+}
 
 // Selected task
 const selectedTask = computed(() => {
@@ -228,6 +403,7 @@ const selectedTask = computed(() => {
 
 const undoNow = ref(Date.now());
 let undoTickTimer: ReturnType<typeof setInterval> | null = null;
+let inlineNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 const pendingUndoDeletion = computed(() => taskStore.pendingUndoDeletion);
 const undoRemainingSeconds = computed(() => {
@@ -237,11 +413,48 @@ const undoRemainingSeconds = computed(() => {
   return Math.max(0, Math.ceil(remaining / 1000));
 });
 
+const inlineNoticeMessage = ref<string | null>(null);
+const inlineNoticeToken = ref(0);
+const inlineConfirmState = ref<{ message: string; resolve: (value: boolean) => void } | null>(null);
+
+function showInlineNotice(message: string): void {
+  if (inlineNoticeTimer) {
+    clearTimeout(inlineNoticeTimer);
+    inlineNoticeTimer = null;
+  }
+  inlineNoticeToken.value += 1;
+  inlineNoticeMessage.value = message;
+  inlineNoticeTimer = window.setTimeout(() => {
+    inlineNoticeMessage.value = null;
+    inlineNoticeTimer = null;
+  }, 2600);
+}
+
+function requestInlineConfirm(message: string): Promise<boolean> {
+  if (inlineConfirmState.value) {
+    inlineConfirmState.value.resolve(false);
+  }
+  return new Promise((resolve) => {
+    inlineConfirmState.value = {
+      message,
+      resolve,
+    };
+  });
+}
+
+function resolveInlineConfirm(confirmed: boolean): void {
+  const state = inlineConfirmState.value;
+  if (!state) return;
+  inlineConfirmState.value = null;
+  state.resolve(confirmed);
+}
+
 type TaskDraft = {
   title: string;
   priority: Priority;
   pomodoroCount: number;
   dueAt: string;
+  startAt: string;
   projectId: number | null;
   reminderDate: string;
   reminderTime: string;
@@ -250,7 +463,7 @@ type TaskDraft = {
   notes: string;
 };
 
-type DateFieldKey = 'dueAt' | 'reminderDate';
+type DateFieldKey = 'dueAt' | 'startAt' | 'reminderDate';
 
 type CalendarCell = {
   dateKey: string;
@@ -284,16 +497,41 @@ const activeDatePicker = ref<DateFieldKey | null>(null);
 const calendarViewYear = ref(new Date().getFullYear());
 const calendarViewMonth = ref(new Date().getMonth());
 const dueDatePickerWrap = ref<HTMLElement | null>(null);
+const startDatePickerWrap = ref<HTMLElement | null>(null);
 const reminderDatePickerWrap = ref<HTMLElement | null>(null);
 const subtaskTitle = ref('');
+const expandedTaskIds = ref<Set<number>>(new Set());
+const editingSubtaskId = ref<number | null>(null);
+const editingSubtaskTitle = ref('');
 const MAX_SUBTASKS_PER_TASK = 50;
+const MAX_TASK_DEPTH = 10;
+
+// ── Inline suggestion state ────────────────────────────────────────
+const inlineSuggestion = ref<SuggestionResult | null>(null);
+const inlineSuggestionTaskId = ref<number | null>(null);
+const inlineSuggestionKeywords = ref<string[]>([]);
+
+function getTaskDepth(taskId: number): number {
+  let depth = 0;
+  let current = taskStore.tasks.find(t => t.id === taskId);
+  while (current?.parentId != null) {
+    depth++;
+    current = taskStore.tasks.find(t => t.id === current!.parentId);
+  }
+  return depth;
+}
+
+const selectedTaskDepth = computed(() => {
+  if (!selectedTask.value) return 0;
+  return getTaskDepth(selectedTask.value.id);
+});
+
+const canAddSubtaskToSelected = computed(() => selectedTaskDepth.value < MAX_TASK_DEPTH - 1);
 
 const hasUnsavedChanges = computed(() => {
   if (!selectedTask.value || !taskDraft.value) return false;
   return JSON.stringify(normalizeDraft(taskDraft.value)) !== JSON.stringify(normalizeTask(selectedTask.value));
 });
-
-const selectedTaskIsSubtask = computed(() => selectedTask.value?.parentId != null);
 
 const selectedTaskSubtasks = computed(() => {
   if (!selectedTask.value) return [] as TaskItem[];
@@ -421,6 +659,7 @@ function buildTaskDraft(task: TaskItem): TaskDraft {
     priority: task.priority ?? 0,
     pomodoroCount: Math.max(1, task.pomodoroCount || 1),
     dueAt: task.dueAt || '',
+    startAt: task.startAt || '',
     projectId: task.projectId,
     reminderDate: reminder.date,
     reminderTime: reminder.time,
@@ -436,6 +675,7 @@ function normalizeDraft(draft: TaskDraft) {
     priority: draft.priority,
     pomodoroCount: Math.min(10, Math.max(1, Math.round(draft.pomodoroCount))),
     dueAt: draft.dueAt || '',
+    startAt: draft.startAt || '',
     projectId: draft.projectId,
     reminderDate: draft.reminderDate || '',
     reminderTime: draft.reminderTime || '09:00',
@@ -465,6 +705,7 @@ function normalizeTask(task: TaskItem) {
     priority: task.priority ?? 0,
     pomodoroCount: Math.min(10, Math.max(1, Math.round(task.pomodoroCount || 1))),
     dueAt: task.dueAt || '',
+    startAt: task.startAt || '',
     projectId: task.projectId,
     reminderDate: reminder.date,
     reminderTime: reminder.time,
@@ -477,35 +718,102 @@ function normalizeTask(task: TaskItem) {
 watch(selectedTask, (task) => {
   taskDraft.value = task ? buildTaskDraft(task) : null;
   subtaskTitle.value = '';
+  if (task) {
+    setTaskExpanded(task.parentId ?? task.id, true);
+  }
 }, { immediate: true });
+
+watch(() => taskStore.tasks, () => {
+  if (editingSubtaskId.value != null) {
+    const exists = taskStore.tasks.some((task) => task.id === editingSubtaskId.value);
+    if (!exists) {
+      editingSubtaskId.value = null;
+      editingSubtaskTitle.value = '';
+    }
+  }
+}, { deep: true });
 
 watch(activeTaskFilter, () => {
   cleanupPointerDragListeners();
   resetDragState();
   isTaskDragging.value = false;
   suppressTaskClick.value = false;
+  cleanupSubtaskPointerDragListeners();
+  resetSubtaskDragState();
+  isSubtaskDragging.value = false;
+  suppressSubtaskClick.value = false;
 });
 
 async function submitTask(): Promise<void> {
-  if (!validateTaskTitle(title.value)) return;
+  const taskTitle = title.value.trim();
+  if (!validateTaskTitle(taskTitle)) return;
+
+  // Due date priority: explicit date picker > view-inferred > null
+  let dueAt: string | null = null;
+  if (newTaskDate.value) {
+    dueAt = newTaskDate.value;
+  } else if (activeTaskFilter.value === 'today') {
+    dueAt = getDateKeyFromToday(0);
+  } else if (activeTaskFilter.value === 'tomorrow') {
+    dueAt = getDateKeyFromToday(1);
+  }
+
   try {
-    await taskStore.addTask(title.value.trim(), {
-      projectId: currentProjectId.value
+    const projectId = currentProjectId.value ?? 1; // Default to 收集箱
+    const createdTask = await taskStore.addTask(taskTitle, {
+      projectId,
+      dueAt,
     });
+
     title.value = '';
+    newTaskDate.value = '';
+    showNewTaskCalendar.value = false;
+
+    // Run local suggestion pipeline first (instant)
+    const result = await suggest({
+      taskTitle: createdTask.title,
+      projectId,
+    });
+
+    if (result.source !== 'none' && result.suggestions.length > 0) {
+      // Show inline suggestions
+      inlineSuggestion.value = result;
+      inlineSuggestionTaskId.value = createdTask.id;
+      inlineSuggestionKeywords.value = extractKeywords(createdTask.title);
+      selectedTaskId.value = createdTask.id;
+    } else {
+      // No local match — fire AI job with enriched context
+      const aiContext = await buildAiContext({
+        taskTitle: createdTask.title,
+        projectId,
+      });
+      const projectItem = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
+
+      aiStore.submitJob('task_decompose', {
+        taskId: createdTask.id,
+        taskTitle: createdTask.title,
+        projectName: projectItem?.title ?? '',
+        userPatterns: aiContext.userPatterns,
+        learnedItems: aiContext.learnedItems,
+      }).catch(console.error);
+    }
   } catch (error) {
     console.error(error);
-    window.alert('创建任务失败，请重试');
+    showInlineNotice('创建任务失败，请重试');
   }
 }
 
 function selectTask(taskId: number): void {
-  if (isTaskDragging.value || suppressTaskClick.value) return;
+  if (isTaskDragging.value || suppressTaskClick.value || isSubtaskDragging.value || suppressSubtaskClick.value) return;
+  if (editingSubtaskId.value != null && editingSubtaskId.value !== taskId) {
+    cancelSubtaskInlineEdit();
+  }
   closeDatePicker();
   selectedTaskId.value = taskId;
 }
 
 function closeDetail(): void {
+  cancelSubtaskInlineEdit();
   closeDatePicker();
   selectedTaskId.value = null;
 }
@@ -520,9 +828,17 @@ function areIdOrdersEqual(a: number[], b: number[]): boolean {
 
 async function applyDragReorder(orderedIds: number[]): Promise<void> {
   if (orderedIds.length === 0) return;
-  const success = await taskStore.reorderTasks(orderedIds);
+  const success = await taskStore.reorderTasks(orderedIds, { parentId: null, status: 'todo' });
   if (!success) {
-    window.alert('排序失败，请重试');
+    showInlineNotice('排序失败，请重试');
+  }
+}
+
+async function applySubtaskDragReorder(parentId: number, status: TaskStatus, orderedIds: number[]): Promise<void> {
+  if (orderedIds.length === 0) return;
+  const success = await taskStore.reorderTasks(orderedIds, { parentId, status });
+  if (!success) {
+    showInlineNotice('子任务排序失败，请重试');
   }
 }
 
@@ -544,6 +860,28 @@ function cleanupPointerDragListeners(): void {
     dragMoveRafId = 0;
   }
   activePointerId = null;
+}
+
+function resetSubtaskDragState(): void {
+  draggingSubtaskId.value = null;
+  draggingSubtaskParentId.value = null;
+  draggingSubtaskStatus.value = null;
+  subtaskDragOverId.value = null;
+  subtaskDragPreviewIds.value = null;
+  subtaskDragStartOrderIds.value = null;
+  subtaskDragPreviewInsertIndex = -1;
+  subtaskDragLastShiftAt = 0;
+}
+
+function cleanupSubtaskPointerDragListeners(): void {
+  document.removeEventListener('pointermove', handleSubtaskPointerMove, true);
+  document.removeEventListener('pointerup', handleSubtaskPointerUp, true);
+  document.removeEventListener('pointercancel', handleSubtaskPointerUp, true);
+  if (subtaskDragMoveRafId) {
+    cancelAnimationFrame(subtaskDragMoveRafId);
+    subtaskDragMoveRafId = 0;
+  }
+  activeSubtaskPointerId = null;
 }
 
 function computePreviewOrderByPointer(clientX: number, clientY: number): void {
@@ -603,6 +941,7 @@ function computePreviewOrderByPointer(clientX: number, clientY: number): void {
 
 function onTaskPointerDown(event: PointerEvent, taskId: number): void {
   if (!canDragSort.value) return;
+  if (isSubtaskDragging.value) return;
   if (event.button !== 0) return;
 
   const target = event.target as HTMLElement | null;
@@ -649,6 +988,180 @@ function handleTaskPointerMove(event: PointerEvent): void {
   });
 }
 
+function isTaskStatus(value: string): value is TaskStatus {
+  return value === 'todo' || value === 'in_progress' || value === 'done' || value === 'cancelled';
+}
+
+function computeSubtaskPreviewOrderByPointer(clientX: number, clientY: number): void {
+  if (
+    !isSubtaskDragging.value
+    || draggingSubtaskId.value == null
+    || draggingSubtaskParentId.value == null
+    || draggingSubtaskStatus.value == null
+    || !subtaskDragPreviewIds.value
+  ) {
+    return;
+  }
+
+  const sourceTaskId = draggingSubtaskId.value;
+  const sourceParentId = draggingSubtaskParentId.value;
+  const sourceStatus = draggingSubtaskStatus.value;
+  const idsWithoutSource = subtaskDragPreviewIds.value.filter((id) => id !== sourceTaskId);
+
+  let nextInsertIndex = subtaskDragPreviewInsertIndex;
+  if (nextInsertIndex < 0 || nextInsertIndex > idsWithoutSource.length) {
+    nextInsertIndex = idsWithoutSource.length;
+  }
+  let hoverTaskId: number | null = null;
+
+  const hovered = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+  const subtaskElement = hovered?.closest<HTMLElement>('[data-subtask-id]');
+  if (subtaskElement) {
+    const taskId = Number(subtaskElement.dataset.subtaskId ?? '');
+    const parentId = Number(subtaskElement.dataset.subtaskParentId ?? '');
+    const statusRaw = subtaskElement.dataset.subtaskStatus ?? '';
+
+    if (
+      Number.isFinite(taskId)
+      && taskId > 0
+      && taskId !== sourceTaskId
+      && Number.isFinite(parentId)
+      && parentId === sourceParentId
+      && isTaskStatus(statusRaw)
+      && statusRaw === sourceStatus
+    ) {
+      const hoverIndex = idsWithoutSource.indexOf(taskId);
+      if (hoverIndex >= 0) {
+        const rect = subtaskElement.getBoundingClientRect();
+        const beforeIndex = hoverIndex;
+        const afterIndex = hoverIndex + 1;
+        const beforeThreshold = rect.top + (rect.height * 0.42);
+        const afterThreshold = rect.top + (rect.height * 0.58);
+
+        if (clientY <= beforeThreshold) {
+          nextInsertIndex = beforeIndex;
+        } else if (clientY >= afterThreshold) {
+          nextInsertIndex = afterIndex;
+        } else if (nextInsertIndex < beforeIndex || nextInsertIndex > afterIndex) {
+          nextInsertIndex = clientY < rect.top + (rect.height / 2) ? beforeIndex : afterIndex;
+        }
+
+        hoverTaskId = taskId;
+      }
+    }
+  }
+
+  subtaskDragOverId.value = hoverTaskId;
+  if (nextInsertIndex === subtaskDragPreviewInsertIndex) return;
+
+  const delta = nextInsertIndex - subtaskDragPreviewInsertIndex;
+  if (Math.abs(delta) > 1) {
+    nextInsertIndex = subtaskDragPreviewInsertIndex + Math.sign(delta);
+  }
+
+  const nowMs = performance.now();
+  if (subtaskDragLastShiftAt > 0 && nowMs - subtaskDragLastShiftAt < 70) return;
+  subtaskDragLastShiftAt = nowMs;
+
+  subtaskDragPreviewInsertIndex = nextInsertIndex;
+  const nextOrder = [...idsWithoutSource];
+  nextOrder.splice(nextInsertIndex, 0, sourceTaskId);
+  subtaskDragPreviewIds.value = nextOrder;
+}
+
+function onSubtaskPointerDown(event: PointerEvent, parentId: number, subtask: TaskItem): void {
+  if (!canDragSort.value) return;
+  if (isTaskDragging.value) return;
+  if (editingSubtaskId.value != null) return;
+  if (event.button !== 0) return;
+
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button, input, textarea, select, a')) return;
+
+  const sortableSubtasks = getSortableSubtasks(parentId, subtask.status);
+  if (sortableSubtasks.length <= 1) return;
+
+  draggingSubtaskId.value = subtask.id;
+  draggingSubtaskParentId.value = parentId;
+  draggingSubtaskStatus.value = subtask.status;
+  subtaskDragOverId.value = null;
+  isSubtaskDragging.value = false;
+  subtaskDragPreviewIds.value = null;
+  subtaskDragStartOrderIds.value = sortableSubtasks.map((item) => item.id);
+  subtaskDragPreviewInsertIndex = subtaskDragStartOrderIds.value.indexOf(subtask.id);
+  subtaskDragLastShiftAt = 0;
+
+  activeSubtaskPointerId = event.pointerId;
+  subtaskPointerStartX = event.clientX;
+  subtaskPointerStartY = event.clientY;
+  subtaskDragLatestClientX = event.clientX;
+  subtaskDragLatestClientY = event.clientY;
+
+  document.addEventListener('pointermove', handleSubtaskPointerMove, true);
+  document.addEventListener('pointerup', handleSubtaskPointerUp, true);
+  document.addEventListener('pointercancel', handleSubtaskPointerUp, true);
+}
+
+function handleSubtaskPointerMove(event: PointerEvent): void {
+  if (!canDragSort.value || activeSubtaskPointerId == null || event.pointerId !== activeSubtaskPointerId) return;
+  if (draggingSubtaskId.value == null || draggingSubtaskParentId.value == null || draggingSubtaskStatus.value == null) return;
+
+  const moveDistance = Math.hypot(event.clientX - subtaskPointerStartX, event.clientY - subtaskPointerStartY);
+  if (!isSubtaskDragging.value) {
+    if (moveDistance < 6) return;
+    isSubtaskDragging.value = true;
+    subtaskDragPreviewIds.value = getSortableSubtasks(draggingSubtaskParentId.value, draggingSubtaskStatus.value).map((task) => task.id);
+  }
+
+  event.preventDefault();
+  subtaskDragLatestClientX = event.clientX;
+  subtaskDragLatestClientY = event.clientY;
+  if (subtaskDragMoveRafId) return;
+
+  subtaskDragMoveRafId = requestAnimationFrame(() => {
+    subtaskDragMoveRafId = 0;
+    computeSubtaskPreviewOrderByPointer(subtaskDragLatestClientX, subtaskDragLatestClientY);
+  });
+}
+
+function handleSubtaskPointerUp(event: PointerEvent): void {
+  if (!canDragSort.value || activeSubtaskPointerId == null || event.pointerId !== activeSubtaskPointerId) return;
+  if (subtaskDragMoveRafId) {
+    cancelAnimationFrame(subtaskDragMoveRafId);
+    subtaskDragMoveRafId = 0;
+  }
+  if (isSubtaskDragging.value) {
+    computeSubtaskPreviewOrderByPointer(event.clientX, event.clientY);
+  }
+
+  const moved = isSubtaskDragging.value;
+  const sourceTaskId = draggingSubtaskId.value;
+  const parentId = draggingSubtaskParentId.value;
+  const status = draggingSubtaskStatus.value;
+  const startOrder = subtaskDragStartOrderIds.value ? [...subtaskDragStartOrderIds.value] : [];
+  const finalOrder = subtaskDragPreviewIds.value ? [...subtaskDragPreviewIds.value] : startOrder;
+
+  cleanupSubtaskPointerDragListeners();
+  resetSubtaskDragState();
+
+  if (!moved || sourceTaskId == null || parentId == null || status == null) {
+    isSubtaskDragging.value = false;
+    return;
+  }
+
+  suppressSubtaskClick.value = true;
+  void (async () => {
+    if (!areIdOrdersEqual(finalOrder, startOrder)) {
+      await applySubtaskDragReorder(parentId, status, finalOrder);
+    }
+  })().finally(() => {
+    window.setTimeout(() => {
+      isSubtaskDragging.value = false;
+      suppressSubtaskClick.value = false;
+    }, 0);
+  });
+}
+
 function handleTaskPointerUp(event: PointerEvent): void {
   if (!canDragSort.value || activePointerId == null || event.pointerId !== activePointerId) return;
   if (dragMoveRafId) {
@@ -685,18 +1198,90 @@ function handleTaskPointerUp(event: PointerEvent): void {
   });
 }
 
+async function handleToggleTask(taskId: number): Promise<void> {
+  const result = await taskStore.toggleTask(taskId);
+  if (!result.ok) {
+    if (result.reason === 'has_incomplete_subtasks') {
+      showInlineNotice('请先完成所有子任务，再完成父任务');
+    } else if (result.reason === 'sync_failed') {
+      showInlineNotice('更新任务状态失败，请重试');
+    }
+    return;
+  }
+
+  if (!result.shouldPromptCompleteParent || result.parentId == null) {
+    return;
+  }
+
+  const parentTask = taskStore.tasks.find((task) => task.id === result.parentId);
+  if (!parentTask || parentTask.status === 'done') return;
+
+  const shouldCompleteParent = await requestInlineConfirm(`子任务已全部完成，是否同时完成父任务「${parentTask.title}」？`);
+  if (!shouldCompleteParent) return;
+
+  const parentResult = await taskStore.toggleTask(parentTask.id);
+  if (!parentResult.ok) {
+    if (parentResult.reason === 'has_incomplete_subtasks') {
+      showInlineNotice('父任务仍有未完成子任务，请检查后再试');
+    } else if (parentResult.reason === 'sync_failed') {
+      showInlineNotice('更新父任务状态失败，请重试');
+    }
+  }
+}
+
+function startSubtaskInlineEdit(subtask: TaskItem): void {
+  editingSubtaskId.value = subtask.id;
+  editingSubtaskTitle.value = subtask.title;
+  if (subtask.parentId != null) {
+    setTaskExpanded(subtask.parentId, true);
+  }
+}
+
+function cancelSubtaskInlineEdit(): void {
+  editingSubtaskId.value = null;
+  editingSubtaskTitle.value = '';
+}
+
+async function saveSubtaskInlineEdit(): Promise<void> {
+  const subtaskId = editingSubtaskId.value;
+  if (!subtaskId) return;
+
+  const nextTitle = editingSubtaskTitle.value.trim();
+  if (!validateTaskTitle(nextTitle)) return;
+
+  try {
+    await taskStore.updateTask(subtaskId, { title: nextTitle });
+    cancelSubtaskInlineEdit();
+  } catch (error) {
+    console.error(error);
+    showInlineNotice('更新子任务失败，请重试');
+  }
+}
+
+function handleSubtaskEditKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    void saveSubtaskInlineEdit();
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    cancelSubtaskInlineEdit();
+  }
+}
+
 async function submitSubtask(): Promise<void> {
   if (!selectedTask.value) return;
   const title = subtaskTitle.value.trim();
   if (!title) return;
 
-  if (selectedTaskIsSubtask.value) {
-    window.alert('子任务不支持继续创建子任务');
+  if (!canAddSubtaskToSelected.value) {
+    showInlineNotice('已达最大嵌套层级，无法继续添加子任务');
     return;
   }
 
   if (selectedTaskSubtasks.value.length >= MAX_SUBTASKS_PER_TASK) {
-    window.alert(`每个任务最多只能添加 ${MAX_SUBTASKS_PER_TASK} 个子任务`);
+    showInlineNotice(`每个任务最多只能添加 ${MAX_SUBTASKS_PER_TASK} 个子任务`);
     return;
   }
 
@@ -709,16 +1294,120 @@ async function submitSubtask(): Promise<void> {
       pomodoroCount: 1,
       pomodoroDuration: selectedTask.value.pomodoroDuration,
     });
+    setTaskExpanded(selectedTask.value.id, true);
     subtaskTitle.value = '';
   } catch (error) {
     console.error(error);
-    window.alert('创建子任务失败，请重试');
+    showInlineNotice('创建子任务失败，请重试');
   }
+}
+
+// ── Inline suggestion actions ───────────────────────────────────────
+
+async function acceptSuggestion(suggestionTitle: string): Promise<void> {
+  const taskId = inlineSuggestionTaskId.value;
+  if (!taskId) return;
+  const parentTask = taskStore.tasks.find((t) => t.id === taskId);
+  if (!parentTask) return;
+
+  try {
+    await taskStore.addTask(suggestionTitle, {
+      parentId: parentTask.id,
+      projectId: parentTask.projectId,
+      dueAt: parentTask.dueAt,
+    });
+    setTaskExpanded(parentTask.id, true);
+
+    // Record positive feedback
+    recordFeedback(
+      inlineSuggestionKeywords.value,
+      suggestionTitle,
+      parentTask.projectId,
+      true,
+      inlineSuggestion.value?.source ?? 'pattern',
+    );
+
+    // Remove from suggestion list
+    if (inlineSuggestion.value) {
+      inlineSuggestion.value = {
+        ...inlineSuggestion.value,
+        suggestions: inlineSuggestion.value.suggestions.filter((s) => s !== suggestionTitle),
+      };
+      if (inlineSuggestion.value.suggestions.length === 0) {
+        dismissSuggestions();
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    showInlineNotice('添加子任务失败');
+  }
+}
+
+async function acceptAllSuggestions(): Promise<void> {
+  const taskId = inlineSuggestionTaskId.value;
+  if (!taskId || !inlineSuggestion.value) return;
+  const parentTask = taskStore.tasks.find((t) => t.id === taskId);
+  if (!parentTask) return;
+
+  for (const s of inlineSuggestion.value.suggestions) {
+    try {
+      await taskStore.addTask(s, {
+        parentId: parentTask.id,
+        projectId: parentTask.projectId,
+        dueAt: parentTask.dueAt,
+      });
+
+      recordFeedback(
+        inlineSuggestionKeywords.value,
+        s,
+        parentTask.projectId,
+        true,
+        inlineSuggestion.value.source,
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  setTaskExpanded(parentTask.id, true);
+  dismissSuggestions();
+}
+
+function rejectSuggestion(suggestionTitle: string): void {
+  if (!inlineSuggestion.value || !inlineSuggestionTaskId.value) return;
+  const parentTask = taskStore.tasks.find((t) => t.id === inlineSuggestionTaskId.value);
+
+  // Record negative feedback
+  recordFeedback(
+    inlineSuggestionKeywords.value,
+    suggestionTitle,
+    parentTask?.projectId ?? null,
+    false,
+    inlineSuggestion.value.source,
+  );
+
+  // Remove from list
+  inlineSuggestion.value = {
+    ...inlineSuggestion.value,
+    suggestions: inlineSuggestion.value.suggestions.filter((s) => s !== suggestionTitle),
+  };
+  if (inlineSuggestion.value.suggestions.length === 0) {
+    dismissSuggestions();
+  }
+}
+
+function dismissSuggestions(): void {
+  inlineSuggestion.value = null;
+  inlineSuggestionTaskId.value = null;
+  inlineSuggestionKeywords.value = [];
 }
 
 async function deleteSubtask(subtaskId: number): Promise<void> {
   const subtask = taskStore.tasks.find(task => task.id === subtaskId);
   if (!subtask) return;
+  if (editingSubtaskId.value === subtaskId) {
+    cancelSubtaskInlineEdit();
+  }
   if (selectedTaskId.value === subtaskId) {
     selectedTaskId.value = selectedTask.value?.id ?? null;
   }
@@ -726,7 +1415,7 @@ async function deleteSubtask(subtaskId: number): Promise<void> {
     await taskStore.removeTask(subtaskId);
   } catch (error) {
     console.error(error);
-    window.alert('删除子任务失败，请重试');
+    showInlineNotice('删除子任务失败，请重试');
   }
 }
 
@@ -736,9 +1425,9 @@ function clampPomodoro(value: number): number {
 
 const activeCalendarDate = computed(() => {
   if (!taskDraft.value || !activeDatePicker.value) return '';
-  return activeDatePicker.value === 'dueAt'
-    ? taskDraft.value.dueAt
-    : taskDraft.value.reminderDate;
+  if (activeDatePicker.value === 'dueAt') return taskDraft.value.dueAt;
+  if (activeDatePicker.value === 'startAt') return taskDraft.value.startAt;
+  return taskDraft.value.reminderDate;
 });
 
 const calendarTitle = computed(() => `${calendarViewYear.value}年${calendarViewMonth.value + 1}月`);
@@ -793,6 +1482,86 @@ const calendarCells = computed<CalendarCell[]>(() => {
   return cells;
 });
 
+const newTaskCalTitle = computed(() => `${newTaskCalYear.value}年${newTaskCalMonth.value + 1}月`);
+
+const newTaskCalendarCells = computed<CalendarCell[]>(() => {
+  const year = newTaskCalYear.value;
+  const month = newTaskCalMonth.value;
+  const firstDay = new Date(year, month, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+  const todayKey = toDateInputValue(new Date());
+  const selectedKey = newTaskDate.value;
+  const cells: CalendarCell[] = [];
+
+  for (let i = 0; i < 42; i += 1) {
+    let cellYear = year;
+    let cellMonth = month;
+    let day = 0;
+    let inCurrentMonth = true;
+
+    if (i < startOffset) {
+      day = daysInPrevMonth - startOffset + i + 1;
+      cellMonth -= 1;
+      inCurrentMonth = false;
+      if (cellMonth < 0) {
+        cellYear -= 1;
+        cellMonth = 11;
+      }
+    } else if (i >= startOffset + daysInCurrentMonth) {
+      day = i - (startOffset + daysInCurrentMonth) + 1;
+      cellMonth += 1;
+      inCurrentMonth = false;
+      if (cellMonth > 11) {
+        cellYear += 1;
+        cellMonth = 0;
+      }
+    } else {
+      day = i - startOffset + 1;
+    }
+
+    const dateKey = toDateInputValue(new Date(cellYear, cellMonth, day));
+    cells.push({
+      dateKey,
+      day,
+      inCurrentMonth,
+      isToday: dateKey === todayKey,
+      isSelected: dateKey === selectedKey
+    });
+  }
+
+  return cells;
+});
+
+function toggleNewTaskCalendar(): void {
+  if (showNewTaskCalendar.value) {
+    showNewTaskCalendar.value = false;
+    return;
+  }
+  const parsed = parseDateKey(newTaskDate.value);
+  const base = parsed || new Date();
+  newTaskCalYear.value = base.getFullYear();
+  newTaskCalMonth.value = base.getMonth();
+  showNewTaskCalendar.value = true;
+}
+
+function shiftNewTaskCalMonth(delta: number): void {
+  const next = new Date(newTaskCalYear.value, newTaskCalMonth.value + delta, 1);
+  newTaskCalYear.value = next.getFullYear();
+  newTaskCalMonth.value = next.getMonth();
+}
+
+function pickNewTaskDate(dateKey: string): void {
+  newTaskDate.value = dateKey;
+  showNewTaskCalendar.value = false;
+}
+
+function clearNewTaskDate(): void {
+  newTaskDate.value = '';
+  showNewTaskCalendar.value = false;
+}
+
 function closeDatePicker(): void {
   activeDatePicker.value = null;
 }
@@ -805,7 +1574,11 @@ function openDatePicker(field: DateFieldKey): void {
   }
 
   activeDatePicker.value = field;
-  const current = field === 'dueAt' ? taskDraft.value.dueAt : taskDraft.value.reminderDate;
+  const current = field === 'dueAt'
+    ? taskDraft.value.dueAt
+    : field === 'startAt'
+      ? taskDraft.value.startAt
+      : taskDraft.value.reminderDate;
   const parsed = parseDateKey(current);
   const base = parsed || new Date();
   calendarViewYear.value = base.getFullYear();
@@ -826,6 +1599,8 @@ function pickDate(dateKey: string): void {
   if (!taskDraft.value || !activeDatePicker.value) return;
   if (activeDatePicker.value === 'dueAt') {
     taskDraft.value.dueAt = dateKey;
+  } else if (activeDatePicker.value === 'startAt') {
+    taskDraft.value.startAt = dateKey;
   } else {
     taskDraft.value.reminderDate = dateKey;
   }
@@ -836,6 +1611,8 @@ function clearDateField(field: DateFieldKey): void {
   if (!taskDraft.value) return;
   if (field === 'dueAt') {
     taskDraft.value.dueAt = '';
+  } else if (field === 'startAt') {
+    taskDraft.value.startAt = '';
   } else {
     taskDraft.value.reminderDate = '';
   }
@@ -845,13 +1622,24 @@ function clearDateField(field: DateFieldKey): void {
 }
 
 function handleGlobalPointerDown(event: MouseEvent | TouchEvent): void {
-  if (!activeDatePicker.value) return;
   const target = event.target as Node | null;
   if (!target) return;
 
+  // Close new task calendar if clicking outside
+  if (showNewTaskCalendar.value) {
+    const calRoot = newTaskCalendarWrap.value;
+    if (!calRoot || !calRoot.contains(target)) {
+      showNewTaskCalendar.value = false;
+    }
+  }
+
+  if (!activeDatePicker.value) return;
+
   const root = activeDatePicker.value === 'dueAt'
     ? dueDatePickerWrap.value
-    : reminderDatePickerWrap.value;
+    : activeDatePicker.value === 'startAt'
+      ? startDatePickerWrap.value
+      : reminderDatePickerWrap.value;
 
   if (root && root.contains(target)) return;
   closeDatePicker();
@@ -859,6 +1647,7 @@ function handleGlobalPointerDown(event: MouseEvent | TouchEvent): void {
 
 function handleGlobalKeyDown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return;
+  showNewTaskCalendar.value = false;
   closeDatePicker();
 }
 
@@ -905,6 +1694,7 @@ async function saveTaskDetail(): Promise<void> {
       priority: normalized.priority,
       pomodoroCount: normalized.pomodoroCount,
       dueAt: normalized.dueAt || null,
+      startAt: normalized.startAt || null,
       projectId: normalized.projectId,
       reminderTime: reminderIso,
       notes: normalized.notes || null
@@ -955,7 +1745,7 @@ async function saveTaskDetail(): Promise<void> {
     closeDetail();
   } catch (error) {
     console.error(error);
-    window.alert('保存任务失败，请重试');
+    showInlineNotice('保存任务失败，请重试');
   }
 }
 
@@ -967,21 +1757,21 @@ async function deleteSelectedTask(): Promise<void> {
     await taskStore.removeTask(taskId);
   } catch (error) {
     console.error(error);
-    window.alert('删除任务失败，请重试');
+    showInlineNotice('删除任务失败，请重试');
   }
 }
 
 async function undoDeleteTask(): Promise<void> {
   const success = await taskStore.undoLastDeletion();
   if (!success) {
-    window.alert('撤销失败，可能已超过可撤销时间');
+    showInlineNotice('撤销失败，可能已超过可撤销时间');
   }
 }
 
 function startFocusOnTask(taskId: number, taskTitle: string): void {
   const success = timerStore.setTask(taskId, taskTitle);
   if (!success) {
-    window.alert('计时进行中，需先结束当前计时后再切换任务');
+    showInlineNotice('计时进行中，需先结束当前计时后再切换任务');
   }
 }
 
@@ -1062,11 +1852,21 @@ onUnmounted(() => {
     clearInterval(undoTickTimer);
     undoTickTimer = null;
   }
+  if (inlineNoticeTimer) {
+    clearTimeout(inlineNoticeTimer);
+    inlineNoticeTimer = null;
+  }
+  if (inlineConfirmState.value) {
+    inlineConfirmState.value.resolve(false);
+    inlineConfirmState.value = null;
+  }
   document.removeEventListener('mousedown', handleGlobalPointerDown, true);
   document.removeEventListener('touchstart', handleGlobalPointerDown, true);
   document.removeEventListener('keydown', handleGlobalKeyDown);
   cleanupPointerDragListeners();
   resetDragState();
+  cleanupSubtaskPointerDragListeners();
+  resetSubtaskDragState();
   stopResize();
 });
 
@@ -1087,23 +1887,14 @@ onMounted(() => {
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Header -->
       <div class="border-b border-slate-200 bg-white px-6 py-4">
-        <div class="flex items-center justify-between">
-          <h1 class="text-xl font-semibold text-slate-800">{{ pageTitle }}</h1>
-          <button
-            class="rounded p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-            :class="canDragSort ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-600' : 'cursor-not-allowed text-slate-300'"
-            aria-label="排序"
-            :title="canDragSort ? '直接拖拽任务卡片排序' : '当前视图不支持拖拽排序'"
-            :disabled="!canDragSort"
-          >
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
-            </svg>
-          </button>
+        <div class="flex items-end justify-between">
+          <h1 class="text-xl font-semibold tracking-tight text-slate-800">{{ pageTitle }}</h1>
+          <span v-if="canDragSort" class="text-xs text-slate-400">拖拽任务卡片可排序</span>
+          <span v-else-if="activeTaskFilter === 'all'" class="text-xs text-slate-400">按时间树查看全部任务</span>
         </div>
 
         <!-- Stats Bar -->
-        <div class="mt-4 grid grid-cols-4 gap-4 rounded-lg bg-slate-50 p-3">
+        <div class="mt-3 grid grid-cols-4 gap-3 rounded-lg bg-slate-50 p-3">
           <div class="text-center">
             <div class="text-xl font-semibold tabular-nums text-blue-600">{{ estimatedTime.value }}<span class="text-xs text-slate-400">{{ estimatedTime.unit }}</span></div>
             <div class="text-xs text-slate-500">预计时间</div>
@@ -1137,6 +1928,83 @@ onMounted(() => {
             class="flex-1 text-sm text-slate-600 placeholder:text-slate-400 focus:outline-none"
             @keyup.enter="submitTask"
           />
+
+          <!-- Date Picker for new task -->
+          <div ref="newTaskCalendarWrap" class="relative">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              :class="newTaskDate
+                ? 'border-blue-300 bg-blue-50 text-blue-700'
+                : 'border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600'"
+              @click="toggleNewTaskCalendar"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span v-if="newTaskDate">{{ formatDueAt(newTaskDate) }}</span>
+            </button>
+            <button
+              v-if="newTaskDate"
+              class="ml-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label="清除日期"
+              @click.stop="clearNewTaskDate"
+            >
+              <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <!-- Calendar Popup -->
+            <div
+              v-if="showNewTaskCalendar"
+              class="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+            >
+              <div class="mb-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                  aria-label="上一月"
+                  @click="shiftNewTaskCalMonth(-1)"
+                >
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div class="text-sm font-medium text-slate-700">{{ newTaskCalTitle }}</div>
+                <button
+                  type="button"
+                  class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                  aria-label="下一月"
+                  @click="shiftNewTaskCalMonth(1)"
+                >
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+              <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-slate-400">
+                <span v-for="week in calendarWeekdays" :key="week">{{ week }}</span>
+              </div>
+              <div class="grid grid-cols-7 gap-1">
+                <button
+                  v-for="cell in newTaskCalendarCells"
+                  :key="cell.dateKey"
+                  type="button"
+                  class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  :class="cell.isSelected
+                    ? 'bg-blue-600 text-white'
+                    : cell.inCurrentMonth
+                      ? (cell.isToday ? 'border border-blue-300 text-blue-600' : 'text-slate-700 hover:bg-slate-100')
+                      : 'text-slate-300 hover:bg-slate-50'"
+                  @click="pickNewTaskDate(cell.dateKey)"
+                >
+                  {{ cell.day }}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <button
             class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
             @click="submitTask"
@@ -1148,179 +2016,190 @@ onMounted(() => {
 
       <!-- Task List -->
       <div class="flex-1 overflow-auto bg-slate-50 p-6">
-        <!-- Completed: Date-grouped timeline -->
-        <template v-if="activeTaskFilter === 'completed'">
-          <div v-if="completedTasksByDate.length > 0" class="space-y-6">
-            <div v-for="group in completedTasksByDate" :key="group.dateKey">
-              <!-- Date Header -->
-              <div class="mb-3 flex items-center gap-3">
-                <div class="h-2.5 w-2.5 shrink-0 rounded-full bg-green-500" />
-                <h3 class="text-sm font-semibold text-slate-600">{{ group.label }}</h3>
-                <span class="text-xs text-slate-400">{{ group.tasks.length }} 项</span>
-                <div class="h-px flex-1 bg-slate-200" />
-              </div>
-              <!-- Tasks in this date group -->
-              <div class="ml-1 space-y-2 border-l-2 border-slate-200 pl-5">
-                <div
-                  v-for="task in group.tasks"
-                  :key="task.id"
-                  class="group flex cursor-pointer overflow-hidden rounded-lg bg-white shadow-sm transition-shadow hover:shadow"
-                  :class="selectedTaskId === task.id ? 'ring-2 ring-blue-400' : ''"
-                  @click="selectTask(task.id)"
-                >
-                  <!-- Priority Bar -->
-                  <div class="w-1.5 shrink-0 opacity-40" :class="priorityBarClass(task.priority)" />
-
-                  <div class="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
-                  <!-- Checkbox -->
-                  <button
-                    role="checkbox"
-                    aria-checked="true"
-                    aria-label="标记为未完成"
-                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-green-500 bg-green-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                    @click.stop="taskStore.toggleTask(task.id)"
-                  >
-                    <svg class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                    </svg>
-                  </button>
-
-                  <!-- Task Title -->
-                  <span class="min-w-0 flex-1 truncate text-sm text-slate-400 line-through">
-                    {{ task.title }}
-                  </span>
-
-                  <!-- Pomodoro Dots -->
-                  <div class="flex items-center gap-1 text-xs text-slate-400">
-                    <div class="flex items-center gap-0.5">
-                      <span
-                        v-for="dotIndex in Math.min(task.pomodoroCount || 1, 5)"
-                        :key="dotIndex"
-                        class="h-2 w-2 rounded-full"
-                        :class="dotIndex <= (task.pomodoroCount || 1) ? 'bg-red-400' : 'bg-red-200'"
-                      />
-                    </div>
-                    <span v-if="(task.pomodoroCount || 1) > 5">+{{ (task.pomodoroCount || 1) - 5 }}</span>
-                  </div>
-
-                  <!-- Due Date -->
-                  <span class="text-xs" :class="task.dueAt ? 'text-rose-500' : 'text-slate-400'">{{ formatDueAt(task.dueAt) }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Empty State (completed) -->
-          <div v-else class="flex h-full flex-col items-center justify-center">
-            <div class="flex h-24 w-24 items-center justify-center rounded-full bg-green-50">
-              <svg class="h-12 w-12 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <p class="mt-4 text-slate-600">暂无已完成任务</p>
-            <p class="mt-1 text-sm text-slate-400">完成的任务将按日期分组展示在这里</p>
-          </div>
-        </template>
-
-        <!-- Non-completed views: flat list -->
-        <template v-else>
-          <div
-            v-if="displayTasks.length > 0"
-            ref="taskListWrap"
-            class="relative"
-          >
+        <div
+          v-if="displayTasks.length > 0"
+          ref="taskListWrap"
+          :class="activeTaskFilter === 'all' ? 'relative pb-10' : 'relative'"
+        >
             <TransitionGroup
               name="task-sort"
               tag="div"
-              class="space-y-2"
+              :class="activeTaskFilter === 'all' ? 'space-y-3.5' : 'space-y-2'"
             >
               <div
-                v-for="task in displayTasks"
+                v-for="(task, taskIndex) in displayTasks"
                 :key="task.id"
-                :data-task-id="task.id"
-                class="group flex cursor-pointer overflow-hidden rounded-lg bg-white shadow-sm"
-                :class="[
-                  selectedTaskId === task.id ? 'ring-2 ring-blue-400' : '',
-                  isTaskDragging ? '' : 'hover:shadow',
-                  canDragSort
-                    ? (draggingTaskId === task.id && isTaskDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing')
-                    : '',
-                  draggingTaskId === task.id && isTaskDragging ? 'task-drag-origin pointer-events-none opacity-35' : '',
-                  isTaskOverdue(task) ? 'border-l-2 border-l-red-500' : ''
-                ]"
-                @pointerdown="onTaskPointerDown($event, task.id)"
-                @click="selectTask(task.id)"
+                class="space-y-0"
               >
-                <!-- Priority Bar -->
                 <div
-                  class="w-1.5 shrink-0 transition-colors"
-                  :class="dragOverTaskId === task.id && draggingTaskId !== task.id ? 'bg-blue-500' : priorityBarClass(task.priority)"
-                />
-
-                <div class="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
-                <!-- Checkbox -->
-                <button
-                  role="checkbox"
-                  :aria-checked="task.status === 'done'"
-                  :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
-                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                  :class="task.status === 'done'
-                    ? 'border-green-500 bg-green-500'
-                    : priorityCheckboxClass(task.priority) + ' hover:border-red-400'"
-                  @click.stop="taskStore.toggleTask(task.id)"
+                  v-if="shouldRenderTimelineHeader(taskIndex)"
+                  :class="[taskIndex === 0 ? 'mb-3 mt-1' : 'mb-3 mt-6', 'flex items-center gap-3']"
                 >
-                  <svg v-if="task.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                  </svg>
-                </button>
-
-                <!-- Task Title -->
-                <span
-                  class="min-w-0 flex-1 truncate text-sm"
-                  :class="task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'"
-                >
-                  {{ task.title }}
-                </span>
-
-                <!-- Priority Badge -->
-                <span
-                  v-if="priorityBadge(task.priority)"
-                  class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none"
-                  :class="priorityBadge(task.priority)!.cls"
-                >
-                  {{ priorityBadge(task.priority)!.label }}
-                </span>
-
-                <!-- Pomodoro Dots -->
-                <div class="flex items-center gap-1 text-xs text-slate-400">
-                  <div class="flex items-center gap-0.5">
-                    <span
-                      v-for="dotIndex in Math.min(task.pomodoroCount || 1, 5)"
-                      :key="dotIndex"
-                      class="h-2 w-2 rounded-full"
-                      :class="dotIndex <= (task.pomodoroCount || 1) ? 'bg-red-400' : 'bg-red-200'"
-                    />
-                  </div>
-                  <span v-if="(task.pomodoroCount || 1) > 5">+{{ (task.pomodoroCount || 1) - 5 }}</span>
+                  <div class="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-400" />
+                  <h3 class="text-sm font-semibold text-slate-600">{{ getTimelineHeaderLabel(task) }}</h3>
+                  <span class="text-xs text-slate-400">{{ getTimelineHeaderCount(task) }} 项</span>
+                  <button
+                    v-if="isTimelineGroupOverdue(task)"
+                    class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100"
+                    @click="rescheduleGroupToToday(task)"
+                  >
+                    全部→今天
+                  </button>
+                  <div class="h-px flex-1 bg-slate-200" />
                 </div>
 
-                <!-- Due Date -->
-                <span class="text-xs" :class="isTaskOverdue(task) ? 'font-medium text-red-600' : task.dueAt ? 'text-rose-500' : 'text-slate-400'">
-                  {{ formatDueAt(task.dueAt) }}
-                  <span v-if="isTaskOverdue(task)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
-                </span>
-
-                <!-- Quick Focus -->
-                <button
-                  class="rounded p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                  aria-label="设为当前专注任务"
-                  @click.stop="startFocusOnTask(task.id, task.title)"
+                <div
+                  :data-task-id="task.id"
+                  class="group relative flex cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white transition-all"
+                  :class="[
+                    selectedTaskId === task.id ? 'border-blue-300 ring-2 ring-blue-200/80' : '',
+                    isTaskDragging ? '' : 'hover:border-slate-300 hover:shadow-sm',
+                    canDragSort
+                      ? (draggingTaskId === task.id && isTaskDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing')
+                      : '',
+                    draggingTaskId === task.id && isTaskDragging ? 'task-drag-origin pointer-events-none opacity-35' : '',
+                    task.status === 'done' ? 'border-green-200' : '',
+                    isTaskOverdue(task) ? 'border-red-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]' : ''
+                  ]"
+                  @pointerdown="onTaskPointerDown($event, task.id)"
+                  @click="selectTask(task.id)"
                 >
-                  <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </button>
+                  <!-- Priority Bar -->
+                  <div
+                    class="my-2 ml-1 w-1.5 shrink-0 rounded-full transition-colors"
+                    :class="dragOverTaskId === task.id && draggingTaskId !== task.id ? 'bg-blue-500' : priorityBarClass(task.priority)"
+                  />
+
+                  <div class="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5">
+                    <!-- Checkbox -->
+                    <button
+                      role="checkbox"
+                      :aria-checked="task.status === 'done'"
+                      :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      :class="task.status === 'done'
+                        ? 'border-green-500 bg-green-500'
+                        : priorityCheckboxClass(task.priority) + ' hover:border-red-400'"
+                      @click.stop="handleToggleTask(task.id)"
+                    >
+                      <svg v-if="task.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                      </svg>
+                    </button>
+
+                    <!-- Task Title -->
+                    <span
+                      class="min-w-0 flex-1 truncate text-sm"
+                      :class="task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'"
+                    >
+                      {{ task.title }}
+                    </span>
+
+                    <!-- Subtask Expand -->
+                    <button
+                      v-if="hasTaskSubtasks(task.id)"
+                      class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      :class="isTaskExpanded(task.id)
+                        ? 'border-blue-300 bg-blue-50 text-blue-700'
+                        : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100'"
+                      :aria-label="isTaskExpanded(task.id) ? '收起子任务' : '展开子任务'"
+                      @click.stop="toggleTaskExpanded(task.id)"
+                    >
+                      <svg
+                        class="h-3.5 w-3.5 transition-transform"
+                        :class="isTaskExpanded(task.id) ? 'rotate-90' : ''"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                      <span>{{ getTaskSubtaskDoneCount(task.id) }}/{{ getTaskSubtasks(task.id).length }}</span>
+                    </button>
+
+                    <!-- Priority Badge -->
+                    <span
+                      v-if="priorityBadge(task.priority)"
+                      class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none"
+                      :class="priorityBadge(task.priority)!.cls"
+                    >
+                      {{ priorityBadge(task.priority)!.label }}
+                    </span>
+
+                    <!-- Pomodoro Dots -->
+                    <div class="flex items-center gap-1 text-xs text-slate-400">
+                      <div class="flex items-center gap-0.5">
+                        <span
+                          v-for="dotIndex in Math.min(task.pomodoroCount || 1, 5)"
+                          :key="dotIndex"
+                          class="h-2 w-2 rounded-full"
+                          :class="dotIndex <= (task.pomodoroCount || 1)
+                            ? (task.status === 'done' ? 'bg-green-400' : 'bg-red-400')
+                            : (task.status === 'done' ? 'bg-green-200' : 'bg-red-200')"
+                        />
+                      </div>
+                      <span v-if="(task.pomodoroCount || 1) > 5">+{{ (task.pomodoroCount || 1) - 5 }}</span>
+                    </div>
+
+                    <!-- Due Date -->
+                    <span class="text-xs" :class="task.status === 'done' ? 'font-medium text-green-600' : isTaskOverdue(task) ? 'font-medium text-red-600' : task.dueAt ? 'text-rose-500' : 'text-slate-400'">
+                      {{ formatDueAt(task.dueAt) }}
+                      <span v-if="task.status === 'done'" class="ml-0.5 rounded bg-green-50 px-1 py-0.5 text-[10px] text-green-600 ring-1 ring-green-200">已完成</span>
+                      <span v-else-if="isTaskOverdue(task)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
+                    </span>
+
+                    <!-- Reschedule to today -->
+                    <button
+                      v-if="isTaskOverdue(task)"
+                      class="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 opacity-0 ring-1 ring-amber-200 transition-all group-hover:opacity-100 hover:bg-amber-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
+                      aria-label="移至今天"
+                      @click.stop="taskStore.rescheduleToToday(task.id)"
+                    >
+                      →今天
+                    </button>
+
+                    <!-- Quick Focus -->
+                    <button
+                      class="rounded p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      aria-label="设为当前专注任务"
+                      @click.stop="startFocusOnTask(task.id, task.title)"
+                    >
+                      <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  v-if="isTaskExpanded(task.id) && hasTaskSubtasks(task.id)"
+                  class="task-subtree ml-4 mt-1 space-y-2 border-l border-slate-200/80 pl-3"
+                >
+                  <TaskSubtreeItem
+                    v-for="subtask in getDisplaySubtasks(task.id)"
+                    :key="subtask.id"
+                    :task="subtask"
+                    :depth="1"
+                    :all-tasks="taskStore.tasks"
+                    :selected-task-id="selectedTaskId"
+                    :expanded-task-ids="expandedTaskIds"
+                    :editing-subtask-id="editingSubtaskId"
+                    v-model:editing-subtask-title="editingSubtaskTitle"
+                    :dragging-subtask-id="draggingSubtaskId"
+                    :is-subtask-dragging="isSubtaskDragging"
+                    :subtask-drag-over-id="subtaskDragOverId"
+                    :can-drag-sort="canDragSort"
+                    @select="selectTask($event)"
+                    @toggle="handleToggleTask($event)"
+                    @toggle-expand="toggleTaskExpanded($event)"
+                    @start-edit="startSubtaskInlineEdit($event)"
+                    @save-edit="saveSubtaskInlineEdit"
+                    @cancel-edit="cancelSubtaskInlineEdit"
+                    @edit-keydown="handleSubtaskEditKeydown($event)"
+                    @focus="(id: number, title: string) => startFocusOnTask(id, title)"
+                    @pointerdown="(ev: PointerEvent, pid: number, t: any) => onSubtaskPointerDown(ev, pid, t)"
+                  />
                 </div>
               </div>
             </TransitionGroup>
@@ -1337,7 +2216,6 @@ onMounted(() => {
             <p class="mt-4 text-slate-600">暂无任务</p>
             <p class="mt-1 text-sm text-slate-400">点击上方输入框添加新任务</p>
           </div>
-        </template>
       </div>
     </div>
 
@@ -1370,7 +2248,7 @@ onMounted(() => {
               :aria-label="selectedTask.status === 'done' ? '标记为未完成' : '标记为已完成'"
               class="flex h-5 w-5 items-center justify-center rounded-full border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
               :class="selectedTask.status === 'done' ? 'border-green-500 bg-green-500' : 'border-slate-300'"
-              @click="taskStore.toggleTask(selectedTask.id)"
+              @click="handleToggleTask(selectedTask.id)"
             >
               <svg v-if="selectedTask.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
@@ -1449,6 +2327,85 @@ onMounted(() => {
                     </button>
                   </div>
                   <div class="text-sm tabular-nums text-slate-500">≈ {{ taskDraft.pomodoroCount * 25 }} 分钟</div>
+                </div>
+              </div>
+
+              <!-- Start Date -->
+              <div class="rounded-lg border border-slate-200 p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-start-at">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  开始日期
+                </label>
+                <div class="flex items-center gap-2">
+                  <div ref="startDatePickerWrap" class="relative min-w-0 flex-1">
+                    <button
+                      id="task-start-at"
+                      type="button"
+                      class="h-10 w-full rounded border border-slate-200 px-3 text-left text-sm focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      :class="taskDraft.startAt ? 'text-slate-700' : 'text-slate-400'"
+                      @click="openDatePicker('startAt')"
+                    >
+                      {{ formatDateInputLabel(taskDraft.startAt) || '选择日期' }}
+                    </button>
+
+                    <div
+                      v-if="isDatePickerOpen('startAt')"
+                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+                    >
+                      <div class="mb-2 flex items-center justify-between">
+                        <button
+                          type="button"
+                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          aria-label="上一月"
+                          @click="shiftCalendarMonth(-1)"
+                        >
+                          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <div class="text-sm font-medium text-slate-700">{{ calendarTitle }}</div>
+                        <button
+                          type="button"
+                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          aria-label="下一月"
+                          @click="shiftCalendarMonth(1)"
+                        >
+                          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-slate-400">
+                        <span v-for="week in calendarWeekdays" :key="week">{{ week }}</span>
+                      </div>
+                      <div class="grid grid-cols-7 gap-1">
+                        <button
+                          v-for="cell in calendarCells"
+                          :key="cell.dateKey"
+                          type="button"
+                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                          :class="cell.isSelected
+                            ? 'bg-blue-600 text-white'
+                            : cell.inCurrentMonth
+                              ? (cell.isToday ? 'border border-blue-300 text-blue-600' : 'text-slate-700 hover:bg-slate-100')
+                              : 'text-slate-300 hover:bg-slate-50'"
+                          @click="pickDate(cell.dateKey)"
+                        >
+                          {{ cell.day }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    v-if="taskDraft.startAt"
+                    class="h-10 min-w-[52px] shrink-0 rounded border border-slate-200 px-2 text-xs text-slate-500 hover:bg-slate-50"
+                    @click="clearDateField('startAt')"
+                  >
+                    清除
+                  </button>
                 </div>
               </div>
 
@@ -1677,19 +2634,19 @@ onMounted(() => {
               </div>
 
               <!-- Subtasks -->
-              <div class="rounded-lg border border-slate-200 p-3">
+              <div class="rounded-lg border border-slate-200 bg-white p-3">
                 <div class="mb-2 flex items-center justify-between">
-                  <label class="flex items-center gap-2 text-sm text-slate-700">
+                  <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h10M9 12h10M9 19h10M4 6h.01M4 12h.01M4 18h.01" />
                     </svg>
                     子任务
                   </label>
-                  <span class="text-xs text-slate-400">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
+                  <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
                 </div>
 
-                <div v-if="selectedTaskIsSubtask" class="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                  当前任务是子任务，不支持继续添加下级子任务
+                <div v-if="!canAddSubtaskToSelected" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                  已达最大嵌套层级（{{ MAX_TASK_DEPTH }} 层），无法继续添加子任务
                 </div>
                 <div v-else class="mb-3 flex items-center gap-2">
                   <input
@@ -1697,30 +2654,86 @@ onMounted(() => {
                     type="text"
                     aria-label="新增子任务"
                     placeholder="添加子任务，按 Enter 保存…"
-                    class="h-9 flex-1 rounded border border-slate-200 px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                    class="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
                     @keyup.enter="submitSubtask"
                   >
                   <button
-                    class="h-9 shrink-0 rounded bg-slate-800 px-3 text-xs font-medium text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    class="h-9 shrink-0 rounded-lg bg-slate-800 px-3 text-xs font-medium text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                     @click="submitSubtask"
                   >
                     添加
                   </button>
                 </div>
 
-                <div v-if="selectedTaskSubtasks.length > 0" class="space-y-1">
+                <!-- Inline suggestions -->
+                <div
+                  v-if="inlineSuggestion && inlineSuggestionTaskId === selectedTask?.id && inlineSuggestion.suggestions.length > 0"
+                  class="mb-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3"
+                >
+                  <div class="mb-2 flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                      <svg class="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      <span class="text-xs font-semibold text-blue-700">
+                        {{ inlineSuggestion.source === 'pattern' ? '模板建议' : '学习建议' }}
+                        <span v-if="inlineSuggestion.patternName" class="font-normal text-blue-500">· {{ inlineSuggestion.patternName }}</span>
+                      </span>
+                    </div>
+                    <div class="flex gap-1">
+                      <button
+                        class="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-blue-700"
+                        @click="acceptAllSuggestions"
+                      >
+                        全部添加
+                      </button>
+                      <button
+                        class="rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-500 transition-colors hover:bg-blue-100"
+                        @click="dismissSuggestions"
+                      >
+                        忽略
+                      </button>
+                    </div>
+                  </div>
+                  <div class="space-y-1">
+                    <div
+                      v-for="s in inlineSuggestion.suggestions"
+                      :key="s"
+                      class="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5"
+                    >
+                      <span class="text-xs text-slate-700">{{ s }}</span>
+                      <div class="flex shrink-0 gap-1">
+                        <button
+                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:bg-emerald-50"
+                          @click="acceptSuggestion(s)"
+                        >
+                          添加
+                        </button>
+                        <button
+                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-50"
+                          @click="rejectSuggestion(s)"
+                        >
+                          忽略
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="selectedTaskSubtasks.length > 0" class="space-y-1.5">
                   <div
                     v-for="subtask in selectedTaskSubtasks"
                     :key="subtask.id"
-                    class="flex items-center gap-2 rounded border border-slate-200 px-2 py-1.5"
+                    class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/40 px-2.5 py-2 transition-colors hover:bg-slate-50"
                   >
+                    <div class="h-7 w-1 shrink-0 rounded-full opacity-70" :class="priorityBarClass(subtask.priority)" />
                     <button
                       role="checkbox"
                       :aria-checked="subtask.status === 'done'"
                       :aria-label="subtask.status === 'done' ? '标记为未完成' : '标记为已完成'"
                       class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                       :class="subtask.status === 'done' ? 'border-green-500 bg-green-500' : 'border-slate-300'"
-                      @click="taskStore.toggleTask(subtask.id)"
+                      @click="handleToggleTask(subtask.id)"
                     >
                       <svg v-if="subtask.status === 'done'" class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
@@ -1733,6 +2746,28 @@ onMounted(() => {
                     >
                       {{ subtask.title }}
                     </button>
+                    <span
+                      v-if="priorityBadge(subtask.priority)"
+                      class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none"
+                      :class="priorityBadge(subtask.priority)!.cls"
+                    >
+                      {{ priorityBadge(subtask.priority)!.label }}
+                    </span>
+                    <div class="flex items-center gap-1 text-xs text-slate-400">
+                      <div class="flex items-center gap-0.5">
+                        <span
+                          v-for="dotIndex in Math.min(subtask.pomodoroCount || 1, 5)"
+                          :key="dotIndex"
+                          class="h-1.5 w-1.5 rounded-full"
+                          :class="dotIndex <= (subtask.pomodoroCount || 1) ? 'bg-red-400' : 'bg-red-200'"
+                        />
+                      </div>
+                      <span v-if="(subtask.pomodoroCount || 1) > 5">+{{ (subtask.pomodoroCount || 1) - 5 }}</span>
+                    </div>
+                    <span class="text-xs" :class="isTaskOverdue(subtask) ? 'font-medium text-red-600' : subtask.dueAt ? 'text-rose-500' : 'text-slate-400'">
+                      {{ formatDueAt(subtask.dueAt) }}
+                      <span v-if="isTaskOverdue(subtask)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
+                    </span>
                     <button
                       class="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
                       @click="deleteSubtask(subtask.id)"
@@ -1808,6 +2843,56 @@ onMounted(() => {
         </div>
       </div>
     </Transition>
+
+    <Transition
+      enter-active-class="transition-all duration-200 ease-out"
+      enter-from-class="translate-y-2 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition-all duration-150 ease-in"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-2 opacity-0"
+    >
+      <div
+        v-if="inlineNoticeMessage"
+        :key="inlineNoticeToken"
+        class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-xl"
+      >
+        {{ inlineNoticeMessage }}
+      </div>
+    </Transition>
+
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition duration-120 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="inlineConfirmState"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4"
+      >
+        <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl">
+          <div class="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-700">确认操作</div>
+          <div class="px-5 py-4 text-sm text-slate-600">{{ inlineConfirmState.message }}</div>
+          <div class="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+            <button
+              class="rounded px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              @click="resolveInlineConfirm(false)"
+            >
+              取消
+            </button>
+            <button
+              class="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              @click="resolveInlineConfirm(true)"
+            >
+              确认
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -1831,5 +2916,10 @@ onMounted(() => {
 .task-drag-origin {
   transform-origin: center;
   transition: opacity 220ms ease;
+}
+
+.task-subtree {
+  padding-top: 0.15rem;
+  padding-bottom: 0.35rem;
 }
 </style>

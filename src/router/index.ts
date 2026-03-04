@@ -24,12 +24,6 @@ const router = createRouter({
       props: { filter: 'tomorrow' }
     },
     {
-      path: '/tasks/week',
-      name: 'week',
-      component: () => import('../views/TasksView.vue'),
-      props: { filter: 'week' }
-    },
-    {
       path: '/tasks/all',
       name: 'all',
       component: () => import('../views/TasksView.vue'),
@@ -37,9 +31,7 @@ const router = createRouter({
     },
     {
       path: '/tasks/completed',
-      name: 'completed',
-      component: () => import('../views/TasksView.vue'),
-      props: { filter: 'completed' }
+      redirect: '/tasks/all'
     },
     // Projects - 清单视图
     {
