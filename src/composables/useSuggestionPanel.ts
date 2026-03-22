@@ -4,7 +4,7 @@
  * Manages per-task suggestion state (keyed by taskId), triggers the
  * suggestion pipeline, and handles accept/reject with feedback recording.
  */
-import { ref, type Ref } from 'vue';
+import { shallowRef, triggerRef, type ShallowRef } from 'vue';
 import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../services/suggestion';
 import { enqueue } from '../services/ai/queue';
 import { feedbackRecord } from '../services/commands/learning';
@@ -34,7 +34,11 @@ function emptyState(): SuggestionPanelState {
 }
 
 export function useSuggestionPanel() {
-  const panels: Ref<Map<number, SuggestionPanelState>> = ref(new Map());
+  const panels: ShallowRef<Map<number, SuggestionPanelState>> = shallowRef(new Map());
+
+  function notify(): void {
+    triggerRef(panels);
+  }
 
   function getPanel(taskId: number): SuggestionPanelState | undefined {
     return panels.value.get(taskId);
@@ -54,8 +58,7 @@ export function useSuggestionPanel() {
     state.requested = true;
     state.loading = true;
     panels.value.set(taskId, state);
-    // Force reactivity
-    panels.value = new Map(panels.value);
+    notify();
 
     // 1. Run local pipeline
     const output = await suggest({ taskTitle, projectId });
@@ -71,7 +74,7 @@ export function useSuggestionPanel() {
       if (output.strategy === 'local') {
         state.loading = false;
       }
-      panels.value = new Map(panels.value);
+      notify();
     }
 
     // 2. Fire AI if strategy requires it
@@ -112,23 +115,25 @@ export function useSuggestionPanel() {
               action.status = 'executed';
             }
             // Persist the status change to DB
-            updateAiJob(job.id, { actions: job.actions }).catch(() => {});
+            updateAiJob(job.id, { actions: job.actions }).catch((e) => {
+              console.warn('[suggestion-panel] failed to persist AI job status', e);
+            });
           }
         } catch (e) {
           console.error('[suggestion-panel] AI job failed', e);
         } finally {
           state.loading = false;
-          panels.value = new Map(panels.value);
+          notify();
         }
       } else {
         // AI not configured — stop loading
         state.loading = false;
-        panels.value = new Map(panels.value);
+        notify();
       }
     } else {
       // Strategy is 'local' — no AI needed, stop loading
       state.loading = false;
-      panels.value = new Map(panels.value);
+      notify();
     }
   }
 
@@ -153,7 +158,7 @@ export function useSuggestionPanel() {
         dueAt: parentTask.dueAt,
       });
 
-      // Record positive feedback
+      // Record positive feedback (single path — learning engine + feedback table)
       recordFeedback(
         panel.keywords,
         suggestion.title,
@@ -162,7 +167,6 @@ export function useSuggestionPanel() {
         suggestion.source,
       );
 
-      // Record to suggestion_feedback table for AI suggestions
       if (suggestion.source === 'ai') {
         feedbackRecord({
           taskId,
@@ -171,8 +175,13 @@ export function useSuggestionPanel() {
           suggestionTitle: suggestion.title,
           source: 'ai',
           action: 'accepted',
-        }).catch(() => {});
-        refreshKnownKeywords().catch(() => {});
+          jobId: null,
+        }).catch((e) => {
+          console.warn('[suggestion-panel] failed to record feedback', e);
+        });
+        refreshKnownKeywords().catch((e) => {
+          console.warn('[suggestion-panel] failed to refresh keywords', e);
+        });
       }
 
       // Remove from list
@@ -210,7 +219,10 @@ export function useSuggestionPanel() {
         suggestionTitle: suggestion.title,
         source: 'ai',
         action: 'rejected',
-      }).catch(() => {});
+        jobId: null,
+      }).catch((e) => {
+        console.warn('[suggestion-panel] failed to record rejection', e);
+      });
     }
 
     removeSuggestion(taskId, suggestion.title);
@@ -237,7 +249,7 @@ export function useSuggestionPanel() {
     const panel = panels.value.get(taskId);
     if (panel) {
       panel.collapsed = true;
-      panels.value = new Map(panels.value);
+      notify();
     }
   }
 
@@ -248,7 +260,7 @@ export function useSuggestionPanel() {
     const panel = panels.value.get(taskId);
     if (panel) {
       panel.collapsed = !panel.collapsed;
-      panels.value = new Map(panels.value);
+      notify();
     }
   }
 
@@ -256,7 +268,7 @@ export function useSuggestionPanel() {
     const panel = panels.value.get(taskId);
     if (!panel) return;
     panel.suggestions = panel.suggestions.filter((s) => s.title !== title);
-    panels.value = new Map(panels.value);
+    notify();
   }
 
   return {

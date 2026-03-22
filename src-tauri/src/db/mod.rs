@@ -27,18 +27,20 @@ fn init_db(app: &AppHandle) -> Connection {
   let app_dir = app
     .path()
     .app_data_dir()
-    .expect("failed to resolve app data dir");
-  std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
+    .expect("FATAL: cannot resolve app data dir — is the app manifest correct?");
+  std::fs::create_dir_all(&app_dir)
+    .expect("FATAL: cannot create app data dir — check filesystem permissions");
 
   let db_path = app_dir.join("tracker.db");
-  let conn = Connection::open(&db_path).expect("failed to open database");
+  let conn = Connection::open(&db_path)
+    .unwrap_or_else(|e| panic!("FATAL: cannot open database at {}: {}", db_path.display(), e));
 
   // Enable WAL mode for better concurrency
   conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
   // Enable foreign keys
   conn
     .execute_batch("PRAGMA foreign_keys=ON;")
-    .expect("failed to enable foreign keys");
+    .expect("FATAL: cannot enable foreign keys");
 
   run_migrations(&conn);
 
@@ -601,5 +603,23 @@ Detail level: {{detailLevel}}
     conn
       .execute_batch("PRAGMA user_version = 12;")
       .expect("failed to set user_version to 12");
+  }
+
+  if version < 13 {
+    conn
+      .execute_batch(
+        "
+        CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project_deleted ON tasks(project_id, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_focus_sessions_start_time ON focus_sessions(start_time);
+        CREATE INDEX IF NOT EXISTS idx_focus_sessions_task_id ON focus_sessions(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id ON task_tags(tag_id);
+
+        PRAGMA user_version = 13;
+        ",
+      )
+      .expect("failed to run migration v13");
   }
 }

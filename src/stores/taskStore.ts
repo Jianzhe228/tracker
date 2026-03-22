@@ -540,12 +540,22 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   // Deadline watcher — batches notifications to avoid spam
-  const deadlineNotified = new Set<string>();
+  const deadlineNotified = new Map<string, number>(); // key → timestamp
   let deadlineWatcherInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Clear stale entries older than 24 hours */
+  function pruneDeadlineNotified(): void {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const [key, ts] of deadlineNotified) {
+      if (ts < cutoff) deadlineNotified.delete(key);
+    }
+  }
 
   function checkDeadlines(): void {
     const settingsStore = useSettingsStore();
     if (!settingsStore.notification.notifyDeadline) return;
+
+    pruneDeadlineNotified();
 
     const now = Date.now();
     const ONE_HOUR = 60 * 60 * 1000;
@@ -565,13 +575,13 @@ export const useTaskStore = defineStore('task', () => {
       if (diff <= ONE_HOUR) {
         const key = `${task.id}:1h`;
         if (!deadlineNotified.has(key)) {
-          deadlineNotified.add(key);
+          deadlineNotified.set(key, now);
           urgentTasks.push(task);
         }
       } else if (diff <= ONE_DAY) {
         const key = `${task.id}:1d`;
         if (!deadlineNotified.has(key)) {
-          deadlineNotified.add(key);
+          deadlineNotified.set(key, now);
           todayTasks.push(task);
         }
       }

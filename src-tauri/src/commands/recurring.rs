@@ -229,7 +229,7 @@ pub fn recurring_rule_create(
        pomodoro_duration,
        created_at,
        updated_at
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     rusqlite::params![
       title,
       payload.description,
@@ -242,6 +242,7 @@ pub fn recurring_rule_create(
       payload.notes,
       pomodoro_count,
       pomodoro_duration,
+      now.clone(),
       now,
     ],
   )

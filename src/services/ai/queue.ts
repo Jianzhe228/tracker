@@ -132,7 +132,7 @@ async function processJob(
     await updateAiJob(job.id, {
       status: 'failed',
       error,
-    }).catch(() => {});
+    }).catch((e) => console.warn('[ai-queue] failed to update failed job', e));
 
     return {
       ...job,

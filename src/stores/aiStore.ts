@@ -132,9 +132,9 @@ export const useAiStore = defineStore('ai', () => {
         source: 'ai',
         action: 'accepted',
         jobId: jobId,
-      }).catch(() => {});
+      }).catch((e) => console.warn('[ai-store] failed to record feedback', e));
       // Refresh keyword cache after feedback
-      refreshKnownKeywords().catch(() => {});
+      refreshKnownKeywords().catch((e) => console.warn('[ai-store] failed to refresh keywords', e));
     }
 
     // If all actions resolved, remove job from pending
@@ -174,7 +174,7 @@ export const useAiStore = defineStore('ai', () => {
         source: 'ai',
         action: 'rejected',
         jobId: jobId,
-      }).catch(() => {});
+      }).catch((e) => console.warn('[ai-store] failed to record rejection', e));
     }
 
     const allResolved = job.actions.every((a) => a.status !== 'pending');

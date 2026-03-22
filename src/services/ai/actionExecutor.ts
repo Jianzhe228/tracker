@@ -1,15 +1,20 @@
 /**
  * AI action executor — dispatches AiAction to store operations.
+ * Accepts a TaskStore-like interface to avoid direct store dependency.
  */
 import type { AiAction } from './types';
-import { useTaskStore } from '../../stores/taskStore';
 import { createNotification } from '../commands/notification';
 
-type ActionHandler = (action: AiAction, context: Record<string, unknown>) => Promise<void>;
+export interface ActionExecutorTaskStore {
+  tasks: Array<{ id: number; projectId: number | null; dueAt: string | null }>;
+  addTask: (title: string, opts: { parentId?: number | null; projectId?: number | null; dueAt?: string | null }) => Promise<unknown>;
+  updateTask: (id: number, data: Record<string, unknown>) => Promise<void>;
+}
+
+type ActionHandler = (action: AiAction, context: Record<string, unknown>, taskStore: ActionExecutorTaskStore) => Promise<void>;
 
 const handlers: Record<string, ActionHandler> = {
-  async create_subtask(action, context) {
-    const taskStore = useTaskStore();
+  async create_subtask(action, context, taskStore) {
     const parentId = context.taskId as number | undefined;
     const parentTask = parentId
       ? taskStore.tasks.find((t) => t.id === parentId)
@@ -22,16 +27,14 @@ const handlers: Record<string, ActionHandler> = {
     });
   },
 
-  async create_task(action) {
-    const taskStore = useTaskStore();
+  async create_task(action, _context, taskStore) {
     await taskStore.addTask(String(action.params.title ?? ''), {
       projectId: (action.params.projectId as number | undefined) ?? null,
       dueAt: (action.params.dueAt as string | undefined) ?? null,
     });
   },
 
-  async update_task(action, context) {
-    const taskStore = useTaskStore();
+  async update_task(action, context, taskStore) {
     const taskId = context.taskId as number | undefined;
     if (!taskId) return;
     await taskStore.updateTask(taskId, action.params);
@@ -44,11 +47,17 @@ const handlers: Record<string, ActionHandler> = {
   },
 };
 
-export async function executeAction(action: AiAction, context: Record<string, unknown>): Promise<void> {
+export async function executeAction(
+  action: AiAction,
+  context: Record<string, unknown>,
+  taskStore?: ActionExecutorTaskStore,
+): Promise<void> {
   const handler = handlers[action.type];
   if (!handler) {
     console.warn(`[ai] unknown action type: ${action.type}`);
     return;
   }
-  await handler(action, context);
+  // Lazy-load store only if not provided (backward compat)
+  const store = taskStore ?? (await import('../../stores/taskStore')).useTaskStore();
+  await handler(action, context, store);
 }

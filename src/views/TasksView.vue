@@ -8,7 +8,7 @@ import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } fro
 import type { TaskItem, Priority, TaskStatus } from '../types/domain';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
-import { useSuggestionPanel } from '../composables/useSuggestionPanel';
+import { useSuggestionPanel, type SidebarSuggestion } from '../composables/useSuggestionPanel';
 import TaskSubtreeItem from '../components/TaskSubtreeItem.vue';
 
 const props = defineProps<{
@@ -1289,7 +1289,7 @@ async function submitSubtask(): Promise<void> {
     const keywords = extractKeywords(parentTitle);
     if (keywords.length > 0) {
       recordFeedback(keywords, title, projectId, true, 'manual');
-      refreshKnownKeywords().catch(() => {});
+      refreshKnownKeywords().catch((e) => console.warn('[tasks] failed to refresh keywords', e));
     }
   } catch (error) {
     console.error(error);
@@ -1301,13 +1301,13 @@ async function submitSubtask(): Promise<void> {
 
 async function handleAcceptSuggestion(suggestion: { title: string; source: string; patternName?: string }): Promise<void> {
   if (!selectedTask.value) return;
-  await panelAcceptSuggestion(selectedTask.value.id, suggestion as any);
+  await panelAcceptSuggestion(selectedTask.value.id, suggestion as SidebarSuggestion);
   setTaskExpanded(selectedTask.value.id, true);
 }
 
 function handleRejectSuggestion(suggestion: { title: string; source: string; patternName?: string }): void {
   if (!selectedTask.value) return;
-  panelRejectSuggestion(selectedTask.value.id, suggestion as any);
+  panelRejectSuggestion(selectedTask.value.id, suggestion as SidebarSuggestion);
 }
 
 async function handleAcceptAllSuggestions(): Promise<void> {
