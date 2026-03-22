@@ -13,7 +13,6 @@ dist-ssr
 *.local
 src-tauri/target
 src-tauri/gen
-Cargo.lock
 pnpm-lock.yaml
 yarn.lock
 
