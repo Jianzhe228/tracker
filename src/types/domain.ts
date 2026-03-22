@@ -228,7 +228,7 @@ export interface SuggestionFeedbackPayload {
   suggestionTitle: string;
   source: string;
   action: string;
-  jobId: number | null;
+  jobId?: number | null;
 }
 
 // ── Keyword cluster ─────────────────────────────────────────────────
