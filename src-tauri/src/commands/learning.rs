@@ -1,8 +1,70 @@
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use tauri::State;
 
 use crate::db::AppState;
+
+// ── Fuzzy matching utilities ────────────────────────────────────────
+
+/// Character-level Jaccard similarity between two strings.
+/// Returns 0.0-1.0. Used to match "四六级" ≈ "四级" (Jaccard = 0.67).
+fn char_jaccard(a: &str, b: &str) -> f64 {
+  if a == b {
+    return 1.0;
+  }
+  let set_a: HashSet<char> = a.chars().collect();
+  let set_b: HashSet<char> = b.chars().collect();
+  let intersection = set_a.intersection(&set_b).count();
+  let union = set_a.union(&set_b).count();
+  if union == 0 {
+    return 0.0;
+  }
+  intersection as f64 / union as f64
+}
+
+const JACCARD_THRESHOLD: f64 = 0.5;
+
+/// Expand query keywords by finding fuzzy matches in the database.
+/// Returns the union of original keywords + similar stored keywords.
+fn expand_keywords_fuzzy(
+  db: &rusqlite::Connection,
+  keywords: &[String],
+) -> Vec<String> {
+  // Get all distinct keywords from learn_log
+  let stored: Vec<String> = {
+    let mut stmt = match db.prepare("SELECT DISTINCT keyword FROM subtask_learn_log WHERE score > 0") {
+      Ok(s) => s,
+      Err(_) => return keywords.to_vec(),
+    };
+    let rows = match stmt.query_map([], |row| row.get::<_, String>(0)) {
+      Ok(r) => r,
+      Err(_) => return keywords.to_vec(),
+    };
+    rows.filter_map(|r| r.ok()).collect()
+  };
+
+  let mut expanded: HashSet<String> = keywords.iter().cloned().collect();
+
+  for query_kw in keywords {
+    for stored_kw in &stored {
+      if expanded.contains(stored_kw) {
+        continue;
+      }
+      // Check containment (one contains the other)
+      if stored_kw.contains(query_kw.as_str()) || query_kw.contains(stored_kw.as_str()) {
+        expanded.insert(stored_kw.clone());
+        continue;
+      }
+      // Check character Jaccard similarity
+      if char_jaccard(query_kw, stored_kw) >= JACCARD_THRESHOLD {
+        expanded.insert(stored_kw.clone());
+      }
+    }
+  }
+
+  expanded.into_iter().collect()
+}
 
 // ── Learn log types ─────────────────────────────────────────────────
 
@@ -121,6 +183,8 @@ pub fn learn_record_batch(
 }
 
 /// Suggest subtasks based on keywords and project_id, ordered by score.
+/// Uses fuzzy keyword expansion (character Jaccard + containment) to match
+/// similar keywords like "四六级" ≈ "四级" ≈ "六级".
 #[tauri::command]
 pub fn learn_suggest(
   state: State<'_, AppState>,
@@ -131,8 +195,10 @@ pub fn learn_suggest(
   let db = state.db().lock().map_err(|e| e.to_string())?;
   let max_results = limit.unwrap_or(8);
 
-  // First, expand keywords via clusters
+  // Expand keywords via: 1) clusters, 2) fuzzy matching (Jaccard + containment)
   let mut expanded_keywords = keywords.clone();
+
+  // Cluster expansion
   for kw in &keywords {
     let mut stmt = db
       .prepare(
@@ -160,6 +226,10 @@ pub fn learn_suggest(
       }
     }
   }
+
+  // Fuzzy expansion: character Jaccard + containment
+  let fuzzy_expanded = expand_keywords_fuzzy(&db, &expanded_keywords);
+  expanded_keywords = fuzzy_expanded;
 
   // Query learn log for all expanded keywords
   if expanded_keywords.is_empty() {
@@ -322,6 +392,7 @@ pub struct LearnStats {
 }
 
 /// Get aggregate learn stats for keywords, used for confidence scoring.
+/// Uses fuzzy keyword expansion for broader matching.
 #[tauri::command]
 pub fn learn_stats(
   state: State<'_, AppState>,
@@ -339,12 +410,15 @@ pub fn learn_stats(
     });
   }
 
-  let placeholders: Vec<String> = keywords
+  // Fuzzy expand keywords
+  let expanded = expand_keywords_fuzzy(&db, &keywords);
+
+  let placeholders: Vec<String> = expanded
     .iter()
     .enumerate()
     .map(|(i, _)| format!("?{}", i + 1))
     .collect();
-  let project_idx = keywords.len() + 1;
+  let project_idx = expanded.len() + 1;
 
   // Count distinct subtask_titles with positive score
   let sql = format!(
@@ -361,7 +435,7 @@ pub fn learn_stats(
   );
 
   let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-  for kw in &keywords {
+  for kw in &expanded {
     params.push(Box::new(kw.clone()));
   }
   params.push(Box::new(project_id));
@@ -378,12 +452,12 @@ pub fn learn_stats(
     })
     .map_err(|e| e.to_string())?;
 
-  // Count matching task_subtask_history entries
+  // Count matching task_subtask_history entries (use original keywords for title LIKE)
   let history_sql = format!(
     "SELECT COUNT(*) FROM task_subtask_history
      WHERE ({})
        AND (project_id IS NULL OR project_id = ?{})",
-    keywords
+    expanded
       .iter()
       .enumerate()
       .map(|(i, _)| format!("parent_title LIKE ?{}", i + 1))
@@ -393,7 +467,7 @@ pub fn learn_stats(
   );
 
   let mut h_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-  for kw in &keywords {
+  for kw in &expanded {
     h_params.push(Box::new(format!("%{}%", kw)));
   }
   h_params.push(Box::new(project_id));
