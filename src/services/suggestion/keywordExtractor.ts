@@ -1,8 +1,12 @@
 /**
  * Keyword extractor for task titles.
  *
- * Algorithm C2 — tested with 40 extraction cases, 14 similarity pairs,
- * 18 learn-log simulation queries. See __tests__/keywordExtractor.test.ts
+ * Algorithm C3 — evolved from C2 with two structural improvements:
+ *   A: Rule 4b suppression (skip when recovered bigram covers run's last char)
+ *   B: Composable temporal patterns (regex-based, not enumerated)
+ *
+ * See __tests__/keywordExtractor.test.ts (baseline)
+ *     __tests__/keywordExtractor.stress.ts (C2 vs C3 comparison)
  *
  * Strategy:
  * 1. Intl.Segmenter for Chinese word segmentation
@@ -10,6 +14,7 @@
  * 3. Split single-char runs at functional particles, generate bigram+trigram
  * 4. Adjacent multi-char word joins (高等+数学 → 高等数学)
  * 5. Boundary merges (菜+市场 → 菜市场, 开题+报告 → 开题报告)
+ *    - 4b structurally suppressed when 4c covers the same boundary
  * 6. Filter noise n-grams (functional heads/tails, temporal prefixes)
  * 7. Known keywords (from learn_log) prioritized
  * 8. Fallback to n-gram extraction when Segmenter unavailable
@@ -46,12 +51,19 @@ const TEMPORAL_WORDS = new Set([
   '早上', '上午', '中午', '下午', '傍晚', '晚上', '凌晨',
   '今天', '明天', '后天', '昨天', '前天', '大后天',
   '周末', '每天', '每周',
+  // 不可分解的时段词（与"早上/晚上"同类的封闭集）
+  '清晨', '深夜', '半夜', '午夜', '黄昏', '拂晓',
 ]);
 const TEMPORAL_DAY_RE = /^(周[一二三四五六日]|星期[一二三四五六日天])$/;
 const TEMPORAL_NUM_RE = /^[一二三四五六七八九十百千\d]+[点时分秒月日号年]$/;
+// 构词模式: 时间名词+位置后缀 (月底/年初/周中/...)
+const TEMPORAL_PERIOD_RE = /^[月年周][底初末中]$/;
+// 构词模式: 方向前缀+时间单位 (上周/下月/本年/...)
+const TEMPORAL_RELATIVE_RE = /^[上下这本去明后前][周月年]$/;
 
 function isTemporalWord(w: string): boolean {
-  return TEMPORAL_WORDS.has(w) || TEMPORAL_DAY_RE.test(w) || TEMPORAL_NUM_RE.test(w);
+  return TEMPORAL_WORDS.has(w) || TEMPORAL_DAY_RE.test(w) || TEMPORAL_NUM_RE.test(w)
+    || TEMPORAL_PERIOD_RE.test(w) || TEMPORAL_RELATIVE_RE.test(w);
 }
 
 const FUNC_HEADS = new Set('去到来在把的了着过给让被得地和或与'.split(''));
@@ -207,25 +219,30 @@ export function extractKeywords(title: string): string[] {
     if (!nextSeg || nextSeg.type !== 'content' || nextSeg.text.length < 2 ||
         !/[\u4e00-\u9fff]/.test(nextSeg.text)) continue;
 
-    // 4b. Last char of run (length>=2) + following content word
-    // e.g., [四,点,去,菜] → 菜 + 市场 → 菜市场
-    if (r.length >= 2) {
-      const lastChar = r[r.length - 1];
-      if (!FUNC_HEADS.has(lastChar)) {
-        const merged = lastChar + nextSeg.text;
-        if (merged.length <= 5 && !isNoiseNgram(merged) && add(merged)) {
-          boundaryMerges.push(merged);
-        }
-      }
-    }
-
-    // 4c. Recovered bigram + following content word
+    // 4c first: Recovered bigram + following content word
     // e.g., 开题 + 报告 → 开题报告
     const recovered = runRecovered.get(info.runIdx) || [];
+    let has4c = false;
     for (const rec of recovered) {
       if (rec.length === 2) {
         const merged = rec + nextSeg.text;
         if (merged.length <= 6 && !isNoiseNgram(merged) && add(merged)) {
+          boundaryMerges.push(merged);
+          has4c = true;
+        }
+      }
+    }
+
+    // 4b. Last char of run (length>=2) + following content word
+    // e.g., [四,点,去,菜] → 菜 + 市场 → 菜市场
+    // Structurally suppressed: if last char is already the tail of a recovered
+    // bigram, 4b produces a cross-boundary fragment (化+数据→化数据). Skip it.
+    if (r.length >= 2) {
+      const lastChar = r[r.length - 1];
+      const lastCharCovered = recovered.some(bg => bg.endsWith(lastChar));
+      if (!lastCharCovered && !FUNC_HEADS.has(lastChar)) {
+        const merged = lastChar + nextSeg.text;
+        if (merged.length <= 5 && !isNoiseNgram(merged) && add(merged)) {
           boundaryMerges.push(merged);
         }
       }

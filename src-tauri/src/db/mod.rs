@@ -562,4 +562,44 @@ Detail level: {{detailLevel}}
       )
       .expect("failed to update task_decompose prompt v11");
   }
+
+  if version < 12 {
+    // Optimize task_decompose prompt: Chinese few-shot + history-first approach
+    // Test results show this produces shorter, more specific suggestions
+    // that better leverage user history patterns.
+    conn
+      .execute(
+        "UPDATE ai_skills SET
+           system_prompt = '你给任务生成待办清单。
+
+【格式】每条 3-8 字，动词开头，可直接执行
+【数量】2-5 条
+【重点】有用户历史时，优先参考用户习惯生成风格一致的建议；有拒绝记录时，避免类似项
+
+❌ 空泛: \"做好准备\" \"确认安排\" \"制定计划\" \"了解情况\" \"准备材料\" \"总结复盘\"
+✅ 具体: \"订机票\" \"带身份证\" \"背单词\" \"查报错日志\" \"拖地\" \"买牛奶\"
+
+示例:
+出差去上海 → [\"订机票\",\"订酒店\",\"带充电器\",\"查会议地址\"]
+准备期末考试 → [\"背重点公式\",\"做两套真题\",\"整理错题本\"]
+修复首页白屏 → [\"复现问题\",\"查控制台报错\",\"定位异常组件\"]
+周末大扫除 → [\"拖地\",\"擦窗户\",\"整理衣柜\"]
+
+仅返回JSON: {\"actions\": [{\"type\": \"create_subtask\", \"params\": {\"title\": \"...\"}}]}',
+           user_prompt_template = '{{taskTitle}}
+{{#if projectName}}[{{projectName}}]{{/if}}
+{{#if learnedItems}}参考: {{learnedItems}}{{/if}}
+{{#if manualSubtasks}}历史: {{manualSubtasks}}{{/if}}
+{{#if rejectedItems}}避免: {{rejectedItems}}{{/if}}
+{{#if userPatterns}}常用: {{userPatterns}}{{/if}}',
+           updated_at = CURRENT_TIMESTAMP
+         WHERE key = 'task_decompose' AND is_builtin = 1",
+        [],
+      )
+      .expect("failed to update task_decompose prompt v12");
+
+    conn
+      .execute_batch("PRAGMA user_version = 12;")
+      .expect("failed to set user_version to 12");
+  }
 }
