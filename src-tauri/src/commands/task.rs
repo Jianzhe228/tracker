@@ -286,16 +286,16 @@ fn insert_completion_log(
   task_id: i64,
   completed_at: &str,
 ) -> Result<(), String> {
-  let task_row: Option<(String, i64, i64)> = tx
+  let task_row: Option<(String, i64, i64, Option<i64>)> = tx
     .query_row(
-      "SELECT title, pomodoro_count, pomodoro_duration FROM tasks WHERE id = ?1",
+      "SELECT title, pomodoro_count, pomodoro_duration, project_id FROM tasks WHERE id = ?1",
       rusqlite::params![task_id],
-      |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+      |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
     )
     .optional()
     .map_err(|e| e.to_string())?;
 
-  let Some((title, pomodoro_count, pomodoro_duration)) = task_row else {
+  let Some((title, pomodoro_count, pomodoro_duration, project_id)) = task_row else {
     return Ok(());
   };
 
@@ -338,6 +338,49 @@ fn insert_completion_log(
       ],
     )
     .map_err(|e| e.to_string())?;
+
+  // Snapshot subtask titles for learning
+  capture_subtask_history(tx, task_id, &title, project_id)?;
+
+  Ok(())
+}
+
+/// Snapshot direct subtask titles when a parent task is completed.
+fn capture_subtask_history(
+  tx: &rusqlite::Transaction<'_>,
+  parent_id: i64,
+  parent_title: &str,
+  project_id: Option<i64>,
+) -> Result<(), String> {
+  let mut stmt = tx
+    .prepare(
+      "SELECT title FROM tasks
+       WHERE parent_id = ?1 AND deleted_at IS NULL
+       ORDER BY sort_order ASC, created_at ASC",
+    )
+    .map_err(|e| e.to_string())?;
+
+  let rows = stmt
+    .query_map(rusqlite::params![parent_id], |row| row.get::<_, String>(0))
+    .map_err(|e| e.to_string())?;
+
+  let mut titles = Vec::new();
+  for row in rows {
+    titles.push(row.map_err(|e| e.to_string())?);
+  }
+
+  if titles.is_empty() {
+    return Ok(());
+  }
+
+  let titles_json = serde_json::to_string(&titles).map_err(|e| e.to_string())?;
+
+  tx.execute(
+    "INSERT INTO task_subtask_history (parent_task_id, parent_title, project_id, subtask_titles)
+     VALUES (?1, ?2, ?3, ?4)",
+    rusqlite::params![parent_id, parent_title, project_id, titles_json],
+  )
+  .map_err(|e| e.to_string())?;
 
   Ok(())
 }

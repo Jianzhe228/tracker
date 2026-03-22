@@ -8,6 +8,7 @@ import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } fro
 import type { TaskItem, Priority, TaskStatus } from '../types/domain';
 import { useAiStore } from '../stores/aiStore';
 import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../services/suggestion';
+import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import type { SuggestionResult } from '../types/domain';
 import TaskSubtreeItem from '../components/TaskSubtreeItem.vue';
 
@@ -769,20 +770,22 @@ async function submitTask(): Promise<void> {
     newTaskDate.value = '';
     showNewTaskCalendar.value = false;
 
-    // Run local suggestion pipeline first (instant)
-    const result = await suggest({
+    // Run suggestion pipeline with confidence scoring
+    const output = await suggest({
       taskTitle: createdTask.title,
       projectId,
     });
 
-    if (result.source !== 'none' && result.suggestions.length > 0) {
+    if (output.result.source !== 'none' && output.result.suggestions.length > 0) {
       // Show inline suggestions
-      inlineSuggestion.value = result;
+      inlineSuggestion.value = output.result;
       inlineSuggestionTaskId.value = createdTask.id;
-      inlineSuggestionKeywords.value = extractKeywords(createdTask.title);
+      inlineSuggestionKeywords.value = output.keywords;
       selectedTaskId.value = createdTask.id;
-    } else {
-      // No local match — fire AI job with enriched context
+    }
+
+    // Fire AI job if strategy requires it (ai or hybrid)
+    if (output.strategy !== 'local') {
       const aiContext = await buildAiContext({
         taskTitle: createdTask.title,
         projectId,
@@ -795,6 +798,9 @@ async function submitTask(): Promise<void> {
         projectName: projectItem?.title ?? '',
         userPatterns: aiContext.userPatterns,
         learnedItems: aiContext.learnedItems,
+        rejectedItems: aiContext.rejectedItems,
+        manualSubtasks: aiContext.manualSubtasks,
+        siblingTasks: aiContext.siblingTasks,
       }).catch(console.error);
     }
   } catch (error) {
@@ -1296,6 +1302,15 @@ async function submitSubtask(): Promise<void> {
     });
     setTaskExpanded(selectedTask.value.id, true);
     subtaskTitle.value = '';
+
+    // Record manual subtask creation as learning feedback (strongest signal)
+    const parentTitle = selectedTask.value.title;
+    const projectId = selectedTask.value.projectId;
+    const keywords = extractKeywords(parentTitle);
+    if (keywords.length > 0) {
+      recordFeedback(keywords, title, projectId, true, 'manual');
+      refreshKnownKeywords().catch(() => {});
+    }
   } catch (error) {
     console.error(error);
     showInlineNotice('创建子任务失败，请重试');
@@ -1878,6 +1893,9 @@ onMounted(() => {
   document.addEventListener('mousedown', handleGlobalPointerDown, true);
   document.addEventListener('touchstart', handleGlobalPointerDown, true);
   document.addEventListener('keydown', handleGlobalKeyDown);
+
+  // Initialize keyword cache for self-learning suggestions
+  refreshKnownKeywords().catch(() => {});
 });
 </script>
 

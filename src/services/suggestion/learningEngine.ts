@@ -42,6 +42,7 @@ export async function suggestFromLearning(
 /**
  * Record that a user adopted (delta=+1) or rejected (delta=-1) a subtask suggestion.
  * Records against all extracted keywords for the parent task.
+ * Manual subtask creation uses delta=+2 (strongest signal).
  */
 export async function recordFeedback(
   keywords: string[],
@@ -52,12 +53,16 @@ export async function recordFeedback(
 ): Promise<void> {
   if (!isTauri || keywords.length === 0) return;
 
+  // Manual creation gets double weight
+  const isManual = source === 'manual';
+  const delta = adopted ? (isManual ? 2 : 1) : -1;
+
   try {
     await learnRecordBatch(
       keywords,
       subtaskTitle,
       projectId,
-      adopted ? 1 : -1,
+      delta,
       source,
     );
   } catch (e) {

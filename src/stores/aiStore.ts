@@ -6,6 +6,8 @@ import { listAiSkills, listPendingActionJobs, updateAiJob, toggleAiSkill as togg
 import { enqueue, invalidateSkillCache, getProcessingCount } from '../services/ai/queue';
 import { executeAction } from '../services/ai/actionExecutor';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
+import { feedbackRecord } from '../services/commands/learning';
+import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -118,8 +120,21 @@ export const useAiStore = defineStore('ai', () => {
     if (action.type === 'create_subtask' && action.params.title) {
       const taskTitle = String(job.inputContext.taskTitle ?? '');
       const projectId = (job.inputContext.projectId as number | undefined) ?? null;
+      const taskId = (job.inputContext.taskId as number | undefined) ?? 0;
       const keywords = extractKeywords(taskTitle);
       recordFeedback(keywords, String(action.params.title), projectId, true, 'ai');
+      // Record to suggestion_feedback table
+      feedbackRecord({
+        taskId,
+        taskTitle,
+        projectId,
+        suggestionTitle: String(action.params.title),
+        source: 'ai',
+        action: 'accepted',
+        jobId: jobId,
+      }).catch(() => {});
+      // Refresh keyword cache after feedback
+      refreshKnownKeywords().catch(() => {});
     }
 
     // If all actions resolved, remove job from pending
@@ -147,8 +162,19 @@ export const useAiStore = defineStore('ai', () => {
     if (action.type === 'create_subtask' && action.params.title) {
       const taskTitle = String(job.inputContext.taskTitle ?? '');
       const projectId = (job.inputContext.projectId as number | undefined) ?? null;
+      const taskId = (job.inputContext.taskId as number | undefined) ?? 0;
       const keywords = extractKeywords(taskTitle);
       recordFeedback(keywords, String(action.params.title), projectId, false, 'ai');
+      // Record to suggestion_feedback table
+      feedbackRecord({
+        taskId,
+        taskTitle,
+        projectId,
+        suggestionTitle: String(action.params.title),
+        source: 'ai',
+        action: 'rejected',
+        jobId: jobId,
+      }).catch(() => {});
     }
 
     const allResolved = job.actions.every((a) => a.status !== 'pending');

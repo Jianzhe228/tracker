@@ -1,5 +1,5 @@
 import { invokeCommand } from './invoke';
-import type { LearnSuggestion, KeywordCluster } from '../../types/domain';
+import type { LearnSuggestion, LearnStats, KeywordCluster, SuggestionFeedbackPayload } from '../../types/domain';
 
 export function learnRecord(
   keyword: string,
@@ -65,4 +65,40 @@ export function clusterUpsert(
 
 export function clusterDelete(id: number): Promise<void> {
   return invokeCommand<void>('cluster_delete', { id });
+}
+
+// ── New self-learning commands ──────────────────────────────────────
+
+export function learnStats(
+  keywords: string[],
+  projectId: number | null,
+): Promise<LearnStats> {
+  return invokeCommand<LearnStats>('learn_stats', { keywords, projectId });
+}
+
+export function learnKnownKeywords(): Promise<string[]> {
+  return invokeCommand<string[]>('learn_known_keywords');
+}
+
+export function historySuggest(
+  keywords: string[],
+  projectId: number | null,
+  limit?: number,
+): Promise<string[]> {
+  return invokeCommand<string[]>('history_suggest', {
+    keywords,
+    projectId,
+    limit: limit ?? null,
+  });
+}
+
+export function feedbackRecord(payload: SuggestionFeedbackPayload): Promise<void> {
+  return invokeCommand<void>('feedback_record', { payload });
+}
+
+export function feedbackRejectedTitles(
+  keywords: string[],
+  projectId: number | null,
+): Promise<string[]> {
+  return invokeCommand<string[]>('feedback_rejected_titles', { keywords, projectId });
 }

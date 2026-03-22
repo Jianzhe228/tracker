@@ -309,3 +309,278 @@ pub fn cluster_delete(state: State<'_, AppState>, id: i64) -> Result<(), String>
   .map_err(|e| e.to_string())?;
   Ok(())
 }
+
+// ── Learn stats ─────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnStats {
+  pub match_count: i64,
+  pub max_score: i64,
+  pub total_feedback: i64,
+  pub history_count: i64,
+}
+
+/// Get aggregate learn stats for keywords, used for confidence scoring.
+#[tauri::command]
+pub fn learn_stats(
+  state: State<'_, AppState>,
+  keywords: Vec<String>,
+  project_id: Option<i64>,
+) -> Result<LearnStats, String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+
+  if keywords.is_empty() {
+    return Ok(LearnStats {
+      match_count: 0,
+      max_score: 0,
+      total_feedback: 0,
+      history_count: 0,
+    });
+  }
+
+  let placeholders: Vec<String> = keywords
+    .iter()
+    .enumerate()
+    .map(|(i, _)| format!("?{}", i + 1))
+    .collect();
+  let project_idx = keywords.len() + 1;
+
+  // Count distinct subtask_titles with positive score
+  let sql = format!(
+    "SELECT
+       COUNT(DISTINCT subtask_title) as match_count,
+       COALESCE(MAX(score), 0) as max_score,
+       COUNT(*) as total_feedback
+     FROM subtask_learn_log
+     WHERE keyword IN ({})
+       AND (project_id IS NULL OR project_id = ?{})
+       AND score > 0",
+    placeholders.join(","),
+    project_idx
+  );
+
+  let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+  for kw in &keywords {
+    params.push(Box::new(kw.clone()));
+  }
+  params.push(Box::new(project_id));
+  let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+  let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
+  let (match_count, max_score, total_feedback) = stmt
+    .query_row(param_refs.as_slice(), |row| {
+      Ok((
+        row.get::<_, i64>(0)?,
+        row.get::<_, i64>(1)?,
+        row.get::<_, i64>(2)?,
+      ))
+    })
+    .map_err(|e| e.to_string())?;
+
+  // Count matching task_subtask_history entries
+  let history_sql = format!(
+    "SELECT COUNT(*) FROM task_subtask_history
+     WHERE ({})
+       AND (project_id IS NULL OR project_id = ?{})",
+    keywords
+      .iter()
+      .enumerate()
+      .map(|(i, _)| format!("parent_title LIKE ?{}", i + 1))
+      .collect::<Vec<_>>()
+      .join(" OR "),
+    project_idx
+  );
+
+  let mut h_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+  for kw in &keywords {
+    h_params.push(Box::new(format!("%{}%", kw)));
+  }
+  h_params.push(Box::new(project_id));
+  let h_refs: Vec<&dyn rusqlite::types::ToSql> = h_params.iter().map(|p| p.as_ref()).collect();
+
+  let mut h_stmt = db.prepare(&history_sql).map_err(|e| e.to_string())?;
+  let history_count: i64 = h_stmt
+    .query_row(h_refs.as_slice(), |row| row.get(0))
+    .map_err(|e| e.to_string())?;
+
+  Ok(LearnStats {
+    match_count,
+    max_score,
+    total_feedback,
+    history_count,
+  })
+}
+
+/// Return all known keywords (score > 0) for the keyword cache.
+#[tauri::command]
+pub fn learn_known_keywords(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+  let mut stmt = db
+    .prepare("SELECT DISTINCT keyword FROM subtask_learn_log WHERE score > 0")
+    .map_err(|e| e.to_string())?;
+
+  let rows = stmt
+    .query_map([], |row| row.get::<_, String>(0))
+    .map_err(|e| e.to_string())?;
+
+  let mut result = Vec::new();
+  for row in rows {
+    result.push(row.map_err(|e| e.to_string())?);
+  }
+  Ok(result)
+}
+
+/// Suggest subtasks from task_subtask_history based on keyword matching.
+#[tauri::command]
+pub fn history_suggest(
+  state: State<'_, AppState>,
+  keywords: Vec<String>,
+  project_id: Option<i64>,
+  limit: Option<i64>,
+) -> Result<Vec<String>, String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+  let max_results = limit.unwrap_or(8);
+
+  if keywords.is_empty() {
+    return Ok(vec![]);
+  }
+
+  let project_idx = keywords.len() + 1;
+  let limit_idx = keywords.len() + 2;
+
+  // Find history entries where parent_title contains any keyword
+  let where_clause: Vec<String> = keywords
+    .iter()
+    .enumerate()
+    .map(|(i, _)| format!("parent_title LIKE ?{}", i + 1))
+    .collect();
+
+  let sql = format!(
+    "SELECT subtask_titles FROM task_subtask_history
+     WHERE ({})
+       AND (project_id IS NULL OR project_id = ?{})
+     ORDER BY captured_at DESC
+     LIMIT ?{}",
+    where_clause.join(" OR "),
+    project_idx,
+    limit_idx
+  );
+
+  let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+  for kw in &keywords {
+    params.push(Box::new(format!("%{}%", kw)));
+  }
+  params.push(Box::new(project_id));
+  params.push(Box::new(max_results));
+  let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+  let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map(param_refs.as_slice(), |row| row.get::<_, String>(0))
+    .map_err(|e| e.to_string())?;
+
+  // Collect and deduplicate subtask titles across all matching history entries
+  let mut seen = std::collections::HashSet::new();
+  let mut result = Vec::new();
+  for row in rows {
+    let json_str = row.map_err(|e| e.to_string())?;
+    if let Ok(titles) = serde_json::from_str::<Vec<String>>(&json_str) {
+      for title in titles {
+        if seen.insert(title.clone()) {
+          result.push(title);
+        }
+      }
+    }
+  }
+
+  result.truncate(max_results as usize);
+  Ok(result)
+}
+
+// ── Suggestion feedback commands ────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRecordPayload {
+  pub task_id: i64,
+  pub task_title: String,
+  pub project_id: Option<i64>,
+  pub suggestion_title: String,
+  pub source: String,
+  pub action: String,
+  pub job_id: Option<i64>,
+}
+
+#[tauri::command]
+pub fn feedback_record(
+  state: State<'_, AppState>,
+  payload: FeedbackRecordPayload,
+) -> Result<(), String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+  db.execute(
+    "INSERT INTO suggestion_feedback (task_id, task_title, project_id, suggestion_title, source, action, job_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    rusqlite::params![
+      payload.task_id,
+      payload.task_title,
+      payload.project_id,
+      payload.suggestion_title,
+      payload.source,
+      payload.action,
+      payload.job_id,
+    ],
+  )
+  .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
+/// Get rejected suggestion titles for keywords, used to tell AI what to avoid.
+#[tauri::command]
+pub fn feedback_rejected_titles(
+  state: State<'_, AppState>,
+  keywords: Vec<String>,
+  project_id: Option<i64>,
+) -> Result<Vec<String>, String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+
+  if keywords.is_empty() {
+    return Ok(vec![]);
+  }
+
+  let project_idx = keywords.len() + 1;
+  let where_clause: Vec<String> = keywords
+    .iter()
+    .enumerate()
+    .map(|(i, _)| format!("task_title LIKE ?{}", i + 1))
+    .collect();
+
+  let sql = format!(
+    "SELECT DISTINCT suggestion_title FROM suggestion_feedback
+     WHERE action = 'rejected'
+       AND ({})
+       AND (project_id IS NULL OR project_id = ?{})
+     ORDER BY created_at DESC
+     LIMIT 20",
+    where_clause.join(" OR "),
+    project_idx
+  );
+
+  let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+  for kw in &keywords {
+    params.push(Box::new(format!("%{}%", kw)));
+  }
+  params.push(Box::new(project_id));
+  let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+  let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
+  let rows = stmt
+    .query_map(param_refs.as_slice(), |row| row.get::<_, String>(0))
+    .map_err(|e| e.to_string())?;
+
+  let mut result = Vec::new();
+  for row in rows {
+    result.push(row.map_err(|e| e.to_string())?);
+  }
+  Ok(result)
+}

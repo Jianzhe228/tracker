@@ -1,7 +1,10 @@
 /**
- * Chinese + English keyword extractor for task titles.
- * Uses a built-in dictionary approach for Chinese (no external NLP lib).
+ * Generic keyword extractor for task titles.
+ * Uses n-gram extraction + known keyword prioritization instead of a hardcoded dictionary.
+ * Known keywords come from the learn log (user behavior history).
  */
+
+import { getKnownKeywords } from './keywordCache';
 
 // Common Chinese stop words to filter out
 const STOP_WORDS = new Set([
@@ -17,81 +20,88 @@ const STOP_WORDS = new Set([
   '早上', '中午', '周末', '这周', '下周', '本周',
 ]);
 
-// Dictionary of known domain keywords to detect in Chinese text (compound words)
-const KEYWORD_DICT: string[] = [
-  // Sports & fitness
-  '健身', '锻炼', '运动', '跑步', '游泳', '瑜伽', '篮球', '足球',
-  '羽毛球', '乒乓球', '网球', '骑行', '爬山', '登山', '徒步', '散步',
-  '举铁', '拳击', '太极', '武术',
-  // Travel & commute
-  '出差', '出行', '出门', '旅行', '旅游', '外出', '回家', '拜年',
-  '搬家', '搬迁', '接机', '送机', '自驾',
-  // Work & meeting
-  '会议', '开会', '汇报', '述职', '演讲', '培训', '面试', '求职',
-  '应聘', '谈判', '签约', '答辩', '考核', '复盘',
-  // Study & exam
-  '考试', '笔试', '面试', '测验', '考研', '考公', '考证', '学习',
-  '复习', '预习', '上课', '讲座', '研讨',
-  // Shopping & errands
-  '购物', '买菜', '超市', '商场', '网购', '快递', '取件',
-  '办事', '银行', '医院', '政务', '社保', '公积金', '办证',
-  // Life
-  '做饭', '烹饪', '打扫', '清洁', '洗衣', '整理', '收纳',
-  '聚餐', '聚会', '生日', '婚礼', '约会', '看病', '体检',
-  // Tech
-  '编程', '开发', '部署', '上线', '发布', '测试', '调试',
-  '代码', '设计', '需求', '方案', '文档', '写作',
-  // Project types
-  '项目', '报告', '论文', 'PPT', '简历', '邮件',
-];
-
 /**
  * Extract meaningful keywords from a task title.
- * Returns an array of keywords (deduplicated, lowercased for English).
+ * Uses n-gram extraction with known keyword prioritization.
  */
 export function extractKeywords(title: string): string[] {
   const normalized = title.trim();
   if (!normalized) return [];
 
-  const keywords: Set<string> = new Set();
+  const known = getKnownKeywords();
+  const knownMatches: Set<string> = new Set();
+  const ngramCandidates: Set<string> = new Set();
 
-  // 1. Match known dictionary words (longest match first)
-  const sortedDict = [...KEYWORD_DICT].sort((a, b) => b.length - a.length);
-  let remaining = normalized;
-  for (const word of sortedDict) {
-    if (remaining.includes(word)) {
-      keywords.add(word);
-      // Don't remove from remaining — allow overlapping matches
+  // 1. Extract Chinese n-grams (2-4 chars) and check against known keywords
+  const chineseChars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
+  if (chineseChars.length >= 2) {
+    for (let n = 4; n >= 2; n--) {
+      for (let i = 0; i <= chineseChars.length - n; i++) {
+        const ngram = chineseChars.slice(i, i + n);
+        if (STOP_WORDS.has(ngram)) continue;
+        if (known.has(ngram)) {
+          knownMatches.add(ngram);
+        } else {
+          ngramCandidates.add(ngram);
+        }
+      }
     }
+  } else if (chineseChars.length === 1 && !STOP_WORDS.has(chineseChars)) {
+    ngramCandidates.add(chineseChars);
   }
 
-  // 2. Extract English words (2+ chars, not stop words)
+  // 2. Extract English words (2+ chars)
   const englishWords = normalized.match(/[a-zA-Z]{2,}/g);
   if (englishWords) {
     for (const w of englishWords) {
       const lower = w.toLowerCase();
       if (!STOP_WORDS.has(lower)) {
-        keywords.add(lower);
-      }
-    }
-  }
-
-  // 3. Extract remaining Chinese characters as individual tokens (fallback)
-  //    Only if no dictionary matches found
-  if (keywords.size === 0) {
-    // Split by non-Chinese characters, then extract 2-char bigrams
-    const chineseChars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
-    if (chineseChars.length >= 2) {
-      for (let i = 0; i < chineseChars.length - 1; i++) {
-        const bigram = chineseChars.slice(i, i + 2);
-        if (!STOP_WORDS.has(bigram)) {
-          keywords.add(bigram);
+        if (known.has(lower)) {
+          knownMatches.add(lower);
+        } else {
+          ngramCandidates.add(lower);
         }
       }
-    } else if (chineseChars.length === 1 && !STOP_WORDS.has(chineseChars)) {
-      keywords.add(chineseChars);
     }
   }
 
-  return [...keywords];
+  // 3. Prefer known keywords; fall back to n-gram candidates
+  if (knownMatches.size > 0) {
+    // Also include n-gram candidates that don't overlap with known matches
+    const result = [...knownMatches];
+    for (const candidate of ngramCandidates) {
+      // Skip if this n-gram is a substring of a known match or vice versa
+      let overlaps = false;
+      for (const km of knownMatches) {
+        if (km.includes(candidate) || candidate.includes(km)) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) result.push(candidate);
+    }
+    return result.slice(0, 10);
+  }
+
+  // No known keywords — use bigrams only (most reliable n-gram size)
+  const bigrams: string[] = [];
+  if (chineseChars.length >= 2) {
+    for (let i = 0; i < chineseChars.length - 1; i++) {
+      const bigram = chineseChars.slice(i, i + 2);
+      if (!STOP_WORDS.has(bigram)) {
+        bigrams.push(bigram);
+      }
+    }
+  }
+
+  // Merge with English words
+  const allCandidates = [...bigrams];
+  if (englishWords) {
+    for (const w of englishWords) {
+      const lower = w.toLowerCase();
+      if (!STOP_WORDS.has(lower)) allCandidates.push(lower);
+    }
+  }
+
+  return allCandidates.slice(0, 10);
 }

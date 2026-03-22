@@ -198,6 +198,27 @@ export interface LearnSuggestion {
   lastUsedAt: string;
 }
 
+// ── Learn stats (for confidence scoring) ────────────────────────────
+
+export interface LearnStats {
+  matchCount: number;
+  maxScore: number;
+  totalFeedback: number;
+  historyCount: number;
+}
+
+// ── Suggestion feedback ─────────────────────────────────────────────
+
+export interface SuggestionFeedbackPayload {
+  taskId: number;
+  taskTitle: string;
+  projectId: number | null;
+  suggestionTitle: string;
+  source: string;
+  action: string;
+  jobId: number | null;
+}
+
 // ── Keyword cluster ─────────────────────────────────────────────────
 
 export interface KeywordCluster {

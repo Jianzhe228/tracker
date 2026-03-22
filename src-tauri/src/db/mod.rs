@@ -251,29 +251,64 @@ fn run_migrations(conn: &Connection) {
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
         );
 
-        ALTER TABLE tasks ADD COLUMN recurring_rule_id INTEGER
-            REFERENCES recurring_rules(id) ON DELETE SET NULL;
-
-        ALTER TABLE tasks DROP COLUMN is_recurring;
-        ALTER TABLE tasks DROP COLUMN repeat_rule;
-
         PRAGMA user_version = 3;
         ",
       )
       .expect("failed to run migration v3");
+
+    // Add recurring_rule_id column if not exists
+    let has_recurring_rule_id: bool = conn
+      .prepare("SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='recurring_rule_id'")
+      .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
+      .unwrap_or(0)
+      > 0;
+    if !has_recurring_rule_id {
+      conn
+        .execute_batch("ALTER TABLE tasks ADD COLUMN recurring_rule_id INTEGER REFERENCES recurring_rules(id) ON DELETE SET NULL;")
+        .expect("failed to add recurring_rule_id column");
+    }
+
+    // Drop legacy columns if they exist
+    let drop_cols = ["is_recurring", "repeat_rule"];
+    for col in &drop_cols {
+      let exists: bool = conn
+        .prepare(&format!(
+          "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='{}'",
+          col
+        ))
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
+        .unwrap_or(0)
+        > 0;
+      if exists {
+        conn
+          .execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
+          .expect(&format!("failed to drop column {}", col));
+      }
+    }
   }
 
   if version < 4 {
-    conn
-      .execute_batch(
-        "
-        ALTER TABLE tasks DROP COLUMN description;
-        ALTER TABLE tasks DROP COLUMN due_at_postpone_count;
+    // Drop legacy columns if they exist
+    let drop_cols = ["description", "due_at_postpone_count"];
+    for col in &drop_cols {
+      let exists: bool = conn
+        .prepare(&format!(
+          "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='{}'",
+          col
+        ))
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
+        .unwrap_or(0)
+        > 0;
+      if exists {
+        conn
+          .execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
+          .expect(&format!("failed to drop column {}", col));
+      }
+    }
 
-        PRAGMA user_version = 4;
-        ",
-      )
-      .expect("failed to run migration v4");
+    conn
+      .execute_batch("PRAGMA user_version = 4;")
+      .expect("failed to set user_version to 4");
   }
 
   if version < 5 {
@@ -454,30 +489,77 @@ Existing tasks: {{existingTasks}}',
       )
       .expect("failed to run migration v10");
 
-    // Update task_decompose AI prompt to be more concise and context-aware
+    // v10 prompt replaced by v11 below
+  }
+
+  if version < 11 {
+    conn
+      .execute_batch(
+        "
+        -- Suggestion feedback tracking
+        CREATE TABLE IF NOT EXISTS suggestion_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            task_title TEXT NOT NULL,
+            project_id INTEGER,
+            suggestion_title TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'ai',
+            action TEXT NOT NULL DEFAULT 'pending',
+            job_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_suggestion_feedback_project ON suggestion_feedback(project_id);
+        CREATE INDEX IF NOT EXISTS idx_suggestion_feedback_source ON suggestion_feedback(source, action);
+
+        -- Task subtask history (snapshot on completion)
+        CREATE TABLE IF NOT EXISTS task_subtask_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_task_id INTEGER NOT NULL,
+            parent_title TEXT NOT NULL,
+            project_id INTEGER,
+            subtask_titles TEXT NOT NULL DEFAULT '[]',
+            captured_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_task_subtask_history_title ON task_subtask_history(parent_title);
+
+        PRAGMA user_version = 11;
+        ",
+      )
+      .expect("failed to run migration v11");
+
+    // Replace task_decompose prompt with universal version
     conn
       .execute(
         "UPDATE ai_skills SET
-           system_prompt = 'You are a concise task checklist assistant. Suggest only KEY items the user needs to prepare or check — like a quick packing list, NOT a project plan.
+           system_prompt = 'You are a task checklist assistant. Suggest short, specific action items.
 
-Rules:
-- Max 3-4 items for simple tasks, max 5-6 for complex tasks
-- Each item should be a noun or short noun phrase (e.g. \"水杯\", \"充电器\", \"简历打印\")
-- Do NOT suggest obvious/generic steps like \"确认时间\", \"规划路线\", \"检查天气\"
-- Do NOT suggest meta-tasks like \"制定计划\", \"总结复盘\"
-- Think like a real person: what would they actually forget or need to check?
-- Use the same language as the task title
-- If user patterns are provided, prioritize items consistent with their history
+RULES:
+1. INFER task type from title. Study → study actions. Travel → logistics. Work → deliverables.
+2. KEEP EACH ITEM VERY SHORT: 2-6 words max. Examples: \"携带身份证\", \"定闹钟\", \"复习单词\", \"检查车票\", \"约见面地点\"
+3. Only suggest concrete, specific items — NOT vague steps like \"做准备\", \"确认安排\"
+4. Do NOT suggest meta-tasks: \"制定计划\", \"确认时间\", \"总结复盘\"
+5. Count: simple tasks 2-3 items, normal 3-5, detailed 5-8
+6. Same language as task title
+7. If user history provided, follow their patterns
+8. If rejected items provided, avoid similar suggestions
 
 Return JSON only: {\"actions\": [{\"type\": \"create_subtask\", \"params\": {\"title\": \"...\"}}]}',
            user_prompt_template = 'Task: {{taskTitle}}
 Project: {{projectName}}
-{{#if userPatterns}}User''s usual checklist for similar tasks: {{userPatterns}}{{/if}}
-{{#if learnedItems}}Previously adopted items: {{learnedItems}}{{/if}}',
+Detail level: {{detailLevel}}
+{{#if userPatterns}}User''s typical subtasks for similar tasks: {{userPatterns}}{{/if}}
+{{#if learnedItems}}Previously accepted suggestions: {{learnedItems}}{{/if}}
+{{#if rejectedItems}}Previously rejected (avoid these): {{rejectedItems}}{{/if}}
+{{#if manualSubtasks}}User''s manually created subtasks for similar tasks: {{manualSubtasks}}{{/if}}
+{{#if siblingTasks}}Other tasks in same project: {{siblingTasks}}{{/if}}',
            updated_at = CURRENT_TIMESTAMP
          WHERE key = 'task_decompose' AND is_builtin = 1",
         [],
       )
-      .expect("failed to update task_decompose prompt v10");
+      .expect("failed to update task_decompose prompt v11");
   }
 }
