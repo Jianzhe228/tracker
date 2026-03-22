@@ -6,10 +6,9 @@ import { useTimerStore } from '../stores/timerStore';
 import { validateTaskTitle } from '../utils/validation';
 import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } from '../services/commands/recurring';
 import type { TaskItem, Priority, TaskStatus } from '../types/domain';
-import { useAiStore } from '../stores/aiStore';
-import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../services/suggestion';
+import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
-import type { SuggestionResult } from '../types/domain';
+import { useSuggestionPanel } from '../composables/useSuggestionPanel';
 import TaskSubtreeItem from '../components/TaskSubtreeItem.vue';
 
 const props = defineProps<{
@@ -20,7 +19,6 @@ const props = defineProps<{
 const route = useRoute();
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
-const aiStore = useAiStore();
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 const title = ref('');
@@ -507,10 +505,22 @@ const editingSubtaskTitle = ref('');
 const MAX_SUBTASKS_PER_TASK = 50;
 const MAX_TASK_DEPTH = 10;
 
-// ── Inline suggestion state ────────────────────────────────────────
-const inlineSuggestion = ref<SuggestionResult | null>(null);
-const inlineSuggestionTaskId = ref<number | null>(null);
-const inlineSuggestionKeywords = ref<string[]>([]);
+// ── Suggestion panel (composable) ──────────────────────────────────
+const {
+  panels: suggestionPanels,
+  getPanel: getSuggestionPanel,
+  requestSuggestions,
+  acceptSuggestion: panelAcceptSuggestion,
+  rejectSuggestion: panelRejectSuggestion,
+  acceptAll: panelAcceptAll,
+  dismissPanel,
+  toggleCollapsed: toggleSuggestionCollapsed,
+} = useSuggestionPanel();
+
+const currentSuggestionPanel = computed(() => {
+  if (!selectedTask.value) return undefined;
+  return getSuggestionPanel(selectedTask.value.id);
+});
 
 function getTaskDepth(taskId: number): number {
   let depth = 0;
@@ -770,39 +780,9 @@ async function submitTask(): Promise<void> {
     newTaskDate.value = '';
     showNewTaskCalendar.value = false;
 
-    // Run suggestion pipeline with confidence scoring
-    const output = await suggest({
-      taskTitle: createdTask.title,
-      projectId,
-    });
-
-    if (output.result.source !== 'none' && output.result.suggestions.length > 0) {
-      // Show inline suggestions
-      inlineSuggestion.value = output.result;
-      inlineSuggestionTaskId.value = createdTask.id;
-      inlineSuggestionKeywords.value = output.keywords;
-      selectedTaskId.value = createdTask.id;
-    }
-
-    // Fire AI job if strategy requires it (ai or hybrid)
-    if (output.strategy !== 'local') {
-      const aiContext = await buildAiContext({
-        taskTitle: createdTask.title,
-        projectId,
-      });
-      const projectItem = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
-
-      aiStore.submitJob('task_decompose', {
-        taskId: createdTask.id,
-        taskTitle: createdTask.title,
-        projectName: projectItem?.title ?? '',
-        userPatterns: aiContext.userPatterns,
-        learnedItems: aiContext.learnedItems,
-        rejectedItems: aiContext.rejectedItems,
-        manualSubtasks: aiContext.manualSubtasks,
-        siblingTasks: aiContext.siblingTasks,
-      }).catch(console.error);
-    }
+    // Run suggestion pipeline via composable
+    selectedTaskId.value = createdTask.id;
+    requestSuggestions(createdTask.id, createdTask.title, projectId);
   } catch (error) {
     console.error(error);
     showInlineNotice('创建任务失败，请重试');
@@ -1317,104 +1297,33 @@ async function submitSubtask(): Promise<void> {
   }
 }
 
-// ── Inline suggestion actions ───────────────────────────────────────
+// ── Suggestion panel actions (delegated to composable) ─────────────
 
-async function acceptSuggestion(suggestionTitle: string): Promise<void> {
-  const taskId = inlineSuggestionTaskId.value;
-  if (!taskId) return;
-  const parentTask = taskStore.tasks.find((t) => t.id === taskId);
-  if (!parentTask) return;
-
-  try {
-    await taskStore.addTask(suggestionTitle, {
-      parentId: parentTask.id,
-      projectId: parentTask.projectId,
-      dueAt: parentTask.dueAt,
-    });
-    setTaskExpanded(parentTask.id, true);
-
-    // Record positive feedback
-    recordFeedback(
-      inlineSuggestionKeywords.value,
-      suggestionTitle,
-      parentTask.projectId,
-      true,
-      inlineSuggestion.value?.source ?? 'pattern',
-    );
-
-    // Remove from suggestion list
-    if (inlineSuggestion.value) {
-      inlineSuggestion.value = {
-        ...inlineSuggestion.value,
-        suggestions: inlineSuggestion.value.suggestions.filter((s) => s !== suggestionTitle),
-      };
-      if (inlineSuggestion.value.suggestions.length === 0) {
-        dismissSuggestions();
-      }
-    }
-  } catch (e) {
-    console.error(e);
-    showInlineNotice('添加子任务失败');
-  }
+async function handleAcceptSuggestion(suggestion: { title: string; source: string; patternName?: string }): Promise<void> {
+  if (!selectedTask.value) return;
+  await panelAcceptSuggestion(selectedTask.value.id, suggestion as any);
+  setTaskExpanded(selectedTask.value.id, true);
 }
 
-async function acceptAllSuggestions(): Promise<void> {
-  const taskId = inlineSuggestionTaskId.value;
-  if (!taskId || !inlineSuggestion.value) return;
-  const parentTask = taskStore.tasks.find((t) => t.id === taskId);
-  if (!parentTask) return;
-
-  for (const s of inlineSuggestion.value.suggestions) {
-    try {
-      await taskStore.addTask(s, {
-        parentId: parentTask.id,
-        projectId: parentTask.projectId,
-        dueAt: parentTask.dueAt,
-      });
-
-      recordFeedback(
-        inlineSuggestionKeywords.value,
-        s,
-        parentTask.projectId,
-        true,
-        inlineSuggestion.value.source,
-      );
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  setTaskExpanded(parentTask.id, true);
-  dismissSuggestions();
+function handleRejectSuggestion(suggestion: { title: string; source: string; patternName?: string }): void {
+  if (!selectedTask.value) return;
+  panelRejectSuggestion(selectedTask.value.id, suggestion as any);
 }
 
-function rejectSuggestion(suggestionTitle: string): void {
-  if (!inlineSuggestion.value || !inlineSuggestionTaskId.value) return;
-  const parentTask = taskStore.tasks.find((t) => t.id === inlineSuggestionTaskId.value);
-
-  // Record negative feedback
-  recordFeedback(
-    inlineSuggestionKeywords.value,
-    suggestionTitle,
-    parentTask?.projectId ?? null,
-    false,
-    inlineSuggestion.value.source,
-  );
-
-  // Remove from list
-  inlineSuggestion.value = {
-    ...inlineSuggestion.value,
-    suggestions: inlineSuggestion.value.suggestions.filter((s) => s !== suggestionTitle),
-  };
-  if (inlineSuggestion.value.suggestions.length === 0) {
-    dismissSuggestions();
-  }
+async function handleAcceptAllSuggestions(): Promise<void> {
+  if (!selectedTask.value) return;
+  await panelAcceptAll(selectedTask.value.id);
+  setTaskExpanded(selectedTask.value.id, true);
 }
 
-function dismissSuggestions(): void {
-  inlineSuggestion.value = null;
-  inlineSuggestionTaskId.value = null;
-  inlineSuggestionKeywords.value = [];
+function handleDismissSuggestions(): void {
+  if (!selectedTask.value) return;
+  dismissPanel(selectedTask.value.id);
+}
+
+function handleRequestSuggestions(): void {
+  if (!selectedTask.value) return;
+  requestSuggestions(selectedTask.value.id, selectedTask.value.title, selectedTask.value.projectId);
 }
 
 async function deleteSubtask(subtaskId: number): Promise<void> {
@@ -2660,7 +2569,26 @@ onMounted(() => {
                     </svg>
                     子任务
                   </label>
-                  <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
+                  <div class="flex items-center gap-2">
+                    <button
+                      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      :class="currentSuggestionPanel?.loading
+                        ? 'bg-blue-50 text-blue-400 cursor-not-allowed'
+                        : 'text-blue-600 hover:bg-blue-50'"
+                      :disabled="currentSuggestionPanel?.loading"
+                      @click="handleRequestSuggestions"
+                    >
+                      <svg v-if="currentSuggestionPanel?.loading" class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <svg v-else class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                      </svg>
+                      {{ currentSuggestionPanel?.loading ? '分析中…' : '智能建议' }}
+                    </button>
+                    <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
+                  </div>
                 </div>
 
                 <div v-if="!canAddSubtaskToSelected" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
@@ -2683,60 +2611,6 @@ onMounted(() => {
                   </button>
                 </div>
 
-                <!-- Inline suggestions -->
-                <div
-                  v-if="inlineSuggestion && inlineSuggestionTaskId === selectedTask?.id && inlineSuggestion.suggestions.length > 0"
-                  class="mb-3 rounded-lg border border-blue-200 bg-blue-50/50 p-3"
-                >
-                  <div class="mb-2 flex items-center justify-between">
-                    <div class="flex items-center gap-1.5">
-                      <svg class="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                      </svg>
-                      <span class="text-xs font-semibold text-blue-700">
-                        {{ inlineSuggestion.source === 'pattern' ? '模板建议' : '学习建议' }}
-                        <span v-if="inlineSuggestion.patternName" class="font-normal text-blue-500">· {{ inlineSuggestion.patternName }}</span>
-                      </span>
-                    </div>
-                    <div class="flex gap-1">
-                      <button
-                        class="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-blue-700"
-                        @click="acceptAllSuggestions"
-                      >
-                        全部添加
-                      </button>
-                      <button
-                        class="rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-500 transition-colors hover:bg-blue-100"
-                        @click="dismissSuggestions"
-                      >
-                        忽略
-                      </button>
-                    </div>
-                  </div>
-                  <div class="space-y-1">
-                    <div
-                      v-for="s in inlineSuggestion.suggestions"
-                      :key="s"
-                      class="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5"
-                    >
-                      <span class="text-xs text-slate-700">{{ s }}</span>
-                      <div class="flex shrink-0 gap-1">
-                        <button
-                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:bg-emerald-50"
-                          @click="acceptSuggestion(s)"
-                        >
-                          添加
-                        </button>
-                        <button
-                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-50"
-                          @click="rejectSuggestion(s)"
-                        >
-                          忽略
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
                 <div v-if="selectedTaskSubtasks.length > 0" class="space-y-1.5">
                   <div
@@ -2795,6 +2669,110 @@ onMounted(() => {
                   </div>
                 </div>
                 <p v-else class="text-xs text-slate-400">暂无子任务</p>
+
+                <!-- Suggestion Panel (below subtask list) -->
+                <div
+                  v-if="currentSuggestionPanel?.requested && !currentSuggestionPanel.collapsed"
+                  class="mt-3 rounded-lg border border-blue-200 bg-blue-50/40"
+                >
+                  <!-- Panel header -->
+                  <button
+                    class="flex w-full items-center justify-between px-3 py-2 text-left"
+                    @click="selectedTask && toggleSuggestionCollapsed(selectedTask.id)"
+                  >
+                    <div class="flex items-center gap-1.5">
+                      <svg class="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      <span class="text-xs font-semibold text-blue-700">
+                        建议
+                        <span v-if="currentSuggestionPanel.suggestions.length > 0" class="font-normal text-blue-500">
+                          ({{ currentSuggestionPanel.suggestions.length }} 条)
+                        </span>
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <button
+                        v-if="!currentSuggestionPanel.collapsed && currentSuggestionPanel.suggestions.length > 0"
+                        class="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-blue-700"
+                        @click.stop="handleAcceptAllSuggestions"
+                      >
+                        全部添加
+                      </button>
+                      <button
+                        v-if="!currentSuggestionPanel.collapsed"
+                        class="rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-500 transition-colors hover:bg-blue-100"
+                        @click.stop="handleDismissSuggestions"
+                      >
+                        忽略
+                      </button>
+                      <svg
+                        class="h-4 w-4 text-blue-400 transition-transform"
+                        :class="currentSuggestionPanel.collapsed ? '-rotate-90' : ''"
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </button>
+
+                  <!-- Panel content (collapsible) -->
+                  <div v-if="!currentSuggestionPanel.collapsed" class="space-y-1 px-3 pb-3">
+                    <div
+                      v-for="s in currentSuggestionPanel.suggestions"
+                      :key="s.title"
+                      class="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5"
+                    >
+                      <div class="flex min-w-0 items-center gap-1.5">
+                        <span
+                          class="shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-none"
+                          :class="s.source === 'ai'
+                            ? 'bg-violet-100 text-violet-600'
+                            : s.source === 'pattern'
+                              ? 'bg-emerald-100 text-emerald-600'
+                              : 'bg-blue-100 text-blue-600'"
+                        >
+                          {{ s.source === 'ai' ? 'AI' : s.source === 'pattern' ? '模板' : '学习' }}
+                        </span>
+                        <span class="truncate text-xs text-slate-700">{{ s.title }}</span>
+                      </div>
+                      <div class="flex shrink-0 gap-1">
+                        <button
+                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:bg-emerald-50"
+                          @click="handleAcceptSuggestion(s)"
+                        >
+                          采纳
+                        </button>
+                        <button
+                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-50"
+                          @click="handleRejectSuggestion(s)"
+                        >
+                          忽略
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- AI loading indicator -->
+                    <div
+                      v-if="currentSuggestionPanel.loading"
+                      class="flex items-center gap-2 rounded-md bg-violet-50 px-2.5 py-2"
+                    >
+                      <svg class="h-3.5 w-3.5 animate-spin text-violet-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span class="text-xs text-violet-600">AI 正在生成建议…</span>
+                    </div>
+
+                    <!-- Empty state after all dismissed -->
+                    <p
+                      v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.suggestions.length === 0"
+                      class="py-1 text-center text-xs text-slate-400"
+                    >
+                      暂无建议
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <!-- Notes -->

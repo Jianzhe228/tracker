@@ -1,21 +1,23 @@
 /**
  * Keyword extractor for task titles.
  *
- * Strategy:
- * 1. Use Intl.Segmenter (browser built-in, 0 bytes) for Chinese word segmentation
- * 2. NO hardcoded stop word or action word lists — all words are candidates
- * 3. Known keywords (from learn_log history) are prioritized
- * 4. The system learns which words matter through user behavior
- * 5. Fall back to n-gram extraction when Segmenter unavailable
+ * Algorithm C2 — tested with 40 extraction cases, 14 similarity pairs,
+ * 18 learn-log simulation queries. See __tests__/keywordExtractor.test.ts
  *
- * This ensures "写会议报告" and "写会议纪要" share keyword "会议",
- * and "准备四六级" extracts "四六级" as a unit.
- * Fuzzy matching in the Rust backend handles "四六级" ≈ "四级" ≈ "六级".
+ * Strategy:
+ * 1. Intl.Segmenter for Chinese word segmentation
+ * 2. Filter temporal noise (时间词) — prevents learn_log cross-contamination
+ * 3. Split single-char runs at functional particles, generate bigram+trigram
+ * 4. Adjacent multi-char word joins (高等+数学 → 高等数学)
+ * 5. Boundary merges (菜+市场 → 菜市场, 开题+报告 → 开题报告)
+ * 6. Filter noise n-grams (functional heads/tails, temporal prefixes)
+ * 7. Known keywords (from learn_log) prioritized
+ * 8. Fallback to n-gram extraction when Segmenter unavailable
  */
 
 import { getKnownKeywords } from './keywordCache';
 
-// ── Intl.Segmenter detection ───────────────────────────────────────
+// ── Intl.Segmenter ─────────────────────────────────────────────────
 
 const hasSegmenter = typeof Intl !== 'undefined' && 'Segmenter' in Intl;
 
@@ -28,121 +30,236 @@ function getSegmenter(): Intl.Segmenter | null {
   return _segmenter;
 }
 
-/**
- * Segment text using Intl.Segmenter.
- * Returns word-like segments only (filters out punctuation/whitespace).
- */
 function segmentWords(text: string): string[] {
   const segmenter = getSegmenter();
   if (!segmenter) return [];
-
   const words: string[] = [];
   for (const { segment, isWordLike } of segmenter.segment(text)) {
-    if (isWordLike && segment.trim().length >= 1) {
-      words.push(segment);
-    }
+    if (isWordLike && segment.trim().length >= 1) words.push(segment);
   }
   return words;
 }
 
-/**
- * Extract n-grams from Chinese text (fallback when Segmenter unavailable).
- */
+// ── Noise detection (closed linguistic classes) ────────────────────
+
+const TEMPORAL_WORDS = new Set([
+  '早上', '上午', '中午', '下午', '傍晚', '晚上', '凌晨',
+  '今天', '明天', '后天', '昨天', '前天', '大后天',
+  '周末', '每天', '每周',
+]);
+const TEMPORAL_DAY_RE = /^(周[一二三四五六日]|星期[一二三四五六日天])$/;
+const TEMPORAL_NUM_RE = /^[一二三四五六七八九十百千\d]+[点时分秒月日号年]$/;
+
+function isTemporalWord(w: string): boolean {
+  return TEMPORAL_WORDS.has(w) || TEMPORAL_DAY_RE.test(w) || TEMPORAL_NUM_RE.test(w);
+}
+
+const FUNC_HEADS = new Set('去到来在把的了着过给让被得地和或与'.split(''));
+const PART_TAILS = new Set('的了着过得地'.split(''));
+const TIME_HEADS = new Set('点时分秒'.split(''));
+
+function isNoiseNgram(ng: string): boolean {
+  if (isTemporalWord(ng)) return true;
+  if (FUNC_HEADS.has(ng[0])) return true;
+  if (PART_TAILS.has(ng[ng.length - 1])) return true;
+  if (TIME_HEADS.has(ng[0])) return true;
+  if (ng.length >= 3 && isTemporalWord(ng.slice(0, 2))) return true;
+  return false;
+}
+
+// ── N-gram fallback ────────────────────────────────────────────────
+
 function extractNgrams(chineseChars: string): string[] {
   const ngrams: string[] = [];
-  if (chineseChars.length < 2) {
-    if (chineseChars.length === 1) ngrams.push(chineseChars);
-    return ngrams;
-  }
+  if (chineseChars.length < 2) return ngrams;
   for (let i = 0; i < chineseChars.length - 1; i++) {
     ngrams.push(chineseChars.slice(i, i + 2));
   }
   return ngrams;
 }
 
-/**
- * Extract meaningful keywords from a task title.
- *
- * No hardcoded word lists — uses Intl.Segmenter for segmentation
- * and learn_log history (via keywordCache) for prioritization.
- */
+// ── Main extraction ────────────────────────────────────────────────
+
+type SegInfo = { text: string; type: 'content' | 'temporal' | 'run'; runIdx?: number };
+
 export function extractKeywords(title: string): string[] {
   const normalized = title.trim();
   if (!normalized) return [];
 
   const known = getKnownKeywords();
-
-  // 1. Try Intl.Segmenter for proper word segmentation
   const segments = segmentWords(normalized);
 
-  if (segments.length > 0) {
-    // Split into known (from history) and unknown words
-    const knownWords: string[] = [];
-    const unknownWords: string[] = [];
+  if (segments.length === 0) {
+    const chars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
+    return extractNgrams(chars).filter(ng => !isNoiseNgram(ng)).slice(0, 10);
+  }
 
-    for (const word of segments) {
-      // Skip single-char Chinese "function" characters (的了在是...)
-      // But keep single-char English/numbers and multi-char anything
-      if (word.length === 1 && /[\u4e00-\u9fff]/.test(word)) {
-        // Single Chinese char — only include if it's a known keyword
-        if (known.has(word)) knownWords.push(word);
-        continue;
+  // ── Pass 1: Classify segments, collect runs ──
+
+  const segInfos: SegInfo[] = [];
+  const contentWords: string[] = [];
+  const runs: string[][] = [];
+  let run: string[] = [];
+
+  for (const w of segments) {
+    if (w.length === 1 && /[\u4e00-\u9fff]/.test(w)) {
+      run.push(w);
+    } else {
+      if (run.length > 0) {
+        segInfos.push({ text: '', type: 'run', runIdx: runs.length });
+        runs.push([...run]);
+        run = [];
       }
-      if (known.has(word)) {
-        knownWords.push(word);
+      if (isTemporalWord(w)) {
+        segInfos.push({ text: w, type: 'temporal' });
       } else {
-        unknownWords.push(word);
+        segInfos.push({ text: w, type: 'content' });
+        contentWords.push(w);
       }
     }
-
-    // Prioritize: known words first, then unknown multi-char words
-    const result = [...new Set([...knownWords, ...unknownWords])];
-
-    // Extract English words separately (Segmenter may not split them well)
-    const englishWords = normalized.match(/[a-zA-Z]{2,}/g);
-    if (englishWords) {
-      for (const w of englishWords) {
-        const lower = w.toLowerCase();
-        if (!result.includes(lower)) result.push(lower);
-      }
-    }
-
-    return result.slice(0, 10);
+  }
+  if (run.length > 0) {
+    segInfos.push({ text: '', type: 'run', runIdx: runs.length });
+    runs.push([...run]);
   }
 
-  // 2. Fallback: n-gram extraction (when Segmenter unavailable)
-  const chineseChars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
-  const ngrams = extractNgrams(chineseChars);
+  const seen = new Set(contentWords);
+  const add = (w: string) => {
+    if (!seen.has(w) && w.length >= 2) { seen.add(w); return true; }
+    return false;
+  };
 
-  // Prefer known n-grams
-  const knownNgrams = ngrams.filter(ng => known.has(ng));
-  if (knownNgrams.length > 0) {
-    const result = [...knownNgrams];
-    for (const ng of ngrams) {
-      if (known.has(ng)) continue;
-      let overlaps = false;
-      for (const kn of knownNgrams) {
-        if (kn.includes(ng) || ng.includes(kn)) { overlaps = true; break; }
+  // ── Pass 2: Adjacent multi-char word joins ──
+  // Only truly adjacent in original order (don't skip runs/temporal)
+
+  const adjacentJoins: string[] = [];
+  for (let si = 0; si < segInfos.length - 1; si++) {
+    const a = segInfos[si], b = segInfos[si + 1];
+    if (a.type === 'content' && b.type === 'content' &&
+        a.text.length >= 2 && b.text.length >= 2) {
+      const joined = a.text + b.text;
+      if (joined.length <= 6 && !isNoiseNgram(joined) && add(joined)) {
+        adjacentJoins.push(joined);
       }
-      if (!overlaps) result.push(ng);
     }
-    return result.slice(0, 10);
   }
 
-  const allCandidates = [...ngrams];
-  const englishWords = normalized.match(/[a-zA-Z]{2,}/g);
+  // ── Pass 3: Single-char run recovery (functional split + bigram/trigram) ──
+
+  const runRecovered = new Map<number, string[]>();
+  const runNgrams: string[] = [];
+
+  for (let ri = 0; ri < runs.length; ri++) {
+    const r = runs[ri];
+    // Split at functional chars
+    const subs: string[][] = [];
+    let cur: string[] = [];
+    for (const ch of r) {
+      if (FUNC_HEADS.has(ch)) {
+        if (cur.length > 0) subs.push([...cur]);
+        cur = [];
+      } else {
+        cur.push(ch);
+      }
+    }
+    if (cur.length > 0) subs.push(cur);
+
+    const recovered: string[] = [];
+    for (const sub of subs) {
+      for (let i = 0; i < sub.length - 1; i++) {
+        const ng = sub[i] + sub[i + 1];
+        if (!isNoiseNgram(ng) && add(ng)) { runNgrams.push(ng); recovered.push(ng); }
+      }
+      for (let i = 0; i < sub.length - 2; i++) {
+        const ng = sub[i] + sub[i + 1] + sub[i + 2];
+        if (!isNoiseNgram(ng) && add(ng)) { runNgrams.push(ng); recovered.push(ng); }
+      }
+    }
+    runRecovered.set(ri, recovered);
+  }
+
+  // ── Pass 4: Boundary merges ──
+
+  const boundaryMerges: string[] = [];
+
+  for (let si = 0; si < segInfos.length; si++) {
+    const info = segInfos[si];
+
+    // 4a. Content word + single-char run (length=1) → compound recovery
+    // e.g., 数据 + [库] → 数据库
+    if (info.type === 'content' && info.text.length >= 2) {
+      const nextInfo = segInfos[si + 1];
+      if (nextInfo && nextInfo.type === 'run' && nextInfo.runIdx !== undefined) {
+        const r = runs[nextInfo.runIdx];
+        if (r.length === 1 && !FUNC_HEADS.has(r[0])) {
+          const merged = info.text + r[0];
+          if (merged.length <= 5 && !isNoiseNgram(merged) && add(merged)) {
+            boundaryMerges.push(merged);
+          }
+        }
+      }
+    }
+
+    if (info.type !== 'run' || info.runIdx === undefined) continue;
+
+    const r = runs[info.runIdx];
+    const nextSeg = segInfos[si + 1];
+    if (!nextSeg || nextSeg.type !== 'content' || nextSeg.text.length < 2 ||
+        !/[\u4e00-\u9fff]/.test(nextSeg.text)) continue;
+
+    // 4b. Last char of run (length>=2) + following content word
+    // e.g., [四,点,去,菜] → 菜 + 市场 → 菜市场
+    if (r.length >= 2) {
+      const lastChar = r[r.length - 1];
+      if (!FUNC_HEADS.has(lastChar)) {
+        const merged = lastChar + nextSeg.text;
+        if (merged.length <= 5 && !isNoiseNgram(merged) && add(merged)) {
+          boundaryMerges.push(merged);
+        }
+      }
+    }
+
+    // 4c. Recovered bigram + following content word
+    // e.g., 开题 + 报告 → 开题报告
+    const recovered = runRecovered.get(info.runIdx) || [];
+    for (const rec of recovered) {
+      if (rec.length === 2) {
+        const merged = rec + nextSeg.text;
+        if (merged.length <= 6 && !isNoiseNgram(merged) && add(merged)) {
+          boundaryMerges.push(merged);
+        }
+      }
+    }
+  }
+
+  // ── Assemble with priority: content > adjacentJoins > boundaryMerges > runNgrams ──
+
+  const result = [...contentWords, ...adjacentJoins, ...boundaryMerges, ...runNgrams];
+
+  const englishWords = normalized.match(/[a-zA-Z0-9]{2,}/g);
   if (englishWords) {
     for (const w of englishWords) {
-      allCandidates.push(w.toLowerCase());
+      const lower = w.toLowerCase();
+      if (!result.includes(lower)) result.push(lower);
     }
   }
 
-  return allCandidates.slice(0, 10);
+  // Prioritize known keywords
+  if (known.size > 0) {
+    const knownKw: string[] = [];
+    const unknownKw: string[] = [];
+    for (const kw of [...new Set(result)]) {
+      if (known.has(kw)) knownKw.push(kw);
+      else unknownKw.push(kw);
+    }
+    return [...knownKw, ...unknownKw].slice(0, 12);
+  }
+
+  return [...new Set(result)].slice(0, 12);
 }
 
 /**
  * Compute character-level Jaccard similarity between two strings.
- * Used for fuzzy keyword matching.
  */
 export function charJaccard(a: string, b: string): number {
   if (a === b) return 1;

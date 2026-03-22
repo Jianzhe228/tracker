@@ -7,7 +7,7 @@ import { learnSuggest, learnRecordBatch } from '../commands/learning';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
-const MIN_SUGGESTIONS = 2;
+const MIN_SUGGESTIONS = 1;
 
 export interface LearnResult {
   suggestions: string[];

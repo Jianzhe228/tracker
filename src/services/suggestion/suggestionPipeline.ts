@@ -48,26 +48,23 @@ export async function suggest(ctx: SuggestionContext): Promise<SuggestionOutput>
   // Compute confidence to decide strategy
   const confidence = await computeConfidence(keywords, ctx.projectId);
 
-  if (confidence.strategy === 'ai') {
-    // Not enough local data — caller should fire AI
+  // Always attempt local suggestions — even with low confidence, specific
+  // keyword matches are valuable and should be shown to the user.
+  const suggestions = await gatherLocalSuggestions(keywords, ctx.projectId);
+
+  if (suggestions.suggestions.length > 0) {
+    // Found local suggestions — use them. Fire AI in background for hybrid/ai.
     return {
-      result: { source: 'none', suggestions: [] },
-      strategy: 'ai',
+      result: suggestions,
+      strategy: confidence.strategy === 'local' ? 'local' : 'hybrid',
       keywords,
     };
   }
 
-  // For local and hybrid: gather local suggestions
-  const suggestions = await gatherLocalSuggestions(keywords, ctx.projectId);
-
-  if (suggestions.suggestions.length === 0 && confidence.strategy === 'local') {
-    // Confidence was high but no actual suggestions — fall back to hybrid
-    return { result: suggestions, strategy: 'hybrid', keywords };
-  }
-
+  // No local suggestions found — fall back based on confidence strategy
   return {
-    result: suggestions,
-    strategy: confidence.strategy,
+    result: { source: 'none', suggestions: [] },
+    strategy: confidence.strategy === 'local' ? 'hybrid' : confidence.strategy,
     keywords,
   };
 }

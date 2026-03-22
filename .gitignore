@@ -33,6 +33,7 @@ yarn.lock
 .opencode
 .idea
 .vscode
-AGENTS.md
+# Keep local assistant notes out of Git, but track the repository guide.
 CLAUDE.md
+!AGENTS.md
 diagrams

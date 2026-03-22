@@ -478,6 +478,7 @@ onMounted(() => {
           <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
             <div class="px-5 pt-5 pb-4">
               <h2 class="text-lg font-semibold text-slate-800">番茄钟时长</h2>
+              <p class="mt-0.5 text-sm text-slate-500">调整专注和休息的时长，找到最适合你的节奏。</p>
             </div>
             <div class="grid gap-4 px-5 pb-5 sm:grid-cols-2 lg:grid-cols-4">
               <label class="space-y-1.5">
@@ -576,20 +577,22 @@ onMounted(() => {
 
         <!-- Sync Settings -->
         <div v-else-if="activeTab === 'sync'" class="space-y-6">
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-4 text-lg font-semibold text-slate-800">WebDAV 云同步</h2>
-            <p class="mb-4 text-sm text-slate-500">
-              配置 WebDAV 服务器以在多设备间同步你的数据。支持坚果云、Nextcloud 等服务。
-            </p>
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">WebDAV 云同步</h2>
+              <p class="mt-0.5 text-sm text-slate-500">
+                配置 WebDAV 服务器以在多设备间同步你的数据。支持坚果云、Nextcloud 等服务。
+              </p>
+            </div>
 
-            <div class="space-y-4">
+            <div class="space-y-4 px-6 pb-6">
               <label class="block">
                 <span class="mb-1 block text-sm font-medium text-slate-700">服务器地址</span>
                 <input
                   v-model="settingsStore.webdav.url"
                   type="url"
                   placeholder="https://dav.example.com/webdav/"
-                  class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </label>
 
@@ -599,7 +602,7 @@ onMounted(() => {
                   <input
                     v-model="settingsStore.webdav.username"
                     type="text"
-                    class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </label>
 
@@ -608,7 +611,7 @@ onMounted(() => {
                   <input
                     v-model="settingsStore.webdav.password"
                     type="password"
-                    class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </label>
               </div>
@@ -618,11 +621,11 @@ onMounted(() => {
                 <input
                   v-model="settingsStore.webdav.path"
                   type="text"
-                  class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </label>
 
-              <div class="flex items-center gap-4 pt-2">
+              <div class="flex items-center gap-4 border-t border-slate-100 pt-4">
                 <button
                   class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="syncLoading"
@@ -644,9 +647,11 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-4 text-lg font-semibold text-slate-800">同步操作</h2>
-            <div class="flex flex-wrap gap-3">
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">同步操作</h2>
+            </div>
+            <div class="flex flex-wrap gap-3 px-6 pb-4">
               <button
                 class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="syncLoading"
@@ -686,7 +691,7 @@ onMounted(() => {
                 </button>
               </template>
             </div>
-            <p class="mt-4 text-xs text-slate-500">
+            <p class="border-t border-slate-100 px-6 py-3 text-xs text-slate-500">
               最后同步时间：{{ formatSyncTime(lastSyncAt) }}
             </p>
           </section>
@@ -912,9 +917,11 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-2 text-lg font-semibold text-slate-800">工作原理</h2>
-            <ul class="space-y-2 text-sm text-slate-600">
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">工作原理</h2>
+            </div>
+            <ul class="space-y-2 px-6 pb-6 text-sm text-slate-600">
               <li>创建任务时，系统自动从任务标题提取关键词与模板匹配。</li>
               <li>匹配成功后即时建议子任务清单（无需等待 AI）。</li>
               <li>你确认或拒绝的子任务会被记录，系统会逐渐学习你的偏好。</li>
@@ -925,19 +932,21 @@ onMounted(() => {
 
         <!-- AI Settings -->
         <div v-else-if="activeTab === 'ai'" class="space-y-6">
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-2 text-lg font-semibold text-slate-800">AI 连接配置</h2>
-            <p class="mb-4 text-sm text-slate-500">
-              可选配置。当模板和学习数据均无匹配时，系统会调用 AI 生成子任务建议。
-            </p>
-            <div class="space-y-4">
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">AI 连接配置</h2>
+              <p class="mt-0.5 text-sm text-slate-500">
+                可选配置。当模板和学习数据均无匹配时，系统会调用 AI 生成子任务建议。
+              </p>
+            </div>
+            <div class="space-y-4 px-6 pb-6">
               <label class="block space-y-1.5">
                 <span class="text-sm font-medium text-slate-700">API Endpoint</span>
                 <input
                   v-model.trim="settingsStore.ai.endpoint"
                   type="text"
                   placeholder="https://api.openai.com/v1/chat/completions"
-                  class="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
               </label>
               <label class="block space-y-1.5">
@@ -946,7 +955,7 @@ onMounted(() => {
                   v-model.trim="settingsStore.ai.apiKey"
                   type="password"
                   placeholder="输入你的 API Key"
-                  class="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
               </label>
               <label class="block space-y-1.5">
@@ -955,12 +964,12 @@ onMounted(() => {
                   v-model.trim="settingsStore.ai.model"
                   type="text"
                   placeholder="gpt-4o-mini"
-                  class="h-10 w-full rounded-lg border border-slate-300 px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
               </label>
             </div>
 
-            <div class="mt-5 flex items-center gap-3">
+            <div class="flex items-center gap-3 border-t border-slate-100 px-6 py-4">
               <button
                 class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                 @click="saveAiSettings"
@@ -1080,9 +1089,11 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-2 text-lg font-semibold text-slate-800">工作流程</h2>
-            <ul class="space-y-2 text-sm text-slate-600">
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">工作流程</h2>
+            </div>
+            <ul class="space-y-2 px-6 pb-6 text-sm text-slate-600">
               <li>创建任务后，优先匹配子任务模板和学习数据（即时响应）。</li>
               <li>无本地匹配时，AI 异步分析并生成子任务建议。</li>
               <li>AI 建议通过通知中心展示，需确认后才会创建子任务。</li>
@@ -1094,12 +1105,15 @@ onMounted(() => {
 
         <!-- Data Management -->
         <div v-else-if="activeTab === 'data'" class="space-y-6">
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-4 text-lg font-semibold text-slate-800">数据导出</h2>
-            <p class="mb-4 text-sm text-slate-500">
-              导出你的所有数据，包括任务、专注记录等。
-            </p>
-            <div class="flex flex-wrap items-center gap-3">
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">数据导出</h2>
+              <p class="mt-0.5 text-sm text-slate-500">
+                导出你的所有数据，包括任务、专注记录等。
+              </p>
+            </div>
+            <div class="px-6 pb-6">
+              <div class="flex flex-wrap items-center gap-3">
               <button
                 class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="exportStatus === 'exporting'"
@@ -1118,27 +1132,39 @@ onMounted(() => {
             <p v-if="exportStatus === 'done'" class="mt-3 text-xs text-green-600">
               已导出至：{{ exportPath }}
             </p>
+            </div>
           </section>
 
-          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 class="mb-4 text-lg font-semibold text-slate-800">数据导入</h2>
-            <p class="mb-4 text-sm text-slate-500">
-              从之前导出的 JSON 文件恢复数据。导入将覆盖当前所有数据。
-            </p>
-            <button
-              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="importStatus === 'importing'"
-              @click="handleImportFromFile"
-            >
-              {{ importStatus === 'importing' ? '导入中…' : '从文件导入' }}
-            </button>
+          <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div class="px-6 pt-5 pb-4">
+              <h2 class="text-lg font-semibold text-slate-800">数据导入</h2>
+              <p class="mt-0.5 text-sm text-slate-500">
+                从之前导出的 JSON 文件恢复数据。导入将覆盖当前所有数据。
+              </p>
+            </div>
+            <div class="px-6 pb-6">
+              <button
+                class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="importStatus === 'importing'"
+                @click="handleImportFromFile"
+              >
+                {{ importStatus === 'importing' ? '导入中…' : '从文件导入' }}
+              </button>
+            </div>
           </section>
 
-          <section class="rounded-xl border border-red-200 bg-red-50 p-6">
-            <h2 class="mb-2 text-lg font-semibold text-red-800">危险区域</h2>
-            <p class="mb-4 text-sm text-red-600">
-              以下操作不可撤销，请谨慎操作。
-            </p>
+          <section class="rounded-xl border border-red-200 bg-red-50/80 p-6">
+            <div class="mb-4 flex items-start gap-3">
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-100">
+                <svg class="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <h2 class="text-lg font-semibold text-red-800">危险区域</h2>
+                <p class="mt-0.5 text-sm text-red-600/80">以下操作不可撤销，请谨慎操作。</p>
+              </div>
+            </div>
             <template v-if="!showClearConfirm">
               <button
                 class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"

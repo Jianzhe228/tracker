@@ -729,11 +729,11 @@ function goToTodayTasks(): void {
                 </span>
 
                 <!-- Pomodoro dots -->
-                <div class="flex shrink-0 items-center gap-0.5">
+                <div class="flex shrink-0 items-center gap-0.5" :title="'预估 ' + (task.pomodoroCount || 1) + ' 个番茄'">
                   <span
                     v-for="i in Math.min(task.pomodoroCount || 1, 4)"
                     :key="i"
-                    class="h-1.5 w-1.5 rounded-full bg-red-400"
+                    class="h-2 w-2 rounded-full bg-red-400"
                   />
                   <span v-if="(task.pomodoroCount || 1) > 4" class="ml-0.5 text-[10px] text-slate-400">
                     +{{ (task.pomodoroCount || 1) - 4 }}
