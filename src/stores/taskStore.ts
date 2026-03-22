@@ -139,10 +139,10 @@ export const useTaskStore = defineStore('task', () => {
     const task = buildTask(title, options);
     if (isTauri) {
       const created = await createTaskCmd(task);
-      tasks.value.unshift(created);
+      tasks.value = [created, ...tasks.value];
       return created;
     }
-    tasks.value.unshift(task);
+    tasks.value = [task, ...tasks.value];
     return task;
   }
 
@@ -638,9 +638,39 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function rescheduleToToday(id: number): Promise<void> {
+    const original = tasks.value.find((task) => task.id === id);
+    if (!original) return;
     const today = new Date();
     const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    await updateTask(id, { dueAt: todayKey, startAt: null });
+
+    // Clone the parent task to today (original stays as historical record)
+    const cloned = await addTask(original.title, {
+      projectId: original.projectId,
+      priority: original.priority,
+      dueAt: todayKey,
+      notes: original.notes,
+      pomodoroCount: original.pomodoroCount,
+      pomodoroDuration: original.pomodoroDuration,
+      recurringRuleId: original.recurringRuleId,
+    });
+
+    // Clone incomplete subtasks
+    const subtasks = tasks.value.filter(
+      (task) => task.parentId === id && task.status !== 'done' && task.status !== 'cancelled'
+    );
+    for (const sub of subtasks) {
+      await addTask(sub.title, {
+        parentId: cloned.id,
+        projectId: sub.projectId,
+        priority: sub.priority,
+        dueAt: todayKey,
+        pomodoroCount: sub.pomodoroCount,
+        pomodoroDuration: sub.pomodoroDuration,
+      });
+    }
+
+    // Mark original as cancelled so it stops showing as overdue
+    await updateTask(id, { status: 'cancelled' as TaskStatus });
   }
 
   async function rescheduleOverdueToToday(ids: number[]): Promise<void> {

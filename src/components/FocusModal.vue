@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useTimerStore } from '../stores/timerStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
-
-const emit = defineEmits<{
-  close: []
-}>();
+import { useFocusModal } from '../composables/useFocusModal';
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
+const { visible, close } = useFocusModal();
 
 const activeTasks = computed(() => taskStore.tasks.filter(t => t.status === 'todo'));
 const pauseDurationText = computed(() => {
@@ -78,7 +76,7 @@ async function handleStop() {
 }
 
 function handleClose() {
-  emit('close');
+  close();
 }
 
 // Handle ESC key
@@ -88,8 +86,12 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
-  document.addEventListener('keydown', handleKeydown);
+watch(visible, (show) => {
+  if (show) {
+    document.addEventListener('keydown', handleKeydown);
+  } else {
+    document.removeEventListener('keydown', handleKeydown);
+  }
 });
 
 onUnmounted(() => {
@@ -99,7 +101,9 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
+    <Transition name="focus-modal">
     <div
+      v-if="visible"
       role="dialog"
       aria-modal="true"
       aria-label="专注模式"
@@ -358,5 +362,23 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+.focus-modal-enter-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.focus-modal-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.focus-modal-enter-from {
+  opacity: 0;
+  transform: scale(1.04);
+}
+.focus-modal-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}
+</style>

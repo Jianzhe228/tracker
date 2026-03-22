@@ -10,6 +10,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useUiStore } from './stores/uiStore';
 import { useAiStore } from './stores/aiStore';
 import { appInit } from './services/commands/init';
+import { useFocusModal } from './composables/useFocusModal';
 import FocusModal from './components/FocusModal.vue';
 import AppFeedbackLayer from './components/AppFeedbackLayer.vue';
 import ProjectContextMenu from './components/ProjectContextMenu.vue';
@@ -48,7 +49,7 @@ onMounted(async () => {
 });
 
 // Modal states
-const showFocusModal = ref(false);
+const { visible: showFocusModal, open: openFocusModal, close: closeFocusModal } = useFocusModal();
 
 // Reset scroll position on route change
 const mainRef = ref<HTMLElement | null>(null);
@@ -114,13 +115,6 @@ const getProjectTaskCount = (projectId: number) => {
   return taskStore.tasks.filter(task => task.parentId === null && task.projectId === projectId && task.status === 'todo').length;
 };
 
-function openFocusModal() {
-  showFocusModal.value = true;
-}
-
-function closeFocusModal() {
-  showFocusModal.value = false;
-}
 
 // WebDAV sync
 const syncing = ref(false);
@@ -483,8 +477,8 @@ const focusButtonTone = computed(() => {
       </button>
     </div>
 
-    <!-- Focus Modal -->
-    <FocusModal v-if="showFocusModal" @close="closeFocusModal" />
+    <!-- Focus Modal (always mounted, visibility managed internally) -->
+    <FocusModal />
 
     <!-- Project Context Menu -->
     <ProjectContextMenu

@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
+import { useFocusModal } from '../composables/useFocusModal';
 import { validateTaskTitle } from '../utils/validation';
 import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } from '../services/commands/recurring';
 import type { TaskItem, Priority, TaskStatus } from '../types/domain';
@@ -19,6 +20,7 @@ const props = defineProps<{
 const route = useRoute();
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
+const focusModal = useFocusModal();
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 const title = ref('');
@@ -1696,7 +1698,10 @@ function startFocusOnTask(taskId: number, taskTitle: string): void {
   const success = timerStore.setTask(taskId, taskTitle);
   if (!success) {
     showInlineNotice('计时进行中，需先结束当前计时后再切换任务');
+    return;
   }
+  timerStore.start();
+  focusModal.open();
 }
 
 function getProjectName(projectId: number): string {

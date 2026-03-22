@@ -60,16 +60,26 @@ export function useSuggestionPanel() {
     panels.value.set(taskId, state);
     notify();
 
+    // Collect existing subtask titles to avoid duplicates
+    const taskStore = useTaskStore();
+    const existingSubtaskTitles = new Set(
+      taskStore.tasks
+        .filter((t) => t.parentId === taskId)
+        .map((t) => t.title)
+    );
+
     // 1. Run local pipeline
     const output = await suggest({ taskTitle, projectId });
     state.keywords = output.keywords;
 
     if (output.result.suggestions.length > 0) {
-      state.suggestions = output.result.suggestions.map((s) => ({
-        title: s,
-        source: output.result.source as SuggestionSource,
-        patternName: output.result.patternName,
-      }));
+      state.suggestions = output.result.suggestions
+        .filter((s) => !existingSubtaskTitles.has(s))
+        .map((s) => ({
+          title: s,
+          source: output.result.source as SuggestionSource,
+          patternName: output.result.patternName,
+        }));
       // If local-only strategy, we're done loading
       if (output.strategy === 'local') {
         state.loading = false;
@@ -84,7 +94,6 @@ export function useSuggestionPanel() {
 
         try {
           const aiContext = await buildAiContext({ taskTitle, projectId });
-          const taskStore = useTaskStore();
           const project = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
 
           const job = await enqueue('task_decompose', {
@@ -99,7 +108,14 @@ export function useSuggestionPanel() {
           });
 
           if (job?.actions?.length) {
-            const existingTitles = new Set(state.suggestions.map((s) => s.title));
+            // Refresh subtask titles (some may have been created while AI was running)
+            const currentSubtaskTitles = new Set(
+              taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
+            );
+            const existingTitles = new Set([
+              ...currentSubtaskTitles,
+              ...state.suggestions.map((s) => s.title),
+            ]);
             for (const action of job.actions) {
               if (
                 action.type === 'create_subtask' &&
