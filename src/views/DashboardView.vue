@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue';
 import { useRouter } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useStatisticsStore } from '../stores/statisticsStore';
-import DayHourDistributionChart from '../components/charts/DayHourDistributionChart.vue';
-import TaskCompletionChart from '../components/charts/TaskCompletionChart.vue';
 import type { HeatmapEntry, TaskItem } from '../types/domain';
+
+// Lazy-load heavy ECharts components — only create instances when needed
+const DayHourDistributionChart = defineAsyncComponent(() => import('../components/charts/DayHourDistributionChart.vue'));
+const TaskCompletionChart = defineAsyncComponent(() => import('../components/charts/TaskCompletionChart.vue'));
+const FocusTrendChart = defineAsyncComponent(() => import('../components/charts/FocusTrendChart.vue'));
+const HourlyDistributionChart = defineAsyncComponent(() => import('../components/charts/HourlyDistributionChart.vue'));
 
 const router = useRouter();
 const taskStore = useTaskStore();
@@ -17,38 +21,22 @@ onMounted(() => {
   void statisticsStore.fetchAll();
 });
 
+// ── Phased rendering: stagger heavy chart initialization ──
+// Phase 0 (immediate): metric cards + heatmap canvas
+// Phase 1 (after first paint): trend + hourly charts
+// Phase 2 (after phase 1): day-hour heatmap + pie + today tasks
+const renderPhase = ref(0);
+
 onMounted(() => {
-  void nextTick(() => {
-    if (!dayHourSectionRef.value || typeof IntersectionObserver === 'undefined') {
-      shouldRenderDayHourChart.value = true;
-      return;
-    }
-
-    dayHourObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        shouldRenderDayHourChart.value = true;
-        if (dayHourObserver) {
-          dayHourObserver.disconnect();
-          dayHourObserver = null;
-        }
-        break;
-      }
-    }, {
-      root: null,
-      rootMargin: '120px 0px',
-      threshold: 0.05,
+  requestAnimationFrame(() => {
+    renderPhase.value = 1;
+    requestAnimationFrame(() => {
+      renderPhase.value = 2;
     });
-
-    dayHourObserver.observe(dayHourSectionRef.value);
   });
 });
 
 onUnmounted(() => {
-  if (dayHourObserver) {
-    dayHourObserver.disconnect();
-    dayHourObserver = null;
-  }
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;
@@ -59,14 +47,17 @@ onUnmounted(() => {
   }
 });
 
-const todayFocusMinutes = computed(() => statisticsStore.totalFocusMinutes);
-const todayPomodoros = computed(() =>
-  statisticsStore.totalPomodoros + timerStore.completedPomodoros
-);
-const todayTasksDone = computed(() =>
-  taskStore.tasks.filter(t => t.status === 'done').length
-);
+// --- Overview metric cards ---
+const overview = computed(() => statisticsStore.overview);
 
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  if (h > 0) return `${h}h${m > 0 ? m + 'm' : ''}`;
+  return `${m}`;
+}
+
+// --- Heatmap ---
 type HeatmapCell = {
   key: string;
   count: number;
@@ -128,9 +119,6 @@ const currentYear = new Date().getFullYear();
 const selectedYear = ref<number>(currentYear);
 const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 const hoveredCellKey = ref<string | null>(null);
-const dayHourSectionRef = ref<HTMLElement | null>(null);
-const shouldRenderDayHourChart = ref(false);
-let dayHourObserver: IntersectionObserver | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 const todayKey = computed(() => toDateKey(new Date()));
@@ -141,6 +129,7 @@ function scheduleStatsRefresh(): void {
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
     void Promise.all([
+      statisticsStore.fetchOverview(),
       statisticsStore.fetchFocusStats(),
       statisticsStore.fetchDayHourDistribution(),
       statisticsStore.fetchHeatmap(selectedYear.value),
@@ -507,57 +496,89 @@ function goToTodayTasks(): void {
 </script>
 
 <template>
-  <div class="h-full p-6">
+  <div class="h-full overflow-y-auto p-6">
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-slate-800">仪表盘</h1>
       <p class="mt-1 text-sm text-slate-500">数据统计与分析</p>
     </div>
 
-    <div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <!-- ── Metric Cards ─────────────────────────────────────────── -->
+    <div class="mb-6 grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-            <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-100">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <div>
-            <p class="text-sm text-slate-500">总专注时长</p>
-            <p class="text-2xl font-semibold tabular-nums text-slate-800">{{ todayFocusMinutes }} <span class="text-sm font-normal">分钟</span></p>
+          <div class="min-w-0">
+            <p class="text-xs text-slate-500">今日专注</p>
+            <p class="text-xl font-bold tabular-nums text-slate-800">
+              {{ formatDuration(overview?.today.focusSeconds ?? 0) }}
+              <span v-if="!overview?.today.focusSeconds || overview.today.focusSeconds < 3600" class="text-xs font-normal text-slate-400">分钟</span>
+            </p>
           </div>
         </div>
       </article>
 
-      <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-            <svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-colors group-hover:bg-red-100">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" />
+              <circle cx="12" cy="12" r="4" />
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs text-slate-500">今日番茄</p>
+            <p class="text-xl font-bold tabular-nums text-slate-800">
+              {{ (overview?.today.pomodoros ?? 0) + timerStore.completedPomodoros }}
+              <span class="text-xs font-normal text-slate-400">个</span>
+            </p>
+          </div>
+        </div>
+      </article>
+
+      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-600 transition-colors group-hover:bg-green-100">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <div>
-            <p class="text-sm text-slate-500">完成番茄</p>
-            <p class="text-2xl font-semibold tabular-nums text-slate-800">{{ todayPomodoros }} <span class="text-sm font-normal">个</span></p>
+          <div class="min-w-0">
+            <p class="text-xs text-slate-500">今日完成</p>
+            <p class="text-xl font-bold tabular-nums text-slate-800">
+              {{ overview?.today.tasksCompleted ?? 0 }}
+              <span class="text-xs font-normal text-slate-400">个任务</span>
+            </p>
           </div>
         </div>
       </article>
 
-      <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-100">
-            <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover:bg-purple-100">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
           </div>
-          <div>
-            <p class="text-sm text-slate-500">完成任务</p>
-            <p class="text-2xl font-semibold tabular-nums text-slate-800">{{ todayTasksDone }} <span class="text-sm font-normal">个</span></p>
+          <div class="min-w-0">
+            <p class="text-xs text-slate-500">本周累计</p>
+            <p class="text-xl font-bold tabular-nums text-slate-800">
+              {{ formatDuration(overview?.week.focusSeconds ?? 0) }}
+              <span v-if="!overview?.week.focusSeconds || overview.week.focusSeconds < 3600" class="text-xs font-normal text-slate-400">分钟</span>
+            </p>
+            <p class="text-[11px] tabular-nums text-slate-400">
+              {{ overview?.week.pomodoros ?? 0 }} 番茄 · {{ overview?.week.tasksCompleted ?? 0 }} 任务
+            </p>
           </div>
         </div>
       </article>
     </div>
 
     <div class="space-y-6">
+      <!-- ── Annual Heatmap ─────────────────────────────────────── -->
       <div class="dashboard-panel w-full rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -576,7 +597,7 @@ function goToTodayTasks(): void {
         </div>
 
         <div
-          class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600"
+          class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs text-slate-600"
         >
           <span class="font-medium text-slate-700">
             {{ selectedHeatmapCell?.dateLabel || `${selectedYear}年` }}
@@ -645,22 +666,52 @@ function goToTodayTasks(): void {
         </div>
       </div>
 
+      <!-- ── Focus Trend + Hourly Distribution (Phase 1) ─────── -->
+      <div class="grid gap-6 lg:grid-cols-2">
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="font-semibold text-slate-800">近期专注趋势</h3>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">过去 {{ statisticsStore.focusStats?.dailyTotals.length ?? 0 }} 天每日专注时长</p>
+          <FocusTrendChart
+            v-if="renderPhase >= 1 && statisticsStore.focusStats?.dailyTotals.length"
+            :data="statisticsStore.focusStats!.dailyTotals"
+            compact
+          />
+          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+            {{ renderPhase < 1 ? '加载中…' : '暂无数据' }}
+          </div>
+        </div>
+
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="font-semibold text-slate-800">高产时段分布</h3>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">各小时累计专注时长</p>
+          <HourlyDistributionChart
+            v-if="renderPhase >= 1 && statisticsStore.focusStats?.hourlyDistribution.length"
+            :data="statisticsStore.focusStats!.hourlyDistribution"
+            compact
+          />
+          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+            {{ renderPhase < 1 ? '加载中…' : '暂无数据' }}
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Day-Hour Distribution + Right Column (Phase 2) ──── -->
       <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
         <!-- Day-hour distribution -->
-        <div ref="dayHourSectionRef" class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h3 class="font-semibold text-slate-800">每日时段任务消耗分布</h3>
+              <h3 class="font-semibold text-slate-800">每日时段消耗分布</h3>
               <p class="mt-0.5 text-xs text-slate-500">近 {{ statisticsStore.dayHourWindowDays }} 天按小时分布</p>
             </div>
           </div>
           <DayHourDistributionChart
-            v-if="shouldRenderDayHourChart"
+            v-if="renderPhase >= 2"
             :data="statisticsStore.dayHourDistribution"
             :days="statisticsStore.dayHourWindowDays"
           />
           <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
-            图表准备中…
+            加载中…
           </div>
         </div>
 
@@ -669,7 +720,7 @@ function goToTodayTasks(): void {
           <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 class="font-semibold text-slate-800">任务完成概览</h3>
             <p class="mt-0.5 text-xs text-slate-500">所有任务按状态分布</p>
-            <TaskCompletionChart :data="statisticsStore.taskCompletion" />
+            <TaskCompletionChart v-if="renderPhase >= 2" :data="statisticsStore.taskCompletion" />
             <p v-if="statisticsStore.taskCompletion" class="text-center text-xs text-slate-400">
               共 {{ statisticsStore.taskCompletion.total }} 个任务
             </p>

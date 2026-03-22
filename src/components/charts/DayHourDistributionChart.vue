@@ -101,7 +101,14 @@ const option = computed(() => ({
   progressive: 0,
   hoverLayerThreshold: Infinity,
   tooltip: {
-    show: false,
+    show: true,
+    formatter: (params: { data: number[] }) => {
+      const d = params.data;
+      if (!d || d[2] === 0) return '';
+      const dateKey = dayKeys.value[d[1]];
+      const label = formatDayLabel(dateKey, d[1]);
+      return `<b>${label} ${d[0]}:00–${d[0] + 1}:00</b><br/>专注 ${d[2]} 分钟 · ${d[3]} 次 · ${d[4]} 番茄`;
+    },
   },
   grid: {
     top: 36,
@@ -163,7 +170,7 @@ const option = computed(() => ({
         borderColor: '#e5e7eb',
         borderWidth: 1,
       },
-      silent: true,
+      silent: false,
     },
   ],
 }));

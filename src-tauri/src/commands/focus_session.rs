@@ -219,7 +219,7 @@ pub fn focus_session_stats(
   // Hourly distribution (24 buckets)
   let mut hourly_stmt = db
     .prepare(
-      "SELECT CAST(strftime('%H', start_time) AS INTEGER) AS hour,
+      "SELECT CAST(strftime('%H', start_time, 'localtime') AS INTEGER) AS hour,
               COALESCE(SUM(duration_seconds), 0),
               COUNT(*)
        FROM focus_sessions

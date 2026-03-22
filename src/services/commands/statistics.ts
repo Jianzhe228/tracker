@@ -5,7 +5,12 @@ import type {
   HeatmapEntry,
   TaskCompletionStats,
   EstimationComparison,
+  StatsOverview,
 } from '../../types/domain';
+
+export function getStatsOverview(): Promise<StatsOverview> {
+  return invokeCommand<StatsOverview>('stats_overview');
+}
 
 export function getTaskCompletionStats(): Promise<TaskCompletionStats> {
   return invokeCommand<TaskCompletionStats>('task_completion_stats');

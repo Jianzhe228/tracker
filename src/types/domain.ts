@@ -155,6 +155,18 @@ export interface TaskCompletionStats {
   overdue: number;
 }
 
+export interface PeriodStats {
+  focusSeconds: number;
+  pomodoros: number;
+  tasksCompleted: number;
+}
+
+export interface StatsOverview {
+  today: PeriodStats;
+  week: PeriodStats;
+  total: PeriodStats;
+}
+
 export interface EstimationComparison {
   taskId: number;
   taskTitle: string;

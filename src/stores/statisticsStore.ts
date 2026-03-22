@@ -9,10 +9,12 @@ import type {
   HeatmapEntry,
   TaskCompletionStats,
   EstimationComparison,
+  StatsOverview,
 } from '../types/domain';
 import {
   getStatsDayHourDistribution,
   getStatsHeatmap,
+  getStatsOverview,
   getTaskCompletionStats,
   getTaskEstimationComparison,
 } from '../services/commands/statistics';
@@ -39,6 +41,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
   const dayHourWindowDays = ref(14);
 
   const focusStats = ref<FocusSessionStats | null>(null);
+  const overview = ref<StatsOverview | null>(null);
   const projectDistribution = shallowRef<ProjectTimeStat[]>([]);
   const heatmapEntries = shallowRef<HeatmapEntry[]>([]);
   const dayHourDistribution = shallowRef<DayHourDistributionEntry[]>([]);
@@ -69,6 +72,15 @@ export const useStatisticsStore = defineStore('statistics', () => {
     if (!focusStats.value) return 0;
     return focusStats.value.totalPomodoros;
   });
+
+  async function fetchOverview(): Promise<void> {
+    if (!isTauri) return;
+    try {
+      overview.value = await getStatsOverview();
+    } catch (err) {
+      console.warn('[statistics] failed to fetch overview', err);
+    }
+  }
 
   async function fetchFocusStats(): Promise<void> {
     if (!isTauri) return;
@@ -155,6 +167,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
     loading.value = true;
     try {
       await Promise.all([
+        fetchOverview(),
         fetchFocusStats(),
         fetchDayHourDistribution(),
         fetchTaskCompletion(),
@@ -173,6 +186,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
     loading,
     dateRange,
     dayHourWindowDays,
+    overview,
     focusStats,
     projectDistribution,
     heatmapEntries,
@@ -183,6 +197,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
     effectiveDateRange,
     totalFocusMinutes,
     totalPomodoros,
+    fetchOverview,
     fetchFocusStats,
     fetchProjectDistribution,
     fetchHeatmap,
