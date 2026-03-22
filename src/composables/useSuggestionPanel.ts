@@ -4,7 +4,7 @@
  * Manages per-task suggestion state (keyed by taskId), triggers the
  * suggestion pipeline, and handles accept/reject with feedback recording.
  */
-import { shallowRef, triggerRef, type ShallowRef } from 'vue';
+import { shallowRef, triggerRef, reactive, type ShallowRef } from 'vue';
 import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../services/suggestion';
 import { enqueue } from '../services/ai/queue';
 import { feedbackRecord } from '../services/commands/learning';
@@ -30,7 +30,7 @@ export interface SuggestionPanelState {
 }
 
 function emptyState(): SuggestionPanelState {
-  return { suggestions: [], keywords: [], loading: false, collapsed: false, requested: false };
+  return reactive({ suggestions: [], keywords: [], loading: false, collapsed: false, requested: false });
 }
 
 export function useSuggestionPanel() {
@@ -60,94 +60,85 @@ export function useSuggestionPanel() {
     panels.value.set(taskId, state);
     notify();
 
-    // Collect existing subtask titles to avoid duplicates
-    const taskStore = useTaskStore();
-    const existingSubtaskTitles = new Set(
-      taskStore.tasks
-        .filter((t) => t.parentId === taskId)
-        .map((t) => t.title)
-    );
+    try {
+      // Collect existing subtask titles to avoid duplicates
+      const taskStore = useTaskStore();
+      const existingSubtaskTitles = new Set(
+        taskStore.tasks
+          .filter((t) => t.parentId === taskId)
+          .map((t) => t.title)
+      );
 
-    // 1. Run local pipeline
-    const output = await suggest({ taskTitle, projectId });
-    state.keywords = output.keywords;
+      // 1. Run local pipeline
+      const output = await suggest({ taskTitle, projectId });
+      state.keywords = output.keywords;
 
-    if (output.result.suggestions.length > 0) {
-      state.suggestions = output.result.suggestions
-        .filter((s) => !existingSubtaskTitles.has(s))
-        .map((s) => ({
-          title: s,
-          source: output.result.source as SuggestionSource,
-          patternName: output.result.patternName,
-        }));
-      // If local-only strategy, we're done loading
-      if (output.strategy === 'local') {
-        state.loading = false;
-      }
-      notify();
-    }
-
-    // 2. Fire AI if strategy requires it
-    if (output.strategy !== 'local') {
-      const settingsStore = useSettingsStore();
-      if (settingsStore.ai.endpoint && settingsStore.ai.apiKey) {
-
-        try {
-          const aiContext = await buildAiContext({ taskTitle, projectId });
-          const project = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
-
-          const job = await enqueue('task_decompose', {
-            taskId,
-            taskTitle,
-            projectName: project?.title ?? '',
-            userPatterns: aiContext.userPatterns,
-            learnedItems: aiContext.learnedItems,
-            rejectedItems: aiContext.rejectedItems,
-            manualSubtasks: aiContext.manualSubtasks,
-            siblingTasks: aiContext.siblingTasks,
-          });
-
-          if (job?.actions?.length) {
-            // Refresh subtask titles (some may have been created while AI was running)
-            const currentSubtaskTitles = new Set(
-              taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
-            );
-            const existingTitles = new Set([
-              ...currentSubtaskTitles,
-              ...state.suggestions.map((s) => s.title),
-            ]);
-            for (const action of job.actions) {
-              if (
-                action.type === 'create_subtask' &&
-                action.params.title &&
-                !existingTitles.has(String(action.params.title))
-              ) {
-                state.suggestions.push({
-                  title: String(action.params.title),
-                  source: 'ai',
-                });
-              }
-              // Mark action so it doesn't appear in NotificationCenter
-              action.status = 'executed';
-            }
-            // Persist the status change to DB
-            updateAiJob(job.id, { actions: job.actions }).catch((e) => {
-              console.warn('[suggestion-panel] failed to persist AI job status', e);
-            });
-          }
-        } catch (e) {
-          console.error('[suggestion-panel] AI job failed', e);
-        } finally {
-          state.loading = false;
-          notify();
-        }
-      } else {
-        // AI not configured — stop loading
-        state.loading = false;
+      if (output.result.suggestions.length > 0) {
+        state.suggestions = output.result.suggestions
+          .filter((s) => !existingSubtaskTitles.has(s))
+          .map((s) => ({
+            title: s,
+            source: output.result.source as SuggestionSource,
+            patternName: output.result.patternName,
+          }));
         notify();
       }
-    } else {
-      // Strategy is 'local' — no AI needed, stop loading
+
+      // 2. Fire AI if strategy requires it
+      if (output.strategy !== 'local') {
+        const settingsStore = useSettingsStore();
+        if (settingsStore.ai.endpoint && settingsStore.ai.apiKey) {
+          try {
+            const aiContext = await buildAiContext({ taskTitle, projectId });
+            const project = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
+
+            const job = await enqueue('task_decompose', {
+              taskId,
+              taskTitle,
+              projectName: project?.title ?? '',
+              userPatterns: aiContext.userPatterns,
+              learnedItems: aiContext.learnedItems,
+              rejectedItems: aiContext.rejectedItems,
+              manualSubtasks: aiContext.manualSubtasks,
+              siblingTasks: aiContext.siblingTasks,
+            });
+
+            if (job?.actions?.length) {
+              // Refresh subtask titles (some may have been created while AI was running)
+              const currentSubtaskTitles = new Set(
+                taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
+              );
+              const existingTitles = new Set([
+                ...currentSubtaskTitles,
+                ...state.suggestions.map((s) => s.title),
+              ]);
+              for (const action of job.actions) {
+                if (
+                  action.type === 'create_subtask' &&
+                  action.params.title &&
+                  !existingTitles.has(String(action.params.title))
+                ) {
+                  state.suggestions.push({
+                    title: String(action.params.title),
+                    source: 'ai',
+                  });
+                }
+                // Mark action so it doesn't appear in NotificationCenter
+                action.status = 'executed';
+              }
+              // Persist the status change to DB
+              updateAiJob(job.id, { actions: job.actions }).catch((e) => {
+                console.warn('[suggestion-panel] failed to persist AI job status', e);
+              });
+            }
+          } catch (e) {
+            console.error('[suggestion-panel] AI job failed', e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[suggestion-panel] suggestion pipeline failed', e);
+    } finally {
       state.loading = false;
       notify();
     }
