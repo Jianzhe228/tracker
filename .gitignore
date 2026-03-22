@@ -14,7 +14,6 @@ dist-ssr
 src-tauri/target
 src-tauri/gen
 Cargo.lock
-package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
