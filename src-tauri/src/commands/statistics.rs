@@ -296,7 +296,7 @@ pub fn task_completion_stats(state: State<'_, AppState>) -> Result<TaskCompletio
        WHERE deleted_at IS NULL
          AND status IN ('todo', 'in_progress')
          AND due_at IS NOT NULL
-         AND due_at < datetime('now')",
+         AND due_at < date('now', 'localtime')",
       [],
       |row| row.get(0),
     )

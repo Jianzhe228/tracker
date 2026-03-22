@@ -120,7 +120,7 @@ pub(crate) fn generate_export_json(state: &State<'_, AppState>) -> Result<String
 
   // Collect tasks
   let mut task_stmt = db
-    .prepare("SELECT id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at FROM tasks")
+    .prepare("SELECT id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, start_at, created_at, updated_at FROM tasks")
     .map_err(|e| e.to_string())?;
   let tasks: Vec<serde_json::Value> = task_stmt
     .query_map([], |row| {
@@ -140,8 +140,9 @@ pub(crate) fn generate_export_json(state: &State<'_, AppState>) -> Result<String
         "pomodoroDuration": row.get::<_, i64>(12)?,
         "sortOrder": row.get::<_, i64>(13)?,
         "recurringRuleId": row.get::<_, Option<i64>>(14)?,
-        "createdAt": row.get::<_, String>(15)?,
-        "updatedAt": row.get::<_, String>(16)?,
+        "startAt": row.get::<_, Option<String>>(15)?,
+        "createdAt": row.get::<_, String>(16)?,
+        "updatedAt": row.get::<_, String>(17)?,
       }))
     })
     .map_err(|e| e.to_string())?
@@ -236,13 +237,21 @@ pub(crate) fn generate_export_json(state: &State<'_, AppState>) -> Result<String
     .collect();
 
   let export_data = serde_json::json!({
-    "version": 1,
+    "version": 2,
     "exportedAt": chrono::Utc::now().to_rfc3339(),
     "tasks": tasks,
     "projects": projects,
     "focusSessions": focus_sessions,
     "settings": settings,
     "recurringRules": recurring_rules,
+    "focusSessionSegments": collect_focus_session_segments(&db)?,
+    "aiSkills": collect_ai_skills(&db)?,
+    "aiJobs": collect_ai_jobs(&db)?,
+    "subtaskPatterns": collect_subtask_patterns(&db)?,
+    "subtaskLearnLog": collect_subtask_learn_log(&db)?,
+    "keywordClusters": collect_keyword_clusters(&db)?,
+    "suggestionFeedback": collect_suggestion_feedback(&db)?,
+    "taskSubtaskHistory": collect_task_subtask_history(&db)?,
   });
 
   serde_json::to_string_pretty(&export_data).map_err(|e| e.to_string())
@@ -299,16 +308,24 @@ pub(crate) fn import_json_data(state: &State<'_, AppState>, data: &serde_json::V
   // Clear existing data
   tx.execute_batch(
     "
+    DELETE FROM focus_session_segments;
     DELETE FROM task_completion_logs;
     DELETE FROM task_deletion_logs;
     DELETE FROM focus_sessions;
     DELETE FROM notification_logs;
     DELETE FROM ai_logs;
+    DELETE FROM ai_jobs;
     DELETE FROM daily_summaries;
     DELETE FROM task_tags;
+    DELETE FROM suggestion_feedback;
+    DELETE FROM task_subtask_history;
+    DELETE FROM subtask_learn_log;
+    DELETE FROM keyword_clusters;
+    DELETE FROM subtask_patterns;
     DELETE FROM tasks;
     DELETE FROM recurring_rules;
     DELETE FROM projects;
+    DELETE FROM ai_skills;
     DELETE FROM user_settings;
     ",
   )
@@ -365,7 +382,7 @@ pub(crate) fn import_json_data(state: &State<'_, AppState>, data: &serde_json::V
   if let Some(tasks) = data.get("tasks").and_then(|v| v.as_array()) {
     for t in tasks {
       tx.execute(
-        "INSERT INTO tasks (id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+        "INSERT INTO tasks (id, title, status, priority, project_id, parent_id, due_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, start_at, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         rusqlite::params![
           t["id"].as_i64(),
           t["title"].as_str().unwrap_or(""),
@@ -382,6 +399,7 @@ pub(crate) fn import_json_data(state: &State<'_, AppState>, data: &serde_json::V
           t["pomodoroDuration"].as_i64().unwrap_or(25),
           t["sortOrder"].as_i64().unwrap_or(0),
           t["recurringRuleId"].as_i64(),
+          t["startAt"].as_str(),
           t["createdAt"].as_str().unwrap_or(""),
           t["updatedAt"].as_str().unwrap_or(""),
         ],
@@ -427,8 +445,360 @@ pub(crate) fn import_json_data(state: &State<'_, AppState>, data: &serde_json::V
     }
   }
 
+  // Import focus_session_segments
+  if let Some(segments) = data.get("focusSessionSegments").and_then(|v| v.as_array()) {
+    for s in segments {
+      tx.execute(
+        "INSERT INTO focus_session_segments (id, session_id, task_id, start_time, duration_seconds, sort_order, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+          s["id"].as_i64(),
+          s["sessionId"].as_i64(),
+          s["taskId"].as_i64(),
+          s["startTime"].as_str().unwrap_or(""),
+          s["durationSeconds"].as_i64().unwrap_or(0),
+          s["sortOrder"].as_i64().unwrap_or(0),
+          s["createdAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import focus session segment: {}", e))?;
+    }
+  }
+
+  // Import ai_skills
+  if let Some(skills) = data.get("aiSkills").and_then(|v| v.as_array()) {
+    for s in skills {
+      tx.execute(
+        "INSERT INTO ai_skills (id, key, name, description, system_prompt, user_prompt_template, action_types, trigger_type, is_builtin, enabled, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        rusqlite::params![
+          s["id"].as_i64(),
+          s["key"].as_str().unwrap_or(""),
+          s["name"].as_str().unwrap_or(""),
+          s["description"].as_str().unwrap_or(""),
+          s["systemPrompt"].as_str().unwrap_or(""),
+          s["userPromptTemplate"].as_str().unwrap_or(""),
+          s["actionTypes"].as_str().unwrap_or("[]"),
+          s["triggerType"].as_str().unwrap_or("manual"),
+          s["isBuiltin"].as_bool().unwrap_or(false),
+          s["enabled"].as_bool().unwrap_or(true),
+          s["createdAt"].as_str().unwrap_or(""),
+          s["updatedAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import ai skill: {}", e))?;
+    }
+  }
+
+  // Import ai_jobs
+  if let Some(jobs) = data.get("aiJobs").and_then(|v| v.as_array()) {
+    for j in jobs {
+      tx.execute(
+        "INSERT INTO ai_jobs (id, skill_id, status, input_context, raw_response, actions, error, created_at, completed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+          j["id"].as_i64(),
+          j["skillId"].as_i64(),
+          j["status"].as_str().unwrap_or("pending"),
+          j["inputContext"].as_str().unwrap_or("{}"),
+          j["rawResponse"].as_str(),
+          j["actions"].as_str(),
+          j["error"].as_str(),
+          j["createdAt"].as_str().unwrap_or(""),
+          j["completedAt"].as_str(),
+        ],
+      )
+      .map_err(|e| format!("Failed to import ai job: {}", e))?;
+    }
+  }
+
+  // Import subtask_patterns
+  if let Some(patterns) = data.get("subtaskPatterns").and_then(|v| v.as_array()) {
+    for p in patterns {
+      tx.execute(
+        "INSERT INTO subtask_patterns (id, name, keywords, subtasks, project_id, is_builtin, usage_count, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+          p["id"].as_i64(),
+          p["name"].as_str().unwrap_or(""),
+          p["keywords"].as_str().unwrap_or("[]"),
+          p["subtasks"].as_str().unwrap_or("[]"),
+          p["projectId"].as_i64(),
+          p["isBuiltin"].as_bool().unwrap_or(false),
+          p["usageCount"].as_i64().unwrap_or(0),
+          p["createdAt"].as_str().unwrap_or(""),
+          p["updatedAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import subtask pattern: {}", e))?;
+    }
+  }
+
+  // Import subtask_learn_log
+  if let Some(logs) = data.get("subtaskLearnLog").and_then(|v| v.as_array()) {
+    for l in logs {
+      tx.execute(
+        "INSERT INTO subtask_learn_log (id, cluster_id, project_id, keyword, subtask_title, score, source, last_used_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+          l["id"].as_i64(),
+          l["clusterId"].as_i64(),
+          l["projectId"].as_i64(),
+          l["keyword"].as_str().unwrap_or(""),
+          l["subtaskTitle"].as_str().unwrap_or(""),
+          l["score"].as_i64().unwrap_or(1),
+          l["source"].as_str().unwrap_or("user"),
+          l["lastUsedAt"].as_str().unwrap_or(""),
+          l["createdAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import subtask learn log: {}", e))?;
+    }
+  }
+
+  // Import keyword_clusters
+  if let Some(clusters) = data.get("keywordClusters").and_then(|v| v.as_array()) {
+    for c in clusters {
+      tx.execute(
+        "INSERT INTO keyword_clusters (id, name, keywords, confirmed, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+          c["id"].as_i64(),
+          c["name"].as_str().unwrap_or(""),
+          c["keywords"].as_str().unwrap_or("[]"),
+          c["confirmed"].as_bool().unwrap_or(false),
+          c["createdAt"].as_str().unwrap_or(""),
+          c["updatedAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import keyword cluster: {}", e))?;
+    }
+  }
+
+  // Import suggestion_feedback
+  if let Some(feedbacks) = data.get("suggestionFeedback").and_then(|v| v.as_array()) {
+    for f in feedbacks {
+      tx.execute(
+        "INSERT INTO suggestion_feedback (id, task_id, task_title, project_id, suggestion_title, source, action, job_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+          f["id"].as_i64(),
+          f["taskId"].as_i64(),
+          f["taskTitle"].as_str().unwrap_or(""),
+          f["projectId"].as_i64(),
+          f["suggestionTitle"].as_str().unwrap_or(""),
+          f["source"].as_str().unwrap_or("ai"),
+          f["action"].as_str().unwrap_or("pending"),
+          f["jobId"].as_i64(),
+          f["createdAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import suggestion feedback: {}", e))?;
+    }
+  }
+
+  // Import task_subtask_history
+  if let Some(histories) = data.get("taskSubtaskHistory").and_then(|v| v.as_array()) {
+    for h in histories {
+      tx.execute(
+        "INSERT INTO task_subtask_history (id, parent_task_id, parent_title, project_id, subtask_titles, captured_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+          h["id"].as_i64(),
+          h["parentTaskId"].as_i64(),
+          h["parentTitle"].as_str().unwrap_or(""),
+          h["projectId"].as_i64(),
+          h["subtaskTitles"].as_str().unwrap_or("[]"),
+          h["capturedAt"].as_str().unwrap_or(""),
+        ],
+      )
+      .map_err(|e| format!("Failed to import task subtask history: {}", e))?;
+    }
+  }
+
   tx.commit()
     .map_err(|e| format!("Failed to commit import: {}", e))?;
 
   Ok(())
+}
+
+// ── Export collector helpers ────────────────────────────────────────────────
+
+fn collect_focus_session_segments(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, session_id, task_id, start_time, duration_seconds, sort_order, created_at FROM focus_session_segments")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "sessionId": row.get::<_, i64>(1)?,
+        "taskId": row.get::<_, Option<i64>>(2)?,
+        "startTime": row.get::<_, String>(3)?,
+        "durationSeconds": row.get::<_, i64>(4)?,
+        "sortOrder": row.get::<_, i64>(5)?,
+        "createdAt": row.get::<_, String>(6)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_ai_skills(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, key, name, description, system_prompt, user_prompt_template, action_types, trigger_type, is_builtin, enabled, created_at, updated_at FROM ai_skills")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "key": row.get::<_, String>(1)?,
+        "name": row.get::<_, String>(2)?,
+        "description": row.get::<_, String>(3)?,
+        "systemPrompt": row.get::<_, String>(4)?,
+        "userPromptTemplate": row.get::<_, String>(5)?,
+        "actionTypes": row.get::<_, String>(6)?,
+        "triggerType": row.get::<_, String>(7)?,
+        "isBuiltin": row.get::<_, bool>(8)?,
+        "enabled": row.get::<_, bool>(9)?,
+        "createdAt": row.get::<_, String>(10)?,
+        "updatedAt": row.get::<_, String>(11)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_ai_jobs(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, skill_id, status, input_context, raw_response, actions, error, created_at, completed_at FROM ai_jobs")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "skillId": row.get::<_, i64>(1)?,
+        "status": row.get::<_, String>(2)?,
+        "inputContext": row.get::<_, String>(3)?,
+        "rawResponse": row.get::<_, Option<String>>(4)?,
+        "actions": row.get::<_, Option<String>>(5)?,
+        "error": row.get::<_, Option<String>>(6)?,
+        "createdAt": row.get::<_, String>(7)?,
+        "completedAt": row.get::<_, Option<String>>(8)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_subtask_patterns(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, name, keywords, subtasks, project_id, is_builtin, usage_count, created_at, updated_at FROM subtask_patterns")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "name": row.get::<_, String>(1)?,
+        "keywords": row.get::<_, String>(2)?,
+        "subtasks": row.get::<_, String>(3)?,
+        "projectId": row.get::<_, Option<i64>>(4)?,
+        "isBuiltin": row.get::<_, bool>(5)?,
+        "usageCount": row.get::<_, i64>(6)?,
+        "createdAt": row.get::<_, String>(7)?,
+        "updatedAt": row.get::<_, String>(8)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_subtask_learn_log(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, cluster_id, project_id, keyword, subtask_title, score, source, last_used_at, created_at FROM subtask_learn_log")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "clusterId": row.get::<_, Option<i64>>(1)?,
+        "projectId": row.get::<_, Option<i64>>(2)?,
+        "keyword": row.get::<_, String>(3)?,
+        "subtaskTitle": row.get::<_, String>(4)?,
+        "score": row.get::<_, i64>(5)?,
+        "source": row.get::<_, String>(6)?,
+        "lastUsedAt": row.get::<_, String>(7)?,
+        "createdAt": row.get::<_, String>(8)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_keyword_clusters(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, name, keywords, confirmed, created_at, updated_at FROM keyword_clusters")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "name": row.get::<_, String>(1)?,
+        "keywords": row.get::<_, String>(2)?,
+        "confirmed": row.get::<_, bool>(3)?,
+        "createdAt": row.get::<_, String>(4)?,
+        "updatedAt": row.get::<_, String>(5)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_suggestion_feedback(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, task_id, task_title, project_id, suggestion_title, source, action, job_id, created_at FROM suggestion_feedback")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "taskId": row.get::<_, i64>(1)?,
+        "taskTitle": row.get::<_, String>(2)?,
+        "projectId": row.get::<_, Option<i64>>(3)?,
+        "suggestionTitle": row.get::<_, String>(4)?,
+        "source": row.get::<_, String>(5)?,
+        "action": row.get::<_, String>(6)?,
+        "jobId": row.get::<_, Option<i64>>(7)?,
+        "createdAt": row.get::<_, String>(8)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
+}
+
+fn collect_task_subtask_history(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
+  let mut stmt = db
+    .prepare("SELECT id, parent_task_id, parent_title, project_id, subtask_titles, captured_at FROM task_subtask_history")
+    .map_err(|e| e.to_string())?;
+  let rows: Vec<serde_json::Value> = stmt
+    .query_map([], |row| {
+      Ok(serde_json::json!({
+        "id": row.get::<_, i64>(0)?,
+        "parentTaskId": row.get::<_, i64>(1)?,
+        "parentTitle": row.get::<_, String>(2)?,
+        "projectId": row.get::<_, Option<i64>>(3)?,
+        "subtaskTitles": row.get::<_, String>(4)?,
+        "capturedAt": row.get::<_, String>(5)?,
+      }))
+    })
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+  Ok(rows)
 }
