@@ -11,7 +11,6 @@ import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from '../utils/date';
 import { useSuggestionPanel, type SidebarSuggestion } from '../composables/useSuggestionPanel';
-import TaskSubtreeItem from '../components/TaskSubtreeItem.vue';
 
 const props = defineProps<{
   filter?: string;
@@ -38,14 +37,6 @@ const suppressTaskClick = ref(false);
 const taskListWrap = ref<HTMLElement | null>(null);
 const dragPreviewIds = ref<number[] | null>(null);
 const dragStartOrderIds = ref<number[] | null>(null);
-const draggingSubtaskId = ref<number | null>(null);
-const draggingSubtaskParentId = ref<number | null>(null);
-const draggingSubtaskStatus = ref<TaskStatus | null>(null);
-const subtaskDragOverId = ref<number | null>(null);
-const isSubtaskDragging = ref(false);
-const suppressSubtaskClick = ref(false);
-const subtaskDragPreviewIds = ref<number[] | null>(null);
-const subtaskDragStartOrderIds = ref<number[] | null>(null);
 
 let activePointerId: number | null = null;
 let pointerStartX = 0;
@@ -55,14 +46,6 @@ let dragPreviewInsertIndex = -1;
 let dragLatestClientX = 0;
 let dragLatestClientY = 0;
 let dragLastShiftAt = 0;
-let activeSubtaskPointerId: number | null = null;
-let subtaskPointerStartX = 0;
-let subtaskPointerStartY = 0;
-let subtaskDragMoveRafId = 0;
-let subtaskDragPreviewInsertIndex = -1;
-let subtaskDragLatestClientX = 0;
-let subtaskDragLatestClientY = 0;
-let subtaskDragLastShiftAt = 0;
 
 const DETAIL_MIN_WIDTH = 320;
 const DETAIL_MAX_WIDTH = 560;
@@ -259,6 +242,29 @@ const timelineGroupCounts = computed(() => {
   return map;
 });
 
+// ── Collapsible date groups ──────────────────────────────────────
+const groupCollapseState = ref(new Map<string, boolean>());
+
+function isGroupCollapsed(dateKey: string): boolean {
+  const explicit = groupCollapseState.value.get(dateKey);
+  if (explicit !== undefined) return explicit;
+  if (dateKey === NO_DATE_GROUP_KEY) return false;
+  const today = getDateKeyFromToday(0);
+  const yesterday = getDateKeyFromToday(-1);
+  const tomorrow = getDateKeyFromToday(1);
+  return dateKey !== today && dateKey !== yesterday && dateKey !== tomorrow;
+}
+
+function toggleGroupCollapse(dateKey: string): void {
+  const current = isGroupCollapsed(dateKey);
+  groupCollapseState.value.set(dateKey, !current);
+}
+
+function isTaskInCollapsedGroup(task: TaskItem): boolean {
+  if (activeTaskFilter.value !== 'all') return false;
+  return isGroupCollapsed(getTimelineDateKey(task));
+}
+
 function shouldRenderTimelineHeader(taskIndex: number): boolean {
   if (activeTaskFilter.value !== 'all') return false;
   if (taskIndex === 0) return true;
@@ -320,63 +326,12 @@ function getTaskSubtasks(parentId: number): TaskItem[] {
   return subtasksByParent.value.get(parentId) || [];
 }
 
-function getSortableSubtasks(parentId: number, status: TaskStatus): TaskItem[] {
-  return getTaskSubtasks(parentId).filter((subtask) => subtask.status === status);
-}
-
-function getDisplaySubtasks(parentId: number): TaskItem[] {
-  const subtasks = getTaskSubtasks(parentId);
-  if (
-    !isSubtaskDragging.value
-    || draggingSubtaskParentId.value !== parentId
-    || draggingSubtaskStatus.value == null
-    || !subtaskDragPreviewIds.value
-  ) {
-    return subtasks;
-  }
-
-  const status = draggingSubtaskStatus.value;
-  const scopedMap = new Map(
-    subtasks
-      .filter((subtask) => subtask.status === status)
-      .map((subtask) => [subtask.id, subtask] as const)
-  );
-  const reorderedScoped = subtaskDragPreviewIds.value
-    .map((id) => scopedMap.get(id))
-    .filter((subtask): subtask is TaskItem => subtask != null);
-
-  if (reorderedScoped.length !== scopedMap.size) {
-    return subtasks;
-  }
-
-  const queue = [...reorderedScoped];
-  return subtasks.map((subtask) => (subtask.status === status ? queue.shift() || subtask : subtask));
-}
-
 function hasTaskSubtasks(parentId: number): boolean {
   return getTaskSubtasks(parentId).length > 0;
 }
 
 function getTaskSubtaskDoneCount(parentId: number): number {
   return getTaskSubtasks(parentId).filter((subtask) => subtask.status === 'done').length;
-}
-
-function isTaskExpanded(taskId: number): boolean {
-  return expandedTaskIds.value.has(taskId);
-}
-
-function setTaskExpanded(taskId: number, expanded: boolean): void {
-  const next = new Set(expandedTaskIds.value);
-  if (expanded) {
-    next.add(taskId);
-  } else {
-    next.delete(taskId);
-  }
-  expandedTaskIds.value = next;
-}
-
-function toggleTaskExpanded(taskId: number): void {
-  setTaskExpanded(taskId, !isTaskExpanded(taskId));
 }
 
 // Selected task
@@ -484,9 +439,6 @@ const dueDatePickerWrap = ref<HTMLElement | null>(null);
 const startDatePickerWrap = ref<HTMLElement | null>(null);
 const reminderDatePickerWrap = ref<HTMLElement | null>(null);
 const subtaskTitle = ref('');
-const expandedTaskIds = ref<Set<number>>(new Set());
-const editingSubtaskId = ref<number | null>(null);
-const editingSubtaskTitle = ref('');
 const MAX_SUBTASKS_PER_TASK = 50;
 const MAX_TASK_DEPTH = 10;
 
@@ -714,30 +666,13 @@ function normalizeTask(task: TaskItem) {
 watch(selectedTask, (task) => {
   taskDraft.value = task ? buildTaskDraft(task) : null;
   subtaskTitle.value = '';
-  if (task) {
-    setTaskExpanded(task.parentId ?? task.id, true);
-  }
 }, { immediate: true });
-
-watch(() => taskStore.tasks, () => {
-  if (editingSubtaskId.value != null) {
-    const exists = taskStore.tasks.some((task) => task.id === editingSubtaskId.value);
-    if (!exists) {
-      editingSubtaskId.value = null;
-      editingSubtaskTitle.value = '';
-    }
-  }
-}, { deep: true });
 
 watch(activeTaskFilter, () => {
   cleanupPointerDragListeners();
   resetDragState();
   isTaskDragging.value = false;
   suppressTaskClick.value = false;
-  cleanupSubtaskPointerDragListeners();
-  resetSubtaskDragState();
-  isSubtaskDragging.value = false;
-  suppressSubtaskClick.value = false;
 });
 
 async function submitTask(): Promise<void> {
@@ -773,16 +708,12 @@ async function submitTask(): Promise<void> {
 }
 
 function selectTask(taskId: number): void {
-  if (isTaskDragging.value || suppressTaskClick.value || isSubtaskDragging.value || suppressSubtaskClick.value) return;
-  if (editingSubtaskId.value != null && editingSubtaskId.value !== taskId) {
-    cancelSubtaskInlineEdit();
-  }
+  if (isTaskDragging.value || suppressTaskClick.value) return;
   closeDatePicker();
   selectedTaskId.value = taskId;
 }
 
 function closeDetail(): void {
-  cancelSubtaskInlineEdit();
   closeDatePicker();
   selectedTaskId.value = null;
 }
@@ -800,14 +731,6 @@ async function applyDragReorder(orderedIds: number[]): Promise<void> {
   const success = await taskStore.reorderTasks(orderedIds, { parentId: null, status: 'todo' });
   if (!success) {
     showInlineNotice('排序失败，请重试');
-  }
-}
-
-async function applySubtaskDragReorder(parentId: number, status: TaskStatus, orderedIds: number[]): Promise<void> {
-  if (orderedIds.length === 0) return;
-  const success = await taskStore.reorderTasks(orderedIds, { parentId, status });
-  if (!success) {
-    showInlineNotice('子任务排序失败，请重试');
   }
 }
 
@@ -829,28 +752,6 @@ function cleanupPointerDragListeners(): void {
     dragMoveRafId = 0;
   }
   activePointerId = null;
-}
-
-function resetSubtaskDragState(): void {
-  draggingSubtaskId.value = null;
-  draggingSubtaskParentId.value = null;
-  draggingSubtaskStatus.value = null;
-  subtaskDragOverId.value = null;
-  subtaskDragPreviewIds.value = null;
-  subtaskDragStartOrderIds.value = null;
-  subtaskDragPreviewInsertIndex = -1;
-  subtaskDragLastShiftAt = 0;
-}
-
-function cleanupSubtaskPointerDragListeners(): void {
-  document.removeEventListener('pointermove', handleSubtaskPointerMove, true);
-  document.removeEventListener('pointerup', handleSubtaskPointerUp, true);
-  document.removeEventListener('pointercancel', handleSubtaskPointerUp, true);
-  if (subtaskDragMoveRafId) {
-    cancelAnimationFrame(subtaskDragMoveRafId);
-    subtaskDragMoveRafId = 0;
-  }
-  activeSubtaskPointerId = null;
 }
 
 function computePreviewOrderByPointer(clientX: number, clientY: number): void {
@@ -910,7 +811,6 @@ function computePreviewOrderByPointer(clientX: number, clientY: number): void {
 
 function onTaskPointerDown(event: PointerEvent, taskId: number): void {
   if (!canDragSort.value) return;
-  if (isSubtaskDragging.value) return;
   if (event.button !== 0) return;
 
   const target = event.target as HTMLElement | null;
@@ -954,180 +854,6 @@ function handleTaskPointerMove(event: PointerEvent): void {
   dragMoveRafId = requestAnimationFrame(() => {
     dragMoveRafId = 0;
     computePreviewOrderByPointer(dragLatestClientX, dragLatestClientY);
-  });
-}
-
-function isTaskStatus(value: string): value is TaskStatus {
-  return value === 'todo' || value === 'in_progress' || value === 'done' || value === 'cancelled';
-}
-
-function computeSubtaskPreviewOrderByPointer(clientX: number, clientY: number): void {
-  if (
-    !isSubtaskDragging.value
-    || draggingSubtaskId.value == null
-    || draggingSubtaskParentId.value == null
-    || draggingSubtaskStatus.value == null
-    || !subtaskDragPreviewIds.value
-  ) {
-    return;
-  }
-
-  const sourceTaskId = draggingSubtaskId.value;
-  const sourceParentId = draggingSubtaskParentId.value;
-  const sourceStatus = draggingSubtaskStatus.value;
-  const idsWithoutSource = subtaskDragPreviewIds.value.filter((id) => id !== sourceTaskId);
-
-  let nextInsertIndex = subtaskDragPreviewInsertIndex;
-  if (nextInsertIndex < 0 || nextInsertIndex > idsWithoutSource.length) {
-    nextInsertIndex = idsWithoutSource.length;
-  }
-  let hoverTaskId: number | null = null;
-
-  const hovered = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-  const subtaskElement = hovered?.closest<HTMLElement>('[data-subtask-id]');
-  if (subtaskElement) {
-    const taskId = Number(subtaskElement.dataset.subtaskId ?? '');
-    const parentId = Number(subtaskElement.dataset.subtaskParentId ?? '');
-    const statusRaw = subtaskElement.dataset.subtaskStatus ?? '';
-
-    if (
-      Number.isFinite(taskId)
-      && taskId > 0
-      && taskId !== sourceTaskId
-      && Number.isFinite(parentId)
-      && parentId === sourceParentId
-      && isTaskStatus(statusRaw)
-      && statusRaw === sourceStatus
-    ) {
-      const hoverIndex = idsWithoutSource.indexOf(taskId);
-      if (hoverIndex >= 0) {
-        const rect = subtaskElement.getBoundingClientRect();
-        const beforeIndex = hoverIndex;
-        const afterIndex = hoverIndex + 1;
-        const beforeThreshold = rect.top + (rect.height * 0.42);
-        const afterThreshold = rect.top + (rect.height * 0.58);
-
-        if (clientY <= beforeThreshold) {
-          nextInsertIndex = beforeIndex;
-        } else if (clientY >= afterThreshold) {
-          nextInsertIndex = afterIndex;
-        } else if (nextInsertIndex < beforeIndex || nextInsertIndex > afterIndex) {
-          nextInsertIndex = clientY < rect.top + (rect.height / 2) ? beforeIndex : afterIndex;
-        }
-
-        hoverTaskId = taskId;
-      }
-    }
-  }
-
-  subtaskDragOverId.value = hoverTaskId;
-  if (nextInsertIndex === subtaskDragPreviewInsertIndex) return;
-
-  const delta = nextInsertIndex - subtaskDragPreviewInsertIndex;
-  if (Math.abs(delta) > 1) {
-    nextInsertIndex = subtaskDragPreviewInsertIndex + Math.sign(delta);
-  }
-
-  const nowMs = performance.now();
-  if (subtaskDragLastShiftAt > 0 && nowMs - subtaskDragLastShiftAt < 70) return;
-  subtaskDragLastShiftAt = nowMs;
-
-  subtaskDragPreviewInsertIndex = nextInsertIndex;
-  const nextOrder = [...idsWithoutSource];
-  nextOrder.splice(nextInsertIndex, 0, sourceTaskId);
-  subtaskDragPreviewIds.value = nextOrder;
-}
-
-function onSubtaskPointerDown(event: PointerEvent, parentId: number, subtask: TaskItem): void {
-  if (!canDragSort.value) return;
-  if (isTaskDragging.value) return;
-  if (editingSubtaskId.value != null) return;
-  if (event.button !== 0) return;
-
-  const target = event.target as HTMLElement | null;
-  if (target?.closest('button, input, textarea, select, a')) return;
-
-  const sortableSubtasks = getSortableSubtasks(parentId, subtask.status);
-  if (sortableSubtasks.length <= 1) return;
-
-  draggingSubtaskId.value = subtask.id;
-  draggingSubtaskParentId.value = parentId;
-  draggingSubtaskStatus.value = subtask.status;
-  subtaskDragOverId.value = null;
-  isSubtaskDragging.value = false;
-  subtaskDragPreviewIds.value = null;
-  subtaskDragStartOrderIds.value = sortableSubtasks.map((item) => item.id);
-  subtaskDragPreviewInsertIndex = subtaskDragStartOrderIds.value.indexOf(subtask.id);
-  subtaskDragLastShiftAt = 0;
-
-  activeSubtaskPointerId = event.pointerId;
-  subtaskPointerStartX = event.clientX;
-  subtaskPointerStartY = event.clientY;
-  subtaskDragLatestClientX = event.clientX;
-  subtaskDragLatestClientY = event.clientY;
-
-  document.addEventListener('pointermove', handleSubtaskPointerMove, true);
-  document.addEventListener('pointerup', handleSubtaskPointerUp, true);
-  document.addEventListener('pointercancel', handleSubtaskPointerUp, true);
-}
-
-function handleSubtaskPointerMove(event: PointerEvent): void {
-  if (!canDragSort.value || activeSubtaskPointerId == null || event.pointerId !== activeSubtaskPointerId) return;
-  if (draggingSubtaskId.value == null || draggingSubtaskParentId.value == null || draggingSubtaskStatus.value == null) return;
-
-  const moveDistance = Math.hypot(event.clientX - subtaskPointerStartX, event.clientY - subtaskPointerStartY);
-  if (!isSubtaskDragging.value) {
-    if (moveDistance < 6) return;
-    isSubtaskDragging.value = true;
-    subtaskDragPreviewIds.value = getSortableSubtasks(draggingSubtaskParentId.value, draggingSubtaskStatus.value).map((task) => task.id);
-  }
-
-  event.preventDefault();
-  subtaskDragLatestClientX = event.clientX;
-  subtaskDragLatestClientY = event.clientY;
-  if (subtaskDragMoveRafId) return;
-
-  subtaskDragMoveRafId = requestAnimationFrame(() => {
-    subtaskDragMoveRafId = 0;
-    computeSubtaskPreviewOrderByPointer(subtaskDragLatestClientX, subtaskDragLatestClientY);
-  });
-}
-
-function handleSubtaskPointerUp(event: PointerEvent): void {
-  if (!canDragSort.value || activeSubtaskPointerId == null || event.pointerId !== activeSubtaskPointerId) return;
-  if (subtaskDragMoveRafId) {
-    cancelAnimationFrame(subtaskDragMoveRafId);
-    subtaskDragMoveRafId = 0;
-  }
-  if (isSubtaskDragging.value) {
-    computeSubtaskPreviewOrderByPointer(event.clientX, event.clientY);
-  }
-
-  const moved = isSubtaskDragging.value;
-  const sourceTaskId = draggingSubtaskId.value;
-  const parentId = draggingSubtaskParentId.value;
-  const status = draggingSubtaskStatus.value;
-  const startOrder = subtaskDragStartOrderIds.value ? [...subtaskDragStartOrderIds.value] : [];
-  const finalOrder = subtaskDragPreviewIds.value ? [...subtaskDragPreviewIds.value] : startOrder;
-
-  cleanupSubtaskPointerDragListeners();
-  resetSubtaskDragState();
-
-  if (!moved || sourceTaskId == null || parentId == null || status == null) {
-    isSubtaskDragging.value = false;
-    return;
-  }
-
-  suppressSubtaskClick.value = true;
-  void (async () => {
-    if (!areIdOrdersEqual(finalOrder, startOrder)) {
-      await applySubtaskDragReorder(parentId, status, finalOrder);
-    }
-  })().finally(() => {
-    window.setTimeout(() => {
-      isSubtaskDragging.value = false;
-      suppressSubtaskClick.value = false;
-    }, 0);
   });
 }
 
@@ -1198,47 +924,6 @@ async function handleToggleTask(taskId: number): Promise<void> {
   }
 }
 
-function startSubtaskInlineEdit(subtask: TaskItem): void {
-  editingSubtaskId.value = subtask.id;
-  editingSubtaskTitle.value = subtask.title;
-  if (subtask.parentId != null) {
-    setTaskExpanded(subtask.parentId, true);
-  }
-}
-
-function cancelSubtaskInlineEdit(): void {
-  editingSubtaskId.value = null;
-  editingSubtaskTitle.value = '';
-}
-
-async function saveSubtaskInlineEdit(): Promise<void> {
-  const subtaskId = editingSubtaskId.value;
-  if (!subtaskId) return;
-
-  const nextTitle = editingSubtaskTitle.value.trim();
-  if (!validateTaskTitle(nextTitle)) return;
-
-  try {
-    await taskStore.updateTask(subtaskId, { title: nextTitle });
-    cancelSubtaskInlineEdit();
-  } catch (error) {
-    console.error(error);
-    showInlineNotice('更新子任务失败，请重试');
-  }
-}
-
-function handleSubtaskEditKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    void saveSubtaskInlineEdit();
-    return;
-  }
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    cancelSubtaskInlineEdit();
-  }
-}
-
 async function submitSubtask(): Promise<void> {
   if (!selectedTask.value) return;
   const title = subtaskTitle.value.trim();
@@ -1263,7 +948,6 @@ async function submitSubtask(): Promise<void> {
       pomodoroCount: 1,
       pomodoroDuration: selectedTask.value.pomodoroDuration,
     });
-    setTaskExpanded(selectedTask.value.id, true);
     subtaskTitle.value = '';
 
     // Record manual subtask creation as learning feedback (strongest signal)
@@ -1285,7 +969,6 @@ async function submitSubtask(): Promise<void> {
 async function handleAcceptSuggestion(suggestion: { title: string; source: string; patternName?: string }): Promise<void> {
   if (!selectedTask.value) return;
   await panelAcceptSuggestion(selectedTask.value.id, suggestion as SidebarSuggestion);
-  setTaskExpanded(selectedTask.value.id, true);
 }
 
 function handleRejectSuggestion(suggestion: { title: string; source: string; patternName?: string }): void {
@@ -1296,7 +979,6 @@ function handleRejectSuggestion(suggestion: { title: string; source: string; pat
 async function handleAcceptAllSuggestions(): Promise<void> {
   if (!selectedTask.value) return;
   await panelAcceptAll(selectedTask.value.id);
-  setTaskExpanded(selectedTask.value.id, true);
 }
 
 function handleDismissSuggestions(): void {
@@ -1312,9 +994,6 @@ function handleRequestSuggestions(): void {
 async function deleteSubtask(subtaskId: number): Promise<void> {
   const subtask = taskStore.tasks.find(task => task.id === subtaskId);
   if (!subtask) return;
-  if (editingSubtaskId.value === subtaskId) {
-    cancelSubtaskInlineEdit();
-  }
   if (selectedTaskId.value === subtaskId) {
     selectedTaskId.value = selectedTask.value?.id ?? null;
   }
@@ -1775,8 +1454,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeyDown);
   cleanupPointerDragListeners();
   resetDragState();
-  cleanupSubtaskPointerDragListeners();
-  resetSubtaskDragState();
   stopResize();
 });
 
@@ -1946,15 +1623,22 @@ onMounted(() => {
               >
                 <div
                   v-if="shouldRenderTimelineHeader(taskIndex)"
-                  :class="[taskIndex === 0 ? 'mb-3 mt-1' : 'mb-3 mt-6', 'flex items-center gap-3']"
+                  :class="[taskIndex === 0 ? 'mb-3 mt-1' : 'mb-3 mt-6', 'flex cursor-pointer items-center gap-3 select-none']"
+                  @click="toggleGroupCollapse(getTimelineDateKey(task))"
                 >
-                  <div class="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-400" />
+                  <svg
+                    class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform"
+                    :class="isGroupCollapsed(getTimelineDateKey(task)) ? '' : 'rotate-90'"
+                    viewBox="0 0 20 20" fill="currentColor"
+                  >
+                    <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                  </svg>
                   <h3 class="text-sm font-semibold text-slate-600">{{ getTimelineHeaderLabel(task) }}</h3>
                   <span class="text-xs text-slate-400">{{ getTimelineHeaderCount(task) }} 项</span>
                   <button
                     v-if="isTimelineGroupOverdue(task)"
                     class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100"
-                    @click="rescheduleGroupToToday(task)"
+                    @click.stop="rescheduleGroupToToday(task)"
                   >
                     全部→今天
                   </button>
@@ -1962,6 +1646,7 @@ onMounted(() => {
                 </div>
 
                 <div
+                  v-show="!isTaskInCollapsedGroup(task)"
                   :data-task-id="task.id"
                   class="group relative flex cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white transition-all"
                   :class="[
@@ -2021,28 +1706,16 @@ onMounted(() => {
                       已推迟到 {{ formatRescheduledDate(task.rescheduledTo) }}
                     </span>
 
-                    <!-- Subtask Expand -->
-                    <button
+                    <!-- Subtask Count -->
+                    <span
                       v-if="hasTaskSubtasks(task.id)"
-                      class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      :class="isTaskExpanded(task.id)
-                        ? 'border-blue-300 bg-blue-50 text-blue-700'
-                        : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100'"
-                      :aria-label="isTaskExpanded(task.id) ? '收起子任务' : '展开子任务'"
-                      @click.stop="toggleTaskExpanded(task.id)"
+                      class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-500"
                     >
-                      <svg
-                        class="h-3.5 w-3.5 transition-transform"
-                        :class="isTaskExpanded(task.id) ? 'rotate-90' : ''"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
+                      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                       <span>{{ getTaskSubtaskDoneCount(task.id) }}/{{ getTaskSubtasks(task.id).length }}</span>
-                    </button>
+                    </span>
 
                     <!-- Priority Badge -->
                     <span
@@ -2096,36 +1769,6 @@ onMounted(() => {
                       </svg>
                     </button>
                   </div>
-                </div>
-
-                <div
-                  v-if="isTaskExpanded(task.id) && hasTaskSubtasks(task.id)"
-                  class="task-subtree ml-4 mt-1 space-y-2 border-l border-slate-200/80 pl-3"
-                >
-                  <TaskSubtreeItem
-                    v-for="subtask in getDisplaySubtasks(task.id)"
-                    :key="subtask.id"
-                    :task="subtask"
-                    :depth="1"
-                    :all-tasks="taskStore.tasks"
-                    :selected-task-id="selectedTaskId"
-                    :expanded-task-ids="expandedTaskIds"
-                    :editing-subtask-id="editingSubtaskId"
-                    v-model:editing-subtask-title="editingSubtaskTitle"
-                    :dragging-subtask-id="draggingSubtaskId"
-                    :is-subtask-dragging="isSubtaskDragging"
-                    :subtask-drag-over-id="subtaskDragOverId"
-                    :can-drag-sort="canDragSort"
-                    @select="selectTask($event)"
-                    @toggle="handleToggleTask($event)"
-                    @toggle-expand="toggleTaskExpanded($event)"
-                    @start-edit="startSubtaskInlineEdit($event)"
-                    @save-edit="saveSubtaskInlineEdit"
-                    @cancel-edit="cancelSubtaskInlineEdit"
-                    @edit-keydown="handleSubtaskEditKeydown($event)"
-                    @focus="(id: number, title: string) => startFocusOnTask(id, title)"
-                    @pointerdown="(ev: PointerEvent, pid: number, t: any) => onSubtaskPointerDown(ev, pid, t)"
-                  />
                 </div>
               </div>
             </TransitionGroup>
@@ -2911,10 +2554,5 @@ onMounted(() => {
 .task-drag-origin {
   transform-origin: center;
   transition: opacity 220ms ease;
-}
-
-.task-subtree {
-  padding-top: 0.15rem;
-  padding-bottom: 0.35rem;
 }
 </style>
