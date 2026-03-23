@@ -8,6 +8,7 @@ import { sendNotification, ensureNotificationPermission } from '../services/noti
 import { dataExportJson, dataExportToFile, dataImportFromFile, dataClearAll } from '../services/commands/data';
 import { testWebDavConnection, webdavUpload, webdavDownload, webdavSyncStatus } from '../services/commands/sync';
 import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialog';
+import { enable as enableAutoStart, disable as disableAutoStart, isEnabled as isAutoStartEnabled } from '@tauri-apps/plugin-autostart';
 import { patternList, patternCreate, patternUpdate, patternDelete } from '../services/commands/pattern';
 import type { SubtaskPattern } from '../types/domain';
 
@@ -70,6 +71,22 @@ const closeToTray = computed({
   get: () => settingsStore.closeToTray,
   set: (value: boolean) => settingsStore.updateCloseToTray(value)
 });
+
+const autoStart = ref(false);
+
+async function toggleAutoStart(): Promise<void> {
+  if (!isTauri) return;
+  try {
+    if (autoStart.value) {
+      await disableAutoStart();
+    } else {
+      await enableAutoStart();
+    }
+    autoStart.value = await isAutoStartEnabled();
+  } catch (e) {
+    console.error('[settings] autostart toggle failed', e);
+  }
+}
 
 const syncStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
 const syncLoading = ref(false);
@@ -422,6 +439,9 @@ async function saveEditSkill(): Promise<void> {
 onMounted(() => {
   loadSyncStatus();
   loadPatterns();
+  if (isTauri) {
+    isAutoStartEnabled().then(v => { autoStart.value = v; }).catch(() => {});
+  }
 });
 </script>
 
@@ -437,6 +457,10 @@ onMounted(() => {
           <div class="flex items-center justify-between gap-4 py-3">
             <div><span class="text-sm text-slate-700">关闭时最小化到托盘</span><p class="text-xs text-slate-400">开启后，点击关闭按钮将最小化到系统托盘而非退出程序</p></div>
             <button role="switch" :aria-checked="closeToTray" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="closeToTray ? 'bg-blue-600' : 'bg-slate-200'" @click="closeToTray = !closeToTray"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="closeToTray ? 'translate-x-4' : 'translate-x-0'" /></button>
+          </div>
+          <div class="flex items-center justify-between gap-4 py-3">
+            <div><span class="text-sm text-slate-700">开机自动启动</span><p class="text-xs text-slate-400">系统启动时自动运行本程序</p></div>
+            <button role="switch" :aria-checked="autoStart" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStart ? 'bg-blue-600' : 'bg-slate-200'" @click="toggleAutoStart"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStart ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
         </div>
       </section>
