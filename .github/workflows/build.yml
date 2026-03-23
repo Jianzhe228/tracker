@@ -18,6 +18,8 @@ jobs:
             target: x86_64-pc-windows-msvc
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+          - platform: macos-latest
+            target: aarch64-apple-darwin
 
     runs-on: ${{ matrix.platform }}
 
@@ -84,3 +86,11 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
