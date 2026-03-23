@@ -15,13 +15,10 @@ export interface WebDavSettings {
   syncInterval: number;
 }
 
-export type AiDetailLevel = 'simple' | 'normal' | 'detailed';
-
 export interface AiSettings {
   endpoint: string;
   apiKey: string;
   model: string;
-  detailLevel: AiDetailLevel;
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -57,8 +54,9 @@ export const useSettingsStore = defineStore('settings', () => {
     endpoint: '',
     apiKey: '',
     model: '',
-    detailLevel: 'normal',
   });
+
+  const closeToTray = ref(true);
 
   function loadFromData(entries: { key: string; value: string }[]): void {
     for (const { key, value } of entries) {
@@ -120,10 +118,8 @@ export const useSettingsStore = defineStore('settings', () => {
         case 'aiModel':
           ai.value.model = value;
           break;
-        case 'aiDetailLevel':
-          if (value === 'simple' || value === 'normal' || value === 'detailed') {
-            ai.value.detailLevel = value;
-          }
+        case 'closeToTray':
+          closeToTray.value = value !== 'false';
           break;
       }
     }
@@ -226,10 +222,14 @@ export const useSettingsStore = defineStore('settings', () => {
       if (next.model !== undefined) {
         promises.push(setSetting('aiModel', next.model));
       }
-      if (next.detailLevel !== undefined) {
-        promises.push(setSetting('aiDetailLevel', next.detailLevel));
-      }
       await Promise.all(promises).catch(console.error);
+    }
+  }
+
+  async function updateCloseToTray(value: boolean): Promise<void> {
+    closeToTray.value = value;
+    if (isTauri) {
+      await setSetting('closeToTray', String(value)).catch(console.error);
     }
   }
 
@@ -239,10 +239,12 @@ export const useSettingsStore = defineStore('settings', () => {
     notification,
     webdav,
     ai,
+    closeToTray,
     loadFromData,
     updatePomodoro,
     updateNotification,
     updateWebDav,
-    updateAi
+    updateAi,
+    updateCloseToTray
   };
 });

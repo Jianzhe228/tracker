@@ -18,6 +18,7 @@ export interface TaskItem {
   pomodoroDuration: number;
   sortOrder: number;
   recurringRuleId: number | null;
+  rescheduledTo: string | null;
   createdAt: string;
   updatedAt: string;
 }

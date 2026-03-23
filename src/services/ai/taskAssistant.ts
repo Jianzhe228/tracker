@@ -4,6 +4,8 @@
  * AI-powered suggestions are handled via the AI queue (see queue.ts / aiStore.ts).
  */
 
+import { toDateKey } from '../../utils/date';
+
 export interface TaskAssistantSuggestion {
   inputTitle: string;
   suggestedSubtasks: string[];
@@ -24,33 +26,26 @@ function normalizeTitle(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-function toDateInputValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 export function inferDueAtFromTitle(title: string): string | null {
   const now = new Date();
 
   if (title.includes('大后天')) {
     const next = new Date(now);
     next.setDate(next.getDate() + 3);
-    return toDateInputValue(next);
+    return toDateKey(next);
   }
   if (title.includes('后天')) {
     const next = new Date(now);
     next.setDate(next.getDate() + 2);
-    return toDateInputValue(next);
+    return toDateKey(next);
   }
   if (title.includes('明天')) {
     const next = new Date(now);
     next.setDate(next.getDate() + 1);
-    return toDateInputValue(next);
+    return toDateKey(next);
   }
   if (title.includes('今天')) {
-    return toDateInputValue(now);
+    return toDateKey(now);
   }
 
   // "X月X日"
@@ -61,10 +56,10 @@ export function inferDueAtFromTitle(title: string): string | null {
     const year = now.getFullYear();
     const date = new Date(year, month - 1, day);
     if (date.getMonth() === month - 1 && date.getDate() === day) {
-      const dateValue = toDateInputValue(date);
-      if (dateValue < toDateInputValue(now)) {
+      const dateValue = toDateKey(date);
+      if (dateValue < toDateKey(now)) {
         const nextYear = new Date(year + 1, month - 1, day);
-        return toDateInputValue(nextYear);
+        return toDateKey(nextYear);
       }
       return dateValue;
     }

@@ -29,6 +29,7 @@ pub struct TaskRow {
   pub recurring_rule_id: Option<i64>,
   pub created_at: String,
   pub updated_at: String,
+  pub rescheduled_to: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +48,7 @@ pub struct TaskCreatePayload {
   pub pomodoro_duration: Option<i64>,
   pub sort_order: Option<i64>,
   pub recurring_rule_id: Option<i64>,
+  pub rescheduled_to: Option<String>,
   pub created_at: String,
   pub updated_at: String,
 }
@@ -70,6 +72,7 @@ pub struct TaskUpdatePayload {
   pub pomodoro_duration: Option<i64>,
   pub sort_order: Option<i64>,
   pub recurring_rule_id: Option<Option<i64>>,
+  pub rescheduled_to: Option<Option<String>>,
   pub updated_at: String,
 }
 
@@ -395,7 +398,7 @@ pub fn task_list(state: State<'_, AppState>, limit: Option<i64>, offset: Option<
 
   let mut stmt = db
     .prepare(
-      "SELECT id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
+      "SELECT id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at, rescheduled_to
        FROM tasks
        WHERE deleted_at IS NULL
        ORDER BY sort_order ASC, created_at DESC
@@ -424,6 +427,7 @@ pub fn task_list(state: State<'_, AppState>, limit: Option<i64>, offset: Option<
         recurring_rule_id: row.get(15)?,
         created_at: row.get(16)?,
         updated_at: row.get(17)?,
+        rescheduled_to: row.get(18)?,
       })
     })
     .map_err(|e| e.to_string())?;
@@ -458,7 +462,7 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
   ensure_due_at_for_recurring(payload.recurring_rule_id, payload.due_at.as_deref())?;
 
   db.execute(
-    "INSERT INTO tasks (id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at) VALUES (?1, ?2, 'todo', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+    "INSERT INTO tasks (id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, rescheduled_to, created_at, updated_at) VALUES (?1, ?2, 'todo', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
     rusqlite::params![
       payload.id,
       title,
@@ -473,6 +477,7 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
       pomodoro_duration,
       sort_order,
       payload.recurring_rule_id,
+      payload.rescheduled_to,
       payload.created_at,
       payload.updated_at,
     ],
@@ -496,6 +501,7 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
     pomodoro_duration,
     sort_order,
     recurring_rule_id: payload.recurring_rule_id,
+    rescheduled_to: payload.rescheduled_to,
     created_at: payload.created_at,
     updated_at: payload.updated_at,
   })
@@ -647,6 +653,10 @@ pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Re
   if let Some(ref recurring_rule_id) = payload.recurring_rule_id {
     sets.push("recurring_rule_id = ?");
     params.push(Box::new(*recurring_rule_id));
+  }
+  if let Some(ref rescheduled_to) = payload.rescheduled_to {
+    sets.push("rescheduled_to = ?");
+    params.push(Box::new(rescheduled_to.clone()));
   }
 
   sets.push("updated_at = ?");

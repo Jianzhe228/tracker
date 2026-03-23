@@ -19,6 +19,15 @@ import NotificationCenter from './components/NotificationCenter.vue';
 import type { ProjectItem } from './types/domain';
 import { ensureNotificationPermission } from './services/notification';
 import { webdavUpload, webdavDownload } from './services/commands/sync';
+import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from './utils/date';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
+const appWindow = getCurrentWindow();
+const isMaximized = ref(false);
+
+appWindow.onResized(async () => {
+  isMaximized.value = await appWindow.isMaximized();
+});
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -67,34 +76,14 @@ function toggleSidebar() {
 // Smart lists - 智能列表（借鉴 Focus To-Do）
 const smartLists = [
   { path: '/tasks/today', name: 'today', label: '今天', icon: 'sun', color: 'text-amber-500' },
-  { path: '/tasks/tomorrow', name: 'tomorrow', label: '明天', icon: 'sunrise', color: 'text-orange-400' },
   { path: '/tasks/all', name: 'all', label: '全部', icon: 'inbox', color: 'text-slate-500' },
 ];
 
 const isActive = (path: string) => route.path === path;
 const isSmartListActive = () => route.path.startsWith('/tasks/');
-const noMainBottomPaddingRoutes = new Set(['today', 'tomorrow', 'all', 'project']);
+const noMainBottomPaddingRoutes = new Set(['today', 'all', 'project']);
 const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(String(route.name || '')));
 
-function toDateInputValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getDateKeyFromToday(offset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return toDateInputValue(date);
-}
-
-function isDateInRecent7Days(value: string | null): boolean {
-  if (!value) return false;
-  const today = getDateKeyFromToday(0);
-  const day7 = getDateKeyFromToday(6);
-  return value >= today && value <= day7;
-}
 
 // Get task counts
 const getTaskCount = (filter: string) => {
@@ -102,8 +91,6 @@ const getTaskCount = (filter: string) => {
   switch (filter) {
     case 'today':
       return tasks.filter(t => t.status === 'todo' && t.dueAt === getDateKeyFromToday(0)).length;
-    case 'tomorrow':
-      return tasks.filter(t => t.status === 'todo' && t.dueAt === getDateKeyFromToday(1)).length;
     case 'all':
       return tasks.filter(t => t.status !== 'cancelled').length;
     default:
@@ -263,14 +250,14 @@ const focusButtonTone = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-screen bg-slate-50">
+  <div class="flex h-screen bg-slate-50">
     <!-- Sidebar -->
     <aside
       class="flex flex-col border-r border-slate-200 bg-white transition-[width] duration-200"
       :class="sidebarCollapsed ? 'w-16' : 'w-60'"
     >
       <!-- App Brand -->
-      <div class="flex items-center border-b border-slate-100 px-3 py-3" :class="sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'">
+      <div class="flex items-center border-b border-slate-100 px-3 py-3" :class="sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'" data-tauri-drag-region>
         <button
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-sm"
           aria-label="收起/展开侧边栏"
@@ -437,6 +424,21 @@ const focusButtonTone = computed(() => {
 
     <!-- Main Content -->
     <div class="flex min-w-0 flex-1 flex-col">
+      <!-- Custom Titlebar (drag region) -->
+      <div class="flex h-9 shrink-0 items-center justify-end" data-tauri-drag-region>
+        <div class="flex items-center">
+          <button class="flex h-9 w-11 items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600" title="最小化" @click="appWindow.minimize()">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M5 12h14" /></svg>
+          </button>
+          <button class="flex h-9 w-11 items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600" :title="isMaximized ? '还原' : '最大化'" @click="appWindow.toggleMaximize()">
+            <svg v-if="isMaximized" class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M8 4h12a1 1 0 011 1v12M4 8h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" /></svg>
+            <svg v-else class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" /></svg>
+          </button>
+          <button class="flex h-9 w-11 items-center justify-center text-slate-400 transition-colors hover:bg-red-500 hover:text-white" title="关闭" @click="appWindow.close()">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M6 6l12 12M6 18L18 6" /></svg>
+          </button>
+        </div>
+      </div>
       <!-- Router View -->
       <main ref="mainRef" class="flex-1 overflow-auto" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
         <RouterView />

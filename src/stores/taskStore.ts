@@ -12,6 +12,7 @@ import {
 import { createProject as createProjectCmd, updateProject as updateProjectCmd, deleteProject as deleteProjectCmd } from '../services/commands/project';
 import { sendNotification } from '../services/notification';
 import { useSettingsStore } from './settingsStore';
+import { toDateKey } from '../utils/date';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -62,6 +63,7 @@ export const useTaskStore = defineStore('task', () => {
       pomodoroDuration: options.pomodoroDuration ?? 25,
       sortOrder: options.sortOrder ?? 0,
       recurringRuleId: options.recurringRuleId ?? null,
+      rescheduledTo: options.rescheduledTo ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -641,7 +643,7 @@ export const useTaskStore = defineStore('task', () => {
     const original = tasks.value.find((task) => task.id === id);
     if (!original) return;
     const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const todayKey = toDateKey(today);
 
     // Clone the parent task to today (original stays as historical record)
     const cloned = await addTask(original.title, {
@@ -669,8 +671,8 @@ export const useTaskStore = defineStore('task', () => {
       });
     }
 
-    // Mark original as cancelled so it stops showing as overdue
-    await updateTask(id, { status: 'cancelled' as TaskStatus });
+    // Mark original as cancelled with reschedule record
+    await updateTask(id, { status: 'cancelled' as TaskStatus, rescheduledTo: todayKey });
   }
 
   async function rescheduleOverdueToToday(ids: number[]): Promise<void> {

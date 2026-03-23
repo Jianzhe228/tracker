@@ -71,16 +71,10 @@ async function processJob(
   const { endpoint, apiKey, model } = settingsStore.ai;
   if (!endpoint || !apiKey) return null;
 
-  // Inject detail level into context so prompt templates can use {{detailLevel}}
-  const enrichedContext: Record<string, unknown> = {
-    ...inputContext,
-    detailLevel: settingsStore.ai.detailLevel || 'normal',
-  };
-
   // Create DB record
   let job: AiJob;
   try {
-    job = await createAiJob(skill.id, enrichedContext);
+    job = await createAiJob(skill.id, inputContext);
   } catch (e) {
     console.error('[ai-queue] failed to create job', e);
     return null;
@@ -96,7 +90,7 @@ async function processJob(
 
   // Build messages
   const systemPrompt = skill.systemPrompt;
-  const userPrompt = renderPrompt(skill.userPromptTemplate, enrichedContext);
+  const userPrompt = renderPrompt(skill.userPromptTemplate, inputContext);
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },

@@ -19,21 +19,11 @@ import {
   getTaskEstimationComparison,
 } from '../services/commands/statistics';
 import { getFocusSessionStats, getProjectDistribution, listFocusSessions } from '../services/commands/focusSession';
+import { toDateKey } from '../utils/date';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 type DateRangePreset = '7d' | '14d' | '30d';
-
-function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function todayDateStr(): string {
-  return formatDate(new Date());
-}
 
 export const useStatisticsStore = defineStore('statistics', () => {
   const loading = ref(false);
@@ -58,8 +48,8 @@ export const useStatisticsStore = defineStore('statistics', () => {
     const days = dateRange.value === '7d' ? 6 : dateRange.value === '14d' ? 13 : 29;
     start.setDate(start.getDate() - days);
     return {
-      start: formatDate(start),
-      end: formatDate(end),
+      start: toDateKey(start),
+      end: toDateKey(end),
     };
   });
 
@@ -155,7 +145,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
 
   async function fetchTodaySessions(): Promise<void> {
     if (!isTauri) return;
-    const today = todayDateStr();
+    const today = toDateKey(new Date());
     try {
       todaySessions.value = await listFocusSessions({ fromDate: today, limit: 100 });
     } catch (err) {

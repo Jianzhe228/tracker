@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { VChart } from '../../composables/useECharts';
 import type { DayHourDistributionEntry } from '../../types/domain';
+import { toDateKey } from '../../utils/date';
 
 const props = defineProps<{
   data: DayHourDistributionEntry[];
@@ -9,12 +10,6 @@ const props = defineProps<{
 }>();
 
 const hourCategories = Array.from({ length: 24 }, (_value, hour) => hour);
-function toDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 const visibleDays = computed(() => {
   const value = props.days ?? 14;

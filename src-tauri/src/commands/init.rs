@@ -29,7 +29,7 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
   // Tasks (excluding soft-deleted)
   let mut stmt = db
     .prepare(
-      "SELECT id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at
+      "SELECT id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at, rescheduled_to
        FROM tasks
        WHERE deleted_at IS NULL
        ORDER BY sort_order ASC, created_at DESC",
@@ -56,6 +56,7 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
         recurring_rule_id: row.get(15)?,
         created_at: row.get(16)?,
         updated_at: row.get(17)?,
+        rescheduled_to: row.get(18)?,
       })
     })
     .map_err(|e| e.to_string())?

@@ -66,6 +66,11 @@ const notifyDeadline = computed({
   set: (value: boolean) => settingsStore.updateNotification({ notifyDeadline: value })
 });
 
+const closeToTray = computed({
+  get: () => settingsStore.closeToTray,
+  set: (value: boolean) => settingsStore.updateCloseToTray(value)
+});
+
 const syncStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
 const syncLoading = ref(false);
 const syncMessage = ref('');
@@ -425,6 +430,17 @@ onMounted(() => {
     <h1 class="mb-8 text-2xl font-bold text-slate-800">设置</h1>
 
     <div class="space-y-10">
+      <!-- 通用 -->
+      <section>
+        <h2 class="mb-4 text-base font-semibold text-slate-800">通用</h2>
+        <div class="divide-y divide-slate-100">
+          <div class="flex items-center justify-between gap-4 py-3">
+            <div><span class="text-sm text-slate-700">关闭时最小化到托盘</span><p class="text-xs text-slate-400">开启后，点击关闭按钮将最小化到系统托盘而非退出程序</p></div>
+            <button role="switch" :aria-checked="closeToTray" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="closeToTray ? 'bg-blue-600' : 'bg-slate-200'" @click="closeToTray = !closeToTray"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="closeToTray ? 'translate-x-4' : 'translate-x-0'" /></button>
+          </div>
+        </div>
+      </section>
+
       <!-- 番茄钟 -->
       <section>
         <h2 class="mb-4 text-base font-semibold text-slate-800">番茄钟</h2>
@@ -595,28 +611,6 @@ onMounted(() => {
           </label>
           <div class="pt-2">
             <button class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="saveAiSettings">保存</button>
-          </div>
-        </div>
-
-        <div class="mt-6">
-          <h3 class="mb-3 text-sm font-medium text-slate-700">拆解粒度</h3>
-          <div class="flex gap-2">
-            <button
-              v-for="level in [
-                { key: 'simple', label: '简洁', desc: '1-2 步' },
-                { key: 'normal', label: '一般', desc: '2-4 步' },
-                { key: 'detailed', label: '详细', desc: '4-8 步' },
-              ]"
-              :key="level.key"
-              class="flex flex-1 flex-col items-center gap-0.5 rounded-lg border-2 px-3 py-2.5 text-center transition-all"
-              :class="settingsStore.ai.detailLevel === level.key
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                : 'border-slate-200 text-slate-600 hover:border-slate-300'"
-              @click="settingsStore.updateAi({ detailLevel: level.key as 'simple' | 'normal' | 'detailed' })"
-            >
-              <span class="text-sm font-medium">{{ level.label }}</span>
-              <span class="text-[11px]" :class="settingsStore.ai.detailLevel === level.key ? 'text-blue-500' : 'text-slate-400'">{{ level.desc }}</span>
-            </button>
           </div>
         </div>
 

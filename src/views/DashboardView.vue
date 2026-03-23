@@ -5,6 +5,7 @@ import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useStatisticsStore } from '../stores/statisticsStore';
 import type { HeatmapEntry, TaskItem } from '../types/domain';
+import { toDateKey } from '../utils/date';
 
 // Lazy-load heavy ECharts components — only create instances when needed
 const DayHourDistributionChart = defineAsyncComponent(() => import('../components/charts/DayHourDistributionChart.vue'));
@@ -82,13 +83,6 @@ type HeatmapData = {
   activeDays: number;
   weekCount: number;
 };
-
-function toDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 function levelByCount(count: number): number {
   if (count <= 0) return 0;
@@ -422,10 +416,32 @@ function onHeatmapCanvasClick(event: MouseEvent): void {
   }
 }
 
+// --- Heatmap tooltip ---
+const hoveredCell = ref<HeatmapCell | null>(null);
+const tooltipPos = ref<{ x: number; y: number }>({ x: 0, y: 0 });
+
 function onHeatmapCanvasMove(event: MouseEvent): void {
   const canvas = event.target as HTMLCanvasElement;
   const cell = heatmapHitTest(event);
   canvas.style.cursor = cell?.inYear ? 'pointer' : 'default';
+
+  if (cell?.inYear) {
+    hoveredCell.value = cell;
+    const parent = canvas.parentElement;
+    if (parent) {
+      const parentRect = parent.getBoundingClientRect();
+      tooltipPos.value = {
+        x: event.clientX - parentRect.left + 12,
+        y: event.clientY - parentRect.top - 8,
+      };
+    }
+  } else {
+    hoveredCell.value = null;
+  }
+}
+
+function onHeatmapCanvasLeave(): void {
+  hoveredCell.value = null;
 }
 
 watch([() => heatmapData.value, selectedCellKey], () => {
@@ -446,16 +462,8 @@ onMounted(() => {
 });
 
 // --- Today's tasks ---
-function getTodayDateKey(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 const todayTasks = computed<TaskItem[]>(() => {
-  const key = getTodayDateKey();
+  const key = toDateKey(new Date());
   return taskStore.tasks
     .filter(t => t.parentId === null && t.dueAt === key && t.status !== 'cancelled')
     .sort((a, b) => {
@@ -643,13 +651,27 @@ function goToTodayTasks(): void {
                 <span />
               </div>
 
-              <div class="flex-1">
+              <div class="flex-1" style="position: relative;">
                 <canvas
                   ref="heatmapCanvasRef"
                   class="block"
                   @click="onHeatmapCanvasClick"
                   @mousemove="onHeatmapCanvasMove"
+                  @mouseleave="onHeatmapCanvasLeave"
                 />
+                <!-- Heatmap hover tooltip -->
+                <div
+                  v-if="hoveredCell"
+                  class="pointer-events-none absolute z-10 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-2 text-xs text-white shadow-lg"
+                  :style="{ left: tooltipPos.x + 'px', top: tooltipPos.y + 'px', transform: 'translateY(-100%)' }"
+                >
+                  <div class="font-medium">{{ hoveredCell.dateLabel }}</div>
+                  <div class="mt-1 text-slate-300">
+                    专注 {{ Math.round(hoveredCell.focusSeconds / 60) }} 分钟
+                    · 任务 {{ hoveredCell.taskCount }}
+                    · 番茄 {{ hoveredCell.pomodoroCount }}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -696,7 +718,7 @@ function goToTodayTasks(): void {
       </div>
 
       <!-- ── Day-Hour Distribution + Right Column (Phase 2) ──── -->
-      <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
+      <div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
         <!-- Day-hour distribution -->
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div class="mb-3 flex items-center justify-between gap-3">
@@ -716,8 +738,8 @@ function goToTodayTasks(): void {
         </div>
 
         <!-- Right column: pie chart + today's tasks -->
-        <div class="space-y-6">
-          <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-6">
+          <div class="dashboard-panel shrink-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 class="font-semibold text-slate-800">任务完成概览</h3>
             <p class="mt-0.5 text-xs text-slate-500">所有任务按状态分布</p>
             <TaskCompletionChart v-if="renderPhase >= 2" :data="statisticsStore.taskCompletion" />
@@ -726,7 +748,7 @@ function goToTodayTasks(): void {
             </p>
           </div>
 
-          <!-- Today's Tasks -->
+          <!-- Today's Tasks — fixed max height, scrolls internally -->
           <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div class="mb-4 flex items-center justify-between">
               <div>
@@ -746,7 +768,7 @@ function goToTodayTasks(): void {
               </button>
             </div>
 
-            <div v-if="todayTasks.length > 0" class="space-y-1.5">
+            <div v-if="todayTasks.length > 0" class="max-h-[240px] space-y-1.5 overflow-y-auto">
               <div
                 v-for="task in todayTasks"
                 :key="task.id"

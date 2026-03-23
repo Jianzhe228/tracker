@@ -622,4 +622,29 @@ Detail level: {{detailLevel}}
       )
       .expect("failed to run migration v13");
   }
+
+  if version < 14 {
+    conn
+      .execute(
+        "DELETE FROM user_settings WHERE key = 'aiDetailLevel'",
+        [],
+      )
+      .expect("failed to clean up aiDetailLevel setting");
+
+    conn
+      .execute_batch("PRAGMA user_version = 14;")
+      .expect("failed to set user_version to 14");
+  }
+
+  if version < 15 {
+    conn
+      .execute_batch(
+        "
+        ALTER TABLE tasks ADD COLUMN rescheduled_to TEXT;
+
+        PRAGMA user_version = 15;
+        ",
+      )
+      .expect("failed to run migration v15");
+  }
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { TaskItem, Priority } from '../types/domain';
+import { toDateKey } from '../utils/date';
 
 const props = defineProps<{
   task: TaskItem;
@@ -73,17 +74,17 @@ function priorityBadge(priority: Priority): { label: string; cls: string } | nul
 function isTaskOverdue(task: TaskItem): boolean {
   if (!task.dueAt || task.status === 'done' || task.status === 'cancelled') return false;
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayKey = toDateKey(today);
   return task.dueAt < todayKey;
 }
 
 function formatDueAt(dueAt: string | null): string {
   if (!dueAt) return '';
   const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayKey = toDateKey(today);
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  const tomorrowKey = toDateKey(tomorrow);
   if (dueAt === todayKey) return '今天';
   if (dueAt === tomorrowKey) return '明天';
   const [year, month, day] = dueAt.split('-');

@@ -18,12 +18,6 @@ const router = createRouter({
       props: { filter: 'today' }
     },
     {
-      path: '/tasks/tomorrow',
-      name: 'tomorrow',
-      component: () => import('../views/TasksView.vue'),
-      props: { filter: 'tomorrow' }
-    },
-    {
       path: '/tasks/all',
       name: 'all',
       component: () => import('../views/TasksView.vue'),

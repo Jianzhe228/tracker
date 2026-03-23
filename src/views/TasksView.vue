@@ -9,6 +9,7 @@ import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } fro
 import type { TaskItem, Priority, TaskStatus } from '../types/domain';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
+import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from '../utils/date';
 import { useSuggestionPanel, type SidebarSuggestion } from '../composables/useSuggestionPanel';
 import TaskSubtreeItem from '../components/TaskSubtreeItem.vue';
 
@@ -74,25 +75,6 @@ let resizeStartX = 0;
 let resizeStartWidth = detailPanelWidth.value;
 let resizeRafId = 0;
 
-function toDateInputValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getDateKeyFromToday(offset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return toDateInputValue(date);
-}
-
-function isDateInRecent7Days(value: string | null): boolean {
-  if (!value) return false;
-  const today = getDateKeyFromToday(0);
-  const day7 = getDateKeyFromToday(6);
-  return value >= today && value <= day7;
-}
 
 // Check if a task is active on a given date:
 // - exact match on dueAt or startAt
@@ -134,8 +116,6 @@ const pageTitle = computed(() => {
 
   switch (activeTaskFilter.value) {
     case 'today': return '今天';
-    case 'tomorrow': return '明天';
-    case 'week': return '本周';
     case 'all': return '全部';
     default: return '任务';
   }
@@ -150,12 +130,8 @@ const filteredTasks = computed(() => {
   switch (activeTaskFilter.value) {
     case 'today':
       return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isTaskActiveOnDate(t, getDateKeyFromToday(0)));
-    case 'tomorrow':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isTaskActiveOnDate(t, getDateKeyFromToday(1)));
-    case 'week':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo' && isTaskActiveInRange(t, getDateKeyFromToday(0), getDateKeyFromToday(6)));
     case 'all':
-      return taskStore.tasks.filter(t => t.parentId === null && t.status !== 'cancelled');
+      return taskStore.tasks.filter(t => t.parentId === null && (t.status !== 'cancelled' || t.rescheduledTo != null));
     default:
       return taskStore.tasks.filter(t => t.parentId === null && t.status === 'todo');
   }
@@ -165,8 +141,8 @@ const NO_DATE_GROUP_KEY = '__no_date__';
 
 function toDateKeyFromTimestamp(value: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return toDateInputValue(new Date());
-  return toDateInputValue(date);
+  if (Number.isNaN(date.getTime())) return toDateKey(new Date());
+  return toDateKey(date);
 }
 
 function getTimelineDateKey(task: TaskItem): string {
@@ -181,9 +157,9 @@ function getTimelineDateKey(task: TaskItem): string {
 function formatTimelineDateLabel(dateKey: string): string {
   if (dateKey === NO_DATE_GROUP_KEY) return '无日期';
 
-  const today = toDateInputValue(new Date());
-  const yesterday = toDateInputValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
-  const tomorrow = toDateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const today = toDateKey(new Date());
+  const yesterday = toDateKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const tomorrow = toDateKey(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
   if (dateKey === today) return '今天';
   if (dateKey === yesterday) return '昨天';
@@ -195,6 +171,13 @@ function formatTimelineDateLabel(dateKey: string): string {
     return `${Number(month)}月${Number(day)}日`;
   }
   return `${year}年${Number(month)}月${Number(day)}日`;
+}
+
+function formatRescheduledDate(dateKey: string): string {
+  const today = toDateKey(new Date());
+  if (dateKey === today) return '今天';
+  const [, month, day] = dateKey.split('-');
+  return `${Number(month)}月${Number(day)}日`;
 }
 
 function formatDuration(minutes: number): { value: string; unit: string } {
@@ -302,7 +285,7 @@ function isTimelineGroupOverdue(task: TaskItem): boolean {
 function getOverdueTaskIdsInGroup(task: TaskItem): number[] {
   const dateKey = getTimelineDateKey(task);
   return displayTasks.value
-    .filter((t) => getTimelineDateKey(t) === dateKey && t.status !== 'done' && t.status !== 'cancelled')
+    .filter((t) => getTimelineDateKey(t) === dateKey && t.status !== 'done' && t.status !== 'cancelled' && !t.rescheduledTo)
     .map((t) => t.id);
 }
 
@@ -578,7 +561,7 @@ function parseReminderTime(value: string | null): { date: string; time: string }
   }
 
   return {
-    date: toDateInputValue(date),
+    date: toDateKey(date),
     time: toDateTimeInputValue(date).slice(11, 16)
   };
 }
@@ -613,8 +596,8 @@ function isTaskOverdue(task: TaskItem): boolean {
 function formatDueAt(dueAt: string | null): string {
   if (!dueAt) return '无截止';
 
-  const today = toDateInputValue(new Date());
-  const tomorrow = toDateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const today = toDateKey(new Date());
+  const tomorrow = toDateKey(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
   if (dueAt === today) return '今天';
   if (dueAt === tomorrow) return '明天';
@@ -767,8 +750,6 @@ async function submitTask(): Promise<void> {
     dueAt = newTaskDate.value;
   } else if (activeTaskFilter.value === 'today') {
     dueAt = getDateKeyFromToday(0);
-  } else if (activeTaskFilter.value === 'tomorrow') {
-    dueAt = getDateKeyFromToday(1);
   }
 
   try {
@@ -1365,7 +1346,7 @@ const calendarCells = computed<CalendarCell[]>(() => {
   const startOffset = (firstDay.getDay() + 6) % 7;
   const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
-  const todayKey = toDateInputValue(new Date());
+  const todayKey = toDateKey(new Date());
   const selectedKey = activeCalendarDate.value;
   const cells: CalendarCell[] = [];
 
@@ -1395,7 +1376,7 @@ const calendarCells = computed<CalendarCell[]>(() => {
       day = i - startOffset + 1;
     }
 
-    const dateKey = toDateInputValue(new Date(cellYear, cellMonth, day));
+    const dateKey = toDateKey(new Date(cellYear, cellMonth, day));
     cells.push({
       dateKey,
       day,
@@ -1417,7 +1398,7 @@ const newTaskCalendarCells = computed<CalendarCell[]>(() => {
   const startOffset = (firstDay.getDay() + 6) % 7;
   const daysInCurrentMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
-  const todayKey = toDateInputValue(new Date());
+  const todayKey = toDateKey(new Date());
   const selectedKey = newTaskDate.value;
   const cells: CalendarCell[] = [];
 
@@ -1447,7 +1428,7 @@ const newTaskCalendarCells = computed<CalendarCell[]>(() => {
       day = i - startOffset + 1;
     }
 
-    const dateKey = toDateInputValue(new Date(cellYear, cellMonth, day));
+    const dateKey = toDateKey(new Date(cellYear, cellMonth, day));
     cells.push({
       dateKey,
       day,
@@ -1607,7 +1588,7 @@ async function saveTaskDetail(): Promise<void> {
     return;
   }
 
-  const anchorDate = normalized.dueAt || toDateInputValue(new Date());
+  const anchorDate = normalized.dueAt || toDateKey(new Date());
   const newRepeatType = normalized.repeatRule;
   const reminderIso = toReminderIso(normalized.reminderDate, normalized.reminderTime);
   const repeatDaysJson = normalized.repeatDays.length > 0
@@ -1991,7 +1972,8 @@ onMounted(() => {
                       : '',
                     draggingTaskId === task.id && isTaskDragging ? 'task-drag-origin pointer-events-none opacity-35' : '',
                     task.status === 'done' ? 'border-green-200' : '',
-                    isTaskOverdue(task) ? 'border-red-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]' : ''
+                    isTaskOverdue(task) ? 'border-red-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]' : '',
+                    task.rescheduledTo ? 'opacity-50' : ''
                   ]"
                   @pointerdown="onTaskPointerDown($event, task.id)"
                   @click="selectTask(task.id)"
@@ -2022,9 +2004,21 @@ onMounted(() => {
                     <!-- Task Title -->
                     <span
                       class="min-w-0 flex-1 truncate text-sm"
-                      :class="task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'"
+                      :class="[
+                        task.status === 'done' ? 'text-slate-400 line-through' : '',
+                        task.rescheduledTo ? 'text-slate-400 line-through' : '',
+                        !task.rescheduledTo && task.status !== 'done' ? 'text-slate-700' : '',
+                      ]"
                     >
                       {{ task.title }}
+                    </span>
+
+                    <!-- Rescheduled badge -->
+                    <span
+                      v-if="task.rescheduledTo"
+                      class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-400"
+                    >
+                      已推迟到 {{ formatRescheduledDate(task.rescheduledTo) }}
                     </span>
 
                     <!-- Subtask Expand -->
