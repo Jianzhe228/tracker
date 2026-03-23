@@ -10,6 +10,8 @@ import type {
   TaskCompletionStats,
   EstimationComparison,
   StatsOverview,
+  WeeklyFocusStat,
+  WeeklyTaskVelocity,
 } from '../types/domain';
 import {
   getStatsDayHourDistribution,
@@ -17,6 +19,8 @@ import {
   getStatsOverview,
   getTaskCompletionStats,
   getTaskEstimationComparison,
+  getWeeklyFocus,
+  getWeeklyTaskVelocity,
 } from '../services/commands/statistics';
 import { getFocusSessionStats, getProjectDistribution, listFocusSessions } from '../services/commands/focusSession';
 import { toDateKey } from '../utils/date';
@@ -38,6 +42,8 @@ export const useStatisticsStore = defineStore('statistics', () => {
   const taskCompletion = ref<TaskCompletionStats | null>(null);
   const estVsActual = shallowRef<EstimationComparison[]>([]);
   const todaySessions = shallowRef<FocusSession[]>([]);
+  const weeklyFocus = ref<WeeklyFocusStat[]>([]);
+  const weeklyTaskVelocity = ref<WeeklyTaskVelocity[]>([]);
   let latestHeatmapRequestId = 0;
   let latestFocusStatsRequestId = 0;
   let latestDayHourRequestId = 0;
@@ -153,6 +159,24 @@ export const useStatisticsStore = defineStore('statistics', () => {
     }
   }
 
+  async function fetchWeeklyFocus(): Promise<void> {
+    if (!isTauri) return;
+    try {
+      weeklyFocus.value = await getWeeklyFocus();
+    } catch (e) {
+      console.error('[statistics] fetchWeeklyFocus failed', e);
+    }
+  }
+
+  async function fetchWeeklyTaskVelocity(): Promise<void> {
+    if (!isTauri) return;
+    try {
+      weeklyTaskVelocity.value = await getWeeklyTaskVelocity();
+    } catch (e) {
+      console.error('[statistics] fetchWeeklyTaskVelocity failed', e);
+    }
+  }
+
   async function fetchAll(): Promise<void> {
     loading.value = true;
     try {
@@ -160,7 +184,10 @@ export const useStatisticsStore = defineStore('statistics', () => {
         fetchOverview(),
         fetchFocusStats(),
         fetchDayHourDistribution(),
-        fetchTaskCompletion(),
+        fetchProjectDistribution(),
+        fetchEstVsActual(),
+        fetchWeeklyFocus(),
+        fetchWeeklyTaskVelocity(),
       ]);
     } finally {
       loading.value = false;
@@ -184,6 +211,8 @@ export const useStatisticsStore = defineStore('statistics', () => {
     taskCompletion,
     estVsActual,
     todaySessions,
+    weeklyFocus,
+    weeklyTaskVelocity,
     effectiveDateRange,
     totalFocusMinutes,
     totalPomodoros,
@@ -195,6 +224,8 @@ export const useStatisticsStore = defineStore('statistics', () => {
     fetchTaskCompletion,
     fetchEstVsActual,
     fetchTodaySessions,
+    fetchWeeklyFocus,
+    fetchWeeklyTaskVelocity,
     fetchAll,
     setDateRange,
   };

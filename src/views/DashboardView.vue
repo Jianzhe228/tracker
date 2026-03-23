@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComponent } from 'vue';
-import { useRouter } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useStatisticsStore } from '../stores/statisticsStore';
-import type { HeatmapEntry, TaskItem } from '../types/domain';
+import type { HeatmapEntry } from '../types/domain';
 import { toDateKey } from '../utils/date';
 
 // Lazy-load heavy ECharts components — only create instances when needed
 const DayHourDistributionChart = defineAsyncComponent(() => import('../components/charts/DayHourDistributionChart.vue'));
-const TaskCompletionChart = defineAsyncComponent(() => import('../components/charts/TaskCompletionChart.vue'));
 const FocusTrendChart = defineAsyncComponent(() => import('../components/charts/FocusTrendChart.vue'));
 const HourlyDistributionChart = defineAsyncComponent(() => import('../components/charts/HourlyDistributionChart.vue'));
+const ProjectDistributionChart = defineAsyncComponent(() => import('../components/charts/ProjectDistributionChart.vue'));
+const EstVsActualChart = defineAsyncComponent(() => import('../components/charts/EstVsActualChart.vue'));
+const WeeklyFocusTrendChart = defineAsyncComponent(() => import('../components/charts/WeeklyFocusTrendChart.vue'));
+const TaskVelocityChart = defineAsyncComponent(() => import('../components/charts/TaskVelocityChart.vue'));
 
-const router = useRouter();
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
 const statisticsStore = useStatisticsStore();
@@ -25,7 +26,8 @@ onMounted(() => {
 // ── Phased rendering: stagger heavy chart initialization ──
 // Phase 0 (immediate): metric cards + heatmap canvas
 // Phase 1 (after first paint): trend + hourly charts
-// Phase 2 (after phase 1): day-hour heatmap + pie + today tasks
+// Phase 2 (after phase 1): day-hour heatmap
+// Phase 3 (after phase 2): project dist + est accuracy + weekly focus + velocity
 const renderPhase = ref(0);
 
 onMounted(() => {
@@ -33,6 +35,9 @@ onMounted(() => {
     renderPhase.value = 1;
     requestAnimationFrame(() => {
       renderPhase.value = 2;
+      requestAnimationFrame(() => {
+        renderPhase.value = 3;
+      });
     });
   });
 });
@@ -460,47 +465,6 @@ onMounted(() => {
     }
   });
 });
-
-// --- Today's tasks ---
-const todayTasks = computed<TaskItem[]>(() => {
-  const key = toDateKey(new Date());
-  return taskStore.tasks
-    .filter(t => t.parentId === null && t.dueAt === key && t.status !== 'cancelled')
-    .sort((a, b) => {
-      if (a.status === 'done' && b.status !== 'done') return 1;
-      if (a.status !== 'done' && b.status === 'done') return -1;
-      if (a.priority !== b.priority) return b.priority - a.priority;
-      return a.sortOrder - b.sortOrder;
-    });
-});
-
-const todayPending = computed(() => todayTasks.value.filter(t => t.status !== 'done').length);
-
-function priorityColor(priority: number): string {
-  switch (priority) {
-    case 3: return 'bg-red-500';
-    case 2: return 'bg-orange-400';
-    case 1: return 'bg-blue-400';
-    default: return 'bg-slate-300';
-  }
-}
-
-function priorityRingClass(priority: number): string {
-  switch (priority) {
-    case 3: return 'border-red-400';
-    case 2: return 'border-orange-400';
-    case 1: return 'border-blue-400';
-    default: return 'border-slate-300';
-  }
-}
-
-async function handleToggleTask(id: number): Promise<void> {
-  await taskStore.toggleTask(id);
-}
-
-function goToTodayTasks(): void {
-  void router.push('/tasks/today');
-}
 </script>
 
 <template>
@@ -717,116 +681,74 @@ function goToTodayTasks(): void {
         </div>
       </div>
 
-      <!-- ── Day-Hour Distribution + Right Column (Phase 2) ──── -->
-      <div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr),340px]">
-        <!-- Day-hour distribution -->
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h3 class="font-semibold text-slate-800">每日时段消耗分布</h3>
-              <p class="mt-0.5 text-xs text-slate-500">近 {{ statisticsStore.dayHourWindowDays }} 天按小时分布</p>
-            </div>
+      <!-- ── Day-Hour Distribution (Phase 2, full width) ────────── -->
+      <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="font-semibold text-slate-800">每日时段消耗分布</h3>
+            <p class="mt-0.5 text-xs text-slate-500">近 {{ statisticsStore.dayHourWindowDays }} 天按小时分布</p>
           </div>
-          <DayHourDistributionChart
-            v-if="renderPhase >= 2"
-            :data="statisticsStore.dayHourDistribution"
-            :days="statisticsStore.dayHourWindowDays"
+        </div>
+        <DayHourDistributionChart
+          v-if="renderPhase >= 2"
+          :data="statisticsStore.dayHourDistribution"
+          :days="statisticsStore.dayHourWindowDays"
+        />
+        <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          加载中…
+        </div>
+      </div>
+
+      <!-- ── Project Distribution + Estimation Accuracy (Phase 3) ── -->
+      <div class="grid gap-6 lg:grid-cols-2">
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="font-semibold text-slate-800">项目时间分布</h3>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">各项目专注时长占比</p>
+          <ProjectDistributionChart
+            v-if="renderPhase >= 3 && statisticsStore.projectDistribution.length"
+            :data="statisticsStore.projectDistribution"
           />
-          <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
-            加载中…
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+            {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
 
-        <!-- Right column: pie chart + today's tasks -->
-        <div class="flex flex-col gap-6">
-          <div class="dashboard-panel shrink-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 class="font-semibold text-slate-800">任务完成概览</h3>
-            <p class="mt-0.5 text-xs text-slate-500">所有任务按状态分布</p>
-            <TaskCompletionChart v-if="renderPhase >= 2" :data="statisticsStore.taskCompletion" />
-            <p v-if="statisticsStore.taskCompletion" class="text-center text-xs text-slate-400">
-              共 {{ statisticsStore.taskCompletion.total }} 个任务
-            </p>
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="font-semibold text-slate-800">估算准确度</h3>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">预估 vs 实际专注时长</p>
+          <EstVsActualChart
+            v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
+            :data="statisticsStore.estVsActual"
+          />
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+            {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
+        </div>
+      </div>
 
-          <!-- Today's Tasks — fixed max height, scrolls internally -->
-          <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="mb-4 flex items-center justify-between">
-              <div>
-                <h3 class="font-semibold text-slate-800">今日任务</h3>
-                <p class="mt-0.5 text-xs text-slate-500">
-                  <template v-if="todayTasks.length > 0">
-                    {{ todayPending }} 项待办，共 {{ todayTasks.length }} 项
-                  </template>
-                  <template v-else>暂无今日任务</template>
-                </p>
-              </div>
-              <button
-                class="rounded-lg px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
-                @click="goToTodayTasks"
-              >
-                查看全部
-              </button>
-            </div>
+      <!-- ── Weekly Focus Trend + Task Velocity (Phase 3) ────────── -->
+      <div class="grid gap-6 lg:grid-cols-2">
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="font-semibold text-slate-800">每周专注趋势</h3>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">最近 12 周每周专注时长</p>
+          <WeeklyFocusTrendChart
+            v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
+            :data="statisticsStore.weeklyFocus"
+          />
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+            {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
+          </div>
+        </div>
 
-            <div v-if="todayTasks.length > 0" class="max-h-[240px] space-y-1.5 overflow-y-auto">
-              <div
-                v-for="task in todayTasks"
-                :key="task.id"
-                class="group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-slate-50"
-              >
-                <!-- Priority bar -->
-                <div class="h-5 w-1 shrink-0 rounded-full" :class="priorityColor(task.priority)" />
-
-                <!-- Checkbox -->
-                <button
-                  role="checkbox"
-                  :aria-checked="task.status === 'done'"
-                  :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
-                  class="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                  :class="task.status === 'done'
-                    ? 'border-green-500 bg-green-500'
-                    : priorityRingClass(task.priority) + ' hover:border-green-400'"
-                  @click.stop="handleToggleTask(task.id)"
-                >
-                  <svg v-if="task.status === 'done'" class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                  </svg>
-                </button>
-
-                <!-- Title -->
-                <span
-                  class="min-w-0 flex-1 truncate text-sm"
-                  :class="task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'"
-                >
-                  {{ task.title }}
-                </span>
-
-                <!-- Pomodoro dots -->
-                <div class="flex shrink-0 items-center gap-0.5" :title="'预估 ' + (task.pomodoroCount || 1) + ' 个番茄'">
-                  <span
-                    v-for="i in Math.min(task.pomodoroCount || 1, 4)"
-                    :key="i"
-                    class="h-2 w-2 rounded-full bg-red-400"
-                  />
-                  <span v-if="(task.pomodoroCount || 1) > 4" class="ml-0.5 text-[10px] text-slate-400">
-                    +{{ (task.pomodoroCount || 1) - 4 }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div v-else class="flex flex-col items-center justify-center py-8 text-slate-400">
-              <svg class="mb-2 h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <p class="text-sm">今天还没有安排任务</p>
-              <button
-                class="mt-2 text-xs text-blue-500 hover:text-blue-600"
-                @click="goToTodayTasks"
-              >
-                去添加任务
-              </button>
-            </div>
+        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 class="font-semibold text-slate-800">任务完成速度</h3>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">最近 12 周每周完成任务数</p>
+          <TaskVelocityChart
+            v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
+            :data="statisticsStore.weeklyTaskVelocity"
+          />
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+            {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
       </div>

@@ -361,3 +361,90 @@ pub fn task_estimation_comparison(
   }
   Ok(results)
 }
+
+// ── Weekly statistics ───────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeeklyFocusStat {
+  pub week_start: String,
+  pub total_seconds: i64,
+  pub session_count: i64,
+  pub pomodoro_count: i64,
+}
+
+#[tauri::command]
+pub fn stats_weekly_focus(state: State<'_, AppState>) -> Result<Vec<WeeklyFocusStat>, String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+
+  let mut stmt = db
+    .prepare(
+      "SELECT strftime('%Y-%m-%d', date(start_time, 'localtime', 'weekday 0', '-6 days')) as week_start,
+              SUM(duration_seconds) as total_seconds,
+              COUNT(*) as session_count,
+              SUM(pomodoro_count) as pomodoro_count
+       FROM focus_sessions
+       WHERE type = 'focus' AND status IN ('completed', 'stopped')
+         AND date(start_time, 'localtime') >= date('now', 'localtime', '-83 days')
+       GROUP BY week_start
+       ORDER BY week_start",
+    )
+    .map_err(|e| e.to_string())?;
+
+  let rows = stmt
+    .query_map([], |row| {
+      Ok(WeeklyFocusStat {
+        week_start: row.get(0)?,
+        total_seconds: row.get(1)?,
+        session_count: row.get(2)?,
+        pomodoro_count: row.get(3)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+
+  let mut result = Vec::new();
+  for row in rows {
+    result.push(row.map_err(|e| e.to_string())?);
+  }
+  Ok(result)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeeklyTaskVelocity {
+  pub week_start: String,
+  pub completed_count: i64,
+}
+
+#[tauri::command]
+pub fn stats_weekly_task_velocity(state: State<'_, AppState>) -> Result<Vec<WeeklyTaskVelocity>, String> {
+  let db = state.db().lock().map_err(|e| e.to_string())?;
+
+  let mut stmt = db
+    .prepare(
+      "SELECT strftime('%Y-%m-%d', date(completed_at, 'localtime', 'weekday 0', '-6 days')) as week_start,
+              COUNT(*) as completed_count
+       FROM tasks
+       WHERE status = 'done' AND completed_at IS NOT NULL AND deleted_at IS NULL
+         AND parent_id IS NULL
+         AND date(completed_at, 'localtime') >= date('now', 'localtime', '-83 days')
+       GROUP BY week_start
+       ORDER BY week_start",
+    )
+    .map_err(|e| e.to_string())?;
+
+  let rows = stmt
+    .query_map([], |row| {
+      Ok(WeeklyTaskVelocity {
+        week_start: row.get(0)?,
+        completed_count: row.get(1)?,
+      })
+    })
+    .map_err(|e| e.to_string())?;
+
+  let mut result = Vec::new();
+  for row in rows {
+    result.push(row.map_err(|e| e.to_string())?);
+  }
+  Ok(result)
+}

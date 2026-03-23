@@ -177,6 +177,18 @@ export interface EstimationComparison {
   completedAt: string;
 }
 
+export interface WeeklyFocusStat {
+  weekStart: string;
+  totalSeconds: number;
+  sessionCount: number;
+  pomodoroCount: number;
+}
+
+export interface WeeklyTaskVelocity {
+  weekStart: string;
+  completedCount: number;
+}
+
 export interface ExportResult {
   path: string;
   sizeBytes: number;

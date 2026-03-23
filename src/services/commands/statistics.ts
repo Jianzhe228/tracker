@@ -6,6 +6,8 @@ import type {
   TaskCompletionStats,
   EstimationComparison,
   StatsOverview,
+  WeeklyFocusStat,
+  WeeklyTaskVelocity,
 } from '../../types/domain';
 
 export function getStatsOverview(): Promise<StatsOverview> {
@@ -30,4 +32,12 @@ export function getTaskEstimationComparison(options?: {
   limit?: number;
 }): Promise<EstimationComparison[]> {
   return invokeCommand<EstimationComparison[]>('task_estimation_comparison', options);
+}
+
+export function getWeeklyFocus(): Promise<WeeklyFocusStat[]> {
+  return invokeCommand<WeeklyFocusStat[]>('stats_weekly_focus', {});
+}
+
+export function getWeeklyTaskVelocity(): Promise<WeeklyTaskVelocity[]> {
+  return invokeCommand<WeeklyTaskVelocity[]>('stats_weekly_task_velocity', {});
 }

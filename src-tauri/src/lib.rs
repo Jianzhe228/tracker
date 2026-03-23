@@ -146,6 +146,8 @@ pub fn run() {
       commands::statistics::stats_day_hour_distribution,
       commands::statistics::task_completion_stats,
       commands::statistics::task_estimation_comparison,
+      commands::statistics::stats_weekly_focus,
+      commands::statistics::stats_weekly_task_velocity,
       commands::data::data_export_json,
       commands::data::data_export_to_file,
       commands::data::data_import_from_file,
