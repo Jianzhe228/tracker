@@ -11,7 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
-src-tauri/target
+src-tauri/target*
 src-tauri/gen
 pnpm-lock.yaml
 yarn.lock

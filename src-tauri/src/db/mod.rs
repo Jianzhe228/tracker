@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
 );
 ";
 
-fn run_migrations(conn: &Connection) {
+pub(crate) fn run_migrations(conn: &Connection) {
   let version: i32 = conn
     .pragma_query_value(None, "user_version", |row| row.get(0))
     .unwrap_or(0);
