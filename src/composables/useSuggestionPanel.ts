@@ -317,6 +317,14 @@ export function useSuggestionPanel() {
     notify();
   }
 
+  /**
+   * Clear all panels (for unmount cleanup).
+   */
+  function clearAllPanels(): void {
+    panels.value.clear();
+    notify();
+  }
+
   return {
     panels,
     getPanel,
@@ -327,5 +335,6 @@ export function useSuggestionPanel() {
     dismissPanel,
     toggleCollapsed,
     removePanel,
+    clearAllPanels,
   };
 }

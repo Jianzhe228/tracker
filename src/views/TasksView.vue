@@ -452,6 +452,7 @@ const {
   acceptAll: panelAcceptAll,
   dismissPanel,
   toggleCollapsed: toggleSuggestionCollapsed,
+  clearAllPanels,
 } = useSuggestionPanel();
 
 const currentSuggestionPanel = computed(() => {
@@ -1437,6 +1438,7 @@ function startResize(event: MouseEvent): void {
 }
 
 onUnmounted(() => {
+  clearAllPanels();
   if (undoTickTimer) {
     clearInterval(undoTickTimer);
     undoTickTimer = null;

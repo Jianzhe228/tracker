@@ -45,6 +45,7 @@ const aiStore = useAiStore();
 
 onMounted(async () => {
   console.timeEnd('[app] script setup → mounted');
+  timerStore.hydrateFromStorage();
   if (!initPromise) return;
   const data = await initPromise;
   console.timeEnd('[init] appInit');

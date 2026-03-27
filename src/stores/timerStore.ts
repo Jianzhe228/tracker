@@ -149,7 +149,7 @@ export const useTimerStore = defineStore('timer', () => {
       if (totalSeconds.value <= 0) return 0;
       return ((totalSeconds.value - remainingSeconds.value) / totalSeconds.value) * 100;
     }
-    const baseline = Math.max(60, getDefaultSeconds('focus'));
+    const baseline = Math.max(60, totalSeconds.value);
     return Math.min(100, (elapsedSeconds.value / baseline) * 100);
   });
 
@@ -481,7 +481,7 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   function finalizeFocusSession(statusLabel: SessionStatus, startBreak = true, note?: string): void {
-    const focusSeconds = Math.max(60, getDefaultSeconds('focus'));
+    const focusSeconds = Math.max(60, totalSeconds.value);
     const spentSeconds = timerKind.value === 'countdown'
       ? Math.max(0, totalSeconds.value - remainingSeconds.value)
       : elapsedSeconds.value;
@@ -782,8 +782,6 @@ export const useTimerStore = defineStore('timer', () => {
     recoveryTargetStatus.value = null;
   }
 
-  hydrateFromStorage();
-
   watch(status, (newStatus) => {
     if (newStatus === 'idle') {
       stopTicker();
@@ -819,6 +817,7 @@ export const useTimerStore = defineStore('timer', () => {
     pauseExceededLimit,
     setTask,
     clearTask,
+    hydrateFromStorage,
     setMode,
     setTimerKind,
     start,

@@ -37,6 +37,7 @@ export const useTaskStore = defineStore('task', () => {
   const projects = ref<ProjectItem[]>([]);
   const recurringRules = ref<Map<number, RecurringRuleItem>>(new Map());
   const pendingUndoDeletion = ref<PendingUndoDeletion | null>(null);
+  const togglingTaskId = ref<number | null>(null);
 
   let undoClearTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -186,8 +187,14 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function toggleTask(id: number): Promise<ToggleTaskResult> {
+    if (togglingTaskId.value !== null) {
+      return { ok: false, reason: 'sync_failed', taskId: id };
+    }
+    togglingTaskId.value = id;
+    const cleanup = () => { togglingTaskId.value = null; };
     const target = tasks.value.find((task) => task.id === id);
     if (!target) {
+      cleanup();
       return {
         ok: false,
         reason: 'not_found',
@@ -203,6 +210,7 @@ export const useTaskStore = defineStore('task', () => {
 
     const nextStatus = target.status === 'done' ? 'todo' : 'done';
     if (nextStatus === 'done' && hasIncompleteDirectSubtasks(target.id)) {
+      cleanup();
       return {
         ok: false,
         reason: 'has_incomplete_subtasks',
@@ -239,6 +247,7 @@ export const useTaskStore = defineStore('task', () => {
     }
 
     if (!isTauri) {
+      cleanup();
       return {
         ok: true,
         taskId: id,
@@ -254,6 +263,7 @@ export const useTaskStore = defineStore('task', () => {
         updatedAt: now,
         completedAt: target.completedAt,
       });
+      cleanup();
       return {
         ok: true,
         taskId: id,
@@ -278,6 +288,7 @@ export const useTaskStore = defineStore('task', () => {
         ? 'has_incomplete_subtasks'
         : 'sync_failed';
 
+      cleanup();
       return {
         ok: false,
         reason,

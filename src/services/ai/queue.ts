@@ -17,10 +17,12 @@ type JobQueueItem = {
   skillKey: string;
   inputContext: Record<string, unknown>;
   resolve: (job: AiJob | null) => void;
+  reject: (reason: Error) => void;
 };
 
 let queue: JobQueueItem[] = [];
 let processingPromise: Promise<void> | null = null;
+let processingResolver: (() => void) | null = null;
 let cachedSkills: AiSkill[] | null = null;
 
 export function getProcessingCount(): number {
@@ -49,17 +51,21 @@ async function doProcessQueue(): Promise<void> {
       item.resolve(job);
     } catch (e) {
       console.error('[ai-queue] job failed', e);
-      item.resolve(null);
+      item.reject(e instanceof Error ? e : new Error(String(e)));
     }
   }
 }
 
 async function processQueue(): Promise<void> {
   if (processingPromise) return;
-  processingPromise = doProcessQueue();
+  let resolveProcessing: (() => void) | undefined;
+  processingPromise = new Promise<void>((resolve) => {
+    resolveProcessing = resolve;
+  });
   try {
-    await processingPromise;
+    await doProcessQueue();
   } finally {
+    resolveProcessing?.();
     processingPromise = null;
   }
 }
@@ -182,8 +188,8 @@ export function enqueue(
   skillKey: string,
   inputContext: Record<string, unknown>,
 ): Promise<AiJob | null> {
-  return new Promise((resolve) => {
-    queue.push({ skillKey, inputContext, resolve });
+  return new Promise((resolve, reject) => {
+    queue.push({ skillKey, inputContext, resolve, reject });
     void processQueue();
   });
 }

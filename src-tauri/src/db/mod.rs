@@ -4,46 +4,43 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 pub struct AppState {
-  app_handle: AppHandle,
-  db: OnceLock<Mutex<Connection>>,
+    app_handle: AppHandle,
+    db: OnceLock<Mutex<Connection>>,
 }
 
 impl AppState {
-  pub fn new(app_handle: AppHandle) -> Self {
-    Self {
-      app_handle,
-      db: OnceLock::new(),
+    pub fn new(app_handle: AppHandle) -> Result<Self, String> {
+        let conn =
+            init_db(&app_handle).map_err(|e| format!("failed to initialize database: {}", e))?;
+        let db = OnceLock::from(Mutex::new(conn));
+        Ok(Self { app_handle, db })
     }
-  }
 
-  pub fn db(&self) -> &Mutex<Connection> {
-    self.db.get_or_init(|| {
-      Mutex::new(init_db(&self.app_handle).expect("failed to initialize database"))
-    })
-  }
+    pub fn db(&self) -> &Mutex<Connection> {
+        self.db.get().expect("db not initialized")
+    }
 }
 
 fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
-  let app_dir = app
-    .path()
-    .app_data_dir()
-    .map_err(|e| format!("cannot resolve app data dir: {}", e))?;
-  std::fs::create_dir_all(&app_dir)
-    .map_err(|e| format!("cannot create app data dir: {}", e))?;
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("cannot resolve app data dir: {}", e))?;
+    std::fs::create_dir_all(&app_dir).map_err(|e| format!("cannot create app data dir: {}", e))?;
 
-  let db_path = app_dir.join("tracker.db");
-  let conn = Connection::open(&db_path)
-    .map_err(|e| format!("cannot open database at {}: {}", db_path.display(), e))?;
+    let db_path = app_dir.join("tracker.db");
+    let conn = Connection::open(&db_path)
+        .map_err(|e| format!("cannot open database at {}: {}", db_path.display(), e))?;
 
-  // Enable WAL mode for better concurrency
-  conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-  // Enable foreign keys
-  conn.execute_batch("PRAGMA foreign_keys=ON;")
-    .map_err(|e| format!("cannot enable foreign keys: {}", e))?;
+    // Enable WAL mode for better concurrency
+    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    // Enable foreign keys
+    conn.execute_batch("PRAGMA foreign_keys=ON;")
+        .map_err(|e| format!("cannot enable foreign keys: {}", e))?;
 
-  run_migrations(&conn)?;
+    run_migrations(&conn)?;
 
-  Ok(conn)
+    Ok(conn)
 }
 
 const SCHEMA_V2: &str = "
@@ -191,47 +188,43 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
 ";
 
 pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
-  let version: i32 = conn
-    .pragma_query_value(None, "user_version", |row| row.get(0))
-    .unwrap_or(0);
+    let version: i32 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap_or(0);
 
-  if version < 2 {
-    // Drop old v1 tables if upgrading from v1
-    if version == 1 {
-      conn
-        .execute_batch(
-          "
+    if version < 2 {
+        // Drop old v1 tables if upgrading from v1
+        if version == 1 {
+            conn.execute_batch(
+                "
           DROP TABLE IF EXISTS habit_checks;
           DROP TABLE IF EXISTS habits;
           DROP TABLE IF EXISTS tasks;
           DROP TABLE IF EXISTS settings;
           ",
-        )
-        .map_err(|e| format!("failed to drop old v1 tables: {}", e))?;
-    }
+            )
+            .map_err(|e| format!("failed to drop old v1 tables: {}", e))?;
+        }
 
-    // Create all v2 tables
-    conn
-      .execute_batch(SCHEMA_V2)
-      .map_err(|e| format!("failed to run migration v2: {}", e))?;
+        // Create all v2 tables
+        conn.execute_batch(SCHEMA_V2)
+            .map_err(|e| format!("failed to run migration v2: {}", e))?;
 
-    // Insert default project "收集箱" if not exists
-    conn
+        // Insert default project "收集箱" if not exists
+        conn
       .execute(
         "INSERT OR IGNORE INTO projects (id, title, color, icon) VALUES (1, '收集箱', '#6b7280', 'inbox')",
         [],
       )
       .map_err(|e| format!("failed to insert default project: {}", e))?;
 
-    conn
-      .execute_batch("PRAGMA user_version = 2;")
-      .map_err(|e| format!("failed to set user_version: {}", e))?;
-  }
+        conn.execute_batch("PRAGMA user_version = 2;")
+            .map_err(|e| format!("failed to set user_version: {}", e))?;
+    }
 
-  if version < 3 {
-    conn
-      .execute_batch(
-        "
+    if version < 3 {
+        conn.execute_batch(
+            "
         CREATE TABLE IF NOT EXISTS recurring_rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -254,82 +247,79 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
 
         PRAGMA user_version = 3;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v3: {}", e))?;
+        )
+        .map_err(|e| format!("failed to run migration v3: {}", e))?;
 
-    // Add recurring_rule_id column if not exists
-    let has_recurring_rule_id: bool = conn
-      .prepare("SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='recurring_rule_id'")
-      .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
-      .unwrap_or(0)
-      > 0;
-    if !has_recurring_rule_id {
-      conn
+        // Add recurring_rule_id column if not exists
+        let has_recurring_rule_id: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='recurring_rule_id'",
+            )
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
+            .unwrap_or(0)
+            > 0;
+        if !has_recurring_rule_id {
+            conn
         .execute_batch("ALTER TABLE tasks ADD COLUMN recurring_rule_id INTEGER REFERENCES recurring_rules(id) ON DELETE SET NULL;")
         .map_err(|e| format!("failed to add recurring_rule_id column: {}", e))?;
+        }
+
+        // Drop legacy columns if they exist
+        let drop_cols = ["is_recurring", "repeat_rule"];
+        for col in &drop_cols {
+            let exists: bool = conn
+                .prepare(&format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='{}'",
+                    col
+                ))
+                .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
+                .unwrap_or(0)
+                > 0;
+            if exists {
+                conn.execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
+                    .map_err(|e| format!("failed to drop column {}: {}", col, e))?;
+            }
+        }
     }
 
-    // Drop legacy columns if they exist
-    let drop_cols = ["is_recurring", "repeat_rule"];
-    for col in &drop_cols {
-      let exists: bool = conn
-        .prepare(&format!(
-          "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='{}'",
-          col
-        ))
-        .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
-        .unwrap_or(0)
-        > 0;
-      if exists {
-        conn
-          .execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
-          .map_err(|e| format!("failed to drop column {}: {}", col, e))?;
-      }
-    }
-  }
+    if version < 4 {
+        // Drop legacy columns if they exist
+        let drop_cols = ["description", "due_at_postpone_count"];
+        for col in &drop_cols {
+            let exists: bool = conn
+                .prepare(&format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='{}'",
+                    col
+                ))
+                .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
+                .unwrap_or(0)
+                > 0;
+            if exists {
+                conn.execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
+                    .map_err(|e| format!("failed to drop column {}: {}", col, e))?;
+            }
+        }
 
-  if version < 4 {
-    // Drop legacy columns if they exist
-    let drop_cols = ["description", "due_at_postpone_count"];
-    for col in &drop_cols {
-      let exists: bool = conn
-        .prepare(&format!(
-          "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='{}'",
-          col
-        ))
-        .and_then(|mut s| s.query_row([], |r| r.get::<_, i32>(0)))
-        .unwrap_or(0)
-        > 0;
-      if exists {
-        conn
-          .execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
-          .map_err(|e| format!("failed to drop column {}: {}", col, e))?;
-      }
+        conn.execute_batch("PRAGMA user_version = 4;")
+            .map_err(|e| format!("failed to set user_version to 4: {}", e))?;
     }
 
-    conn
-      .execute_batch("PRAGMA user_version = 4;")
-      .map_err(|e| format!("failed to set user_version to 4: {}", e))?;
-  }
-
-  if version < 5 {
-    conn
-      .execute_batch(
-        "
+    if version < 5 {
+        conn.execute_batch(
+            "
         DROP TABLE IF EXISTS habit_stats;
         DROP TABLE IF EXISTS habit_logs;
         DROP TABLE IF EXISTS habits;
 
         PRAGMA user_version = 5;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v5: {}", e))?;
-  }
+        )
+        .map_err(|e| format!("failed to run migration v5: {}", e))?;
+    }
 
-  if version < 6 {
-    conn
-      .execute_batch(
-        "
+    if version < 6 {
+        conn.execute_batch(
+            "
         CREATE TABLE IF NOT EXISTS focus_session_segments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
@@ -344,14 +334,13 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
 
         PRAGMA user_version = 6;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v6: {}", e))?;
-  }
+        )
+        .map_err(|e| format!("failed to run migration v6: {}", e))?;
+    }
 
-  if version < 7 {
-    conn
-      .execute_batch(
-        "
+    if version < 7 {
+        conn.execute_batch(
+            "
         CREATE TABLE IF NOT EXISTS ai_skills (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT NOT NULL UNIQUE,
@@ -384,11 +373,11 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
 
         PRAGMA user_version = 7;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v7: {}", e))?;
+        )
+        .map_err(|e| format!("failed to run migration v7: {}", e))?;
 
-    // Seed builtin skill: task_decompose
-    conn
+        // Seed builtin skill: task_decompose
+        conn
       .execute(
         "INSERT OR IGNORE INTO ai_skills (key, name, description, system_prompt, user_prompt_template, action_types, trigger_type, is_builtin, enabled)
          VALUES ('task_decompose', '任务拆解', '自动分析任务并建议子任务',
@@ -399,11 +388,11 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
         [],
       )
       .map_err(|e| format!("failed to seed task_decompose skill: {}", e))?;
-  }
+    }
 
-  if version < 8 {
-    // Update task_decompose prompt to support detail level
-    conn
+    if version < 8 {
+        // Update task_decompose prompt to support detail level
+        conn
       .execute(
         "UPDATE ai_skills SET
            system_prompt = 'You are a task planning assistant. Analyze the task and suggest subtasks based on the requested detail level.
@@ -423,27 +412,24 @@ Existing tasks: {{existingTasks}}',
       )
       .map_err(|e| format!("failed to update task_decompose prompt: {}", e))?;
 
-    conn
-      .execute_batch("PRAGMA user_version = 8;")
-      .map_err(|e| format!("failed to set user_version to 8: {}", e))?;
-  }
+        conn.execute_batch("PRAGMA user_version = 8;")
+            .map_err(|e| format!("failed to set user_version to 8: {}", e))?;
+    }
 
-  if version < 9 {
-    conn
-      .execute_batch(
-        "
+    if version < 9 {
+        conn.execute_batch(
+            "
         ALTER TABLE tasks ADD COLUMN start_at DATETIME;
 
         PRAGMA user_version = 9;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v9: {}", e))?;
-  }
+        )
+        .map_err(|e| format!("failed to run migration v9: {}", e))?;
+    }
 
-  if version < 10 {
-    conn
-      .execute_batch(
-        "
+    if version < 10 {
+        conn.execute_batch(
+            "
         -- Subtask pattern templates
         CREATE TABLE IF NOT EXISTS subtask_patterns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -487,14 +473,14 @@ Existing tasks: {{existingTasks}}',
 
         PRAGMA user_version = 10;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v10: {}", e))?;
+        )
+        .map_err(|e| format!("failed to run migration v10: {}", e))?;
 
-    // v10 prompt replaced by v11 below
-  }
+        // v10 prompt replaced by v11 below
+    }
 
-  if version < 11 {
-    conn
+    if version < 11 {
+        conn
       .execute_batch(
         "
         -- Suggestion feedback tracking
@@ -532,8 +518,8 @@ Existing tasks: {{existingTasks}}',
       )
       .map_err(|e| format!("failed to run migration v11: {}", e))?;
 
-    // Replace task_decompose prompt with universal version
-    conn
+        // Replace task_decompose prompt with universal version
+        conn
       .execute(
         "UPDATE ai_skills SET
            system_prompt = 'You are a task checklist assistant. Suggest short, specific action items.
@@ -562,15 +548,14 @@ Detail level: {{detailLevel}}
         [],
       )
       .map_err(|e| format!("failed to update task_decompose prompt v11: {}", e))?;
-  }
+    }
 
-  if version < 12 {
-    // Optimize task_decompose prompt: Chinese few-shot + history-first approach
-    // Test results show this produces shorter, more specific suggestions
-    // that better leverage user history patterns.
-    conn
-      .execute(
-        "UPDATE ai_skills SET
+    if version < 12 {
+        // Optimize task_decompose prompt: Chinese few-shot + history-first approach
+        // Test results show this produces shorter, more specific suggestions
+        // that better leverage user history patterns.
+        conn.execute(
+            "UPDATE ai_skills SET
            system_prompt = '你给任务生成待办清单。
 
 【格式】每条 3-8 字，动词开头，可直接执行
@@ -595,19 +580,17 @@ Detail level: {{detailLevel}}
 {{#if userPatterns}}常用: {{userPatterns}}{{/if}}',
            updated_at = CURRENT_TIMESTAMP
          WHERE key = 'task_decompose' AND is_builtin = 1",
-        [],
-      )
-      .map_err(|e| format!("failed to update task_decompose prompt v12: {}", e))?;
+            [],
+        )
+        .map_err(|e| format!("failed to update task_decompose prompt v12: {}", e))?;
 
-    conn
-      .execute_batch("PRAGMA user_version = 12;")
-      .map_err(|e| format!("failed to set user_version to 12: {}", e))?;
-  }
+        conn.execute_batch("PRAGMA user_version = 12;")
+            .map_err(|e| format!("failed to set user_version to 12: {}", e))?;
+    }
 
-  if version < 13 {
-    conn
-      .execute_batch(
-        "
+    if version < 13 {
+        conn.execute_batch(
+            "
         CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
         CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_project_deleted ON tasks(project_id, deleted_at);
@@ -618,34 +601,28 @@ Detail level: {{detailLevel}}
 
         PRAGMA user_version = 13;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v13: {}", e))?;
-  }
+        )
+        .map_err(|e| format!("failed to run migration v13: {}", e))?;
+    }
 
-  if version < 14 {
-    conn
-      .execute(
-        "DELETE FROM user_settings WHERE key = 'aiDetailLevel'",
-        [],
-      )
-      .map_err(|e| format!("failed to clean up aiDetailLevel setting: {}", e))?;
+    if version < 14 {
+        conn.execute("DELETE FROM user_settings WHERE key = 'aiDetailLevel'", [])
+            .map_err(|e| format!("failed to clean up aiDetailLevel setting: {}", e))?;
 
-    conn
-      .execute_batch("PRAGMA user_version = 14;")
-      .map_err(|e| format!("failed to set user_version to 14: {}", e))?;
-  }
+        conn.execute_batch("PRAGMA user_version = 14;")
+            .map_err(|e| format!("failed to set user_version to 14: {}", e))?;
+    }
 
-  if version < 15 {
-    conn
-      .execute_batch(
-        "
+    if version < 15 {
+        conn.execute_batch(
+            "
         ALTER TABLE tasks ADD COLUMN rescheduled_to TEXT;
 
         PRAGMA user_version = 15;
         ",
-      )
-      .map_err(|e| format!("failed to run migration v15: {}", e))?;
-  }
+        )
+        .map_err(|e| format!("failed to run migration v15: {}", e))?;
+    }
 
-  Ok(())
+    Ok(())
 }

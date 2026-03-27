@@ -1,15 +1,19 @@
-import { ref } from 'vue';
+import { ref, readonly } from 'vue';
 
-const visible = ref(false);
+const _modalVisible = ref(false);
 
 export function useFocusModal() {
   function open() {
-    visible.value = true;
+    _modalVisible.value = true;
   }
 
   function close() {
-    visible.value = false;
+    _modalVisible.value = false;
   }
 
-  return { visible, open, close };
+  return {
+    visible: readonly(_modalVisible),
+    open,
+    close,
+  };
 }
