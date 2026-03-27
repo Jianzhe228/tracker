@@ -135,22 +135,25 @@ pub fn project_update(state: State<'_, AppState>, payload: ProjectUpdatePayload)
 
 #[tauri::command]
 pub fn project_delete(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-  let db = state.db().lock().map_err(|e| e.to_string())?;
-
-  // Move tasks from deleted project to inbox (project id=1)
-  db.execute(
-    "UPDATE tasks SET project_id = 1, updated_at = ?1 WHERE project_id = ?2",
-    rusqlite::params![chrono::Utc::now().to_rfc3339(), id],
-  )
-  .map_err(|e| e.to_string())?;
-
   // Don't allow deleting the default inbox project
   if id == 1 {
     return Err("Cannot delete default project".to_string());
   }
 
-  db.execute("DELETE FROM projects WHERE id = ?1", rusqlite::params![id])
+  let mut db = state.db().lock().map_err(|e| e.to_string())?;
+  let tx = db.transaction().map_err(|e| e.to_string())?;
+
+  // Move tasks from deleted project to inbox (project id=1)
+  tx.execute(
+    "UPDATE tasks SET project_id = 1, updated_at = ?1 WHERE project_id = ?2",
+    rusqlite::params![chrono::Utc::now().to_rfc3339(), id],
+  )
+  .map_err(|e| e.to_string())?;
+
+  tx.execute("DELETE FROM projects WHERE id = ?1", rusqlite::params![id])
     .map_err(|e| e.to_string())?;
+
+  tx.commit().map_err(|e| e.to_string())?;
 
   Ok(())
 }
