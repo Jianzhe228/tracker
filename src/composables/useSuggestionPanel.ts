@@ -309,6 +309,14 @@ export function useSuggestionPanel() {
     notify();
   }
 
+  /**
+   * Remove a panel completely (for cleanup on unmount).
+   */
+  function removePanel(taskId: number): void {
+    panels.value.delete(taskId);
+    notify();
+  }
+
   return {
     panels,
     getPanel,
@@ -318,5 +326,6 @@ export function useSuggestionPanel() {
     acceptAll,
     dismissPanel,
     toggleCollapsed,
+    removePanel,
   };
 }
