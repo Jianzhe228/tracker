@@ -46,9 +46,10 @@ const aiStore = useAiStore();
 onMounted(async () => {
   console.timeEnd('[app] script setup → mounted');
   if (!initPromise) return;
-  const [data, taskData] = await Promise.all([initPromise, taskListInit(0, 500)]);
+  const data = await initPromise;
   console.timeEnd('[init] appInit');
   settingsStore.loadFromData(data.settings);
+  const taskData = await taskListInit(0, 500);
   taskStore.loadFromData(taskData.tasks);
   taskStore.loadProjectsFromData(data.projects);
   taskStore.loadRecurringRulesFromData(data.recurringRules);
