@@ -624,5 +624,61 @@ Detail level: {{detailLevel}}
         .map_err(|e| format!("failed to run migration v15: {}", e))?;
     }
 
+    if version < 16 {
+        conn.execute_batch(
+            "
+        -- AI prediction: task creation history for AI analysis
+        CREATE TABLE IF NOT EXISTS task_creation_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_title TEXT NOT NULL,
+            project_id INTEGER,
+            created_at TEXT NOT NULL,
+            dow TEXT,
+            hour INTEGER,
+            day_of_month INTEGER,
+            is_recurring_instance INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_task_creation_history_created_at ON task_creation_history(created_at);
+        CREATE INDEX IF NOT EXISTS idx_task_creation_history_dow_hour ON task_creation_history(dow, hour);
+
+        -- AI prediction: pending predictions from AI analysis
+        CREATE TABLE IF NOT EXISTS pending_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            reason TEXT,
+            predicted_for_date TEXT,
+            created_at TEXT,
+            notified_at TEXT,
+            status TEXT DEFAULT 'pending',
+            ai_context TEXT,
+            source_job_id INTEGER
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pending_predictions_status ON pending_predictions(status);
+        CREATE INDEX IF NOT EXISTS idx_pending_predictions_predicted_for_date ON pending_predictions(predicted_for_date);
+
+        PRAGMA user_version = 16;
+        ",
+        )
+        .map_err(|e| format!("failed to run migration v16: {}", e))?;
+    }
+
+    if version < 17 {
+        // Seed builtin skill: task_history_analyzer for AI-driven prediction
+        let system_prompt = "你是一个用户行为分析师。分析用户的历史任务创建记录，发现时间模式和语义规律。\n\n你的任务是：\n1. 从提供的历史任务数据中，发现周期性规律\n2. 识别高频任务的语义类别（如'周计划'、'月度总结'、'项目复盘'）\n3. 结合当前时间上下文，预测用户今天/明天可能想创建什么任务\n4. 为每个预测给出简洁的理由\n\n规则：\n- 预测要具体、可执行（如'创建本周计划'而非'做计划'）\n- 关注重复性模式，而非一次性事件\n- 如果历史数据不足（<7条），给出通用的今日建议\n- 每组预测不超过 3 条\n- 不要预测已有或近期创建过的任务\n\n返回 JSON：\n{\n  \"detected_patterns\": [\n    {\"pattern\": \"每周一早上\", \"typical_tasks\": [\"周计划\", \"本周目标\"]}\n  ],\n  \"predictions\": [\n    {\"title\": \"创建本周计划\", \"reason\": \"你每周一常规划本周工作\"}\n  ]\n}";
+        let user_prompt_template = "当前时间：{{currentTime}}（{{dayOfWeek}}）\n\n用户近 {{days}} 天创建的任务（共 {{count}} 条）：\n{{taskList}}\n\n{{#if recentProjects}}近期涉及的项目：{{recentProjects}}{{/if}}";
+
+        conn.execute(
+            "INSERT OR IGNORE INTO ai_skills (key, name, description, system_prompt, user_prompt_template, action_types, trigger_type, is_builtin, enabled)
+             VALUES ('task_history_analyzer', '任务历史分析', '分析用户历史任务创建记录，发现时间模式和语义规律，预测用户可能想创建的任务', ?1, ?2, '[]', 'scheduled', 1, 1)",
+            rusqlite::params![system_prompt, user_prompt_template],
+        )
+        .map_err(|e| format!("failed to seed task_history_analyzer skill: {}", e))?;
+
+        conn.execute_batch("PRAGMA user_version = 17;")
+            .map_err(|e| format!("failed to set user_version to 17: {}", e))?;
+    }
+
     Ok(())
 }

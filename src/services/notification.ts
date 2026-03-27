@@ -15,7 +15,8 @@ export type NotificationType =
   | 'focusEnd'
   | 'breakEnd'
   | 'deadline'
-  | 'pauseTimeout';
+  | 'pauseTimeout'
+  | 'prediction';
 
 export interface SendNotificationOptions {
   type: NotificationType;

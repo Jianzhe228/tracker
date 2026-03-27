@@ -11,6 +11,7 @@ import {
 } from '../services/commands/task';
 import { createProject as createProjectCmd, updateProject as updateProjectCmd, deleteProject as deleteProjectCmd } from '../services/commands/project';
 import { sendNotification } from '../services/notification';
+import { recordTaskCreation } from '../services/commands/prediction';
 import { useSettingsStore } from './settingsStore';
 import { toDateKey } from '../utils/date';
 
@@ -143,6 +144,13 @@ export const useTaskStore = defineStore('task', () => {
     if (isTauri) {
       const created = await createTaskCmd(task);
       tasks.value = [created, ...tasks.value];
+      // Record task creation for AI prediction analysis (fire-and-forget)
+      void recordTaskCreation({
+        taskTitle: title,
+        projectId: options.projectId,
+        createdAt: new Date().toISOString(),
+        isRecurringInstance: options.recurringRuleId != null,
+      }).catch((err) => console.warn('[taskStore] Failed to record task creation:', err));
       return created;
     }
     tasks.value = [task, ...tasks.value];

@@ -6,6 +6,7 @@ pub mod init;
 pub mod learning;
 pub mod notification;
 pub mod pattern;
+pub mod prediction;
 pub mod project;
 pub mod recurring;
 pub mod settings;

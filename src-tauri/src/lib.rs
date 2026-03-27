@@ -123,6 +123,10 @@ pub fn run() {
                 .map_err(|e| format!("failed to initialize app state: {}", e))?;
             app.manage(state);
             setup_tray(app)?;
+
+            // Start prediction scheduler
+            services::prediction_scheduler::start_scheduler(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -194,6 +198,14 @@ pub fn run() {
             commands::learning::cluster_list,
             commands::learning::cluster_upsert,
             commands::learning::cluster_delete,
+            commands::prediction::record_task_creation,
+            commands::prediction::get_task_creation_history,
+            commands::prediction::get_prediction_analysis_context,
+            commands::prediction::save_predictions,
+            commands::prediction::get_pending_predictions,
+            commands::prediction::update_prediction_status,
+            commands::prediction::get_prediction_stats,
+            commands::prediction::cleanup_expired_predictions,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")
