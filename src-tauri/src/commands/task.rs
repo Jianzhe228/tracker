@@ -77,11 +77,12 @@ pub struct TaskUpdatePayload {
 }
 
 pub(crate) fn cleanup_expired_soft_deleted_tasks(conn: &Connection) -> Result<(), String> {
+  // Use range query instead of julianday() function to allow index usage
   conn
     .execute(
       "DELETE FROM tasks
        WHERE deleted_at IS NOT NULL
-         AND julianday(deleted_at) <= julianday('now') - (10.0 / 86400.0)",
+         AND deleted_at <= datetime('now', '-10 seconds')",
       [],
     )
     .map_err(|e| e.to_string())?;
@@ -391,7 +392,6 @@ fn capture_subtask_history(
 #[tauri::command]
 pub fn task_list(state: State<'_, AppState>, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<TaskRow>, String> {
   let db = state.db().lock().map_err(|e| e.to_string())?;
-  cleanup_expired_soft_deleted_tasks(&db)?;
 
   let limit_val = limit.unwrap_or(5000);
   let offset_val = offset.unwrap_or(0);
@@ -442,7 +442,6 @@ pub fn task_list(state: State<'_, AppState>, limit: Option<i64>, offset: Option<
 #[tauri::command]
 pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Result<TaskRow, String> {
   let db = state.db().lock().map_err(|e| e.to_string())?;
-  cleanup_expired_soft_deleted_tasks(&db)?;
 
   let title = payload.title.trim().to_string();
   validate_title(&title)?;
@@ -510,7 +509,6 @@ pub fn task_create(state: State<'_, AppState>, payload: TaskCreatePayload) -> Re
 #[tauri::command]
 pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Result<(), String> {
   let mut db = state.db().lock().map_err(|e| e.to_string())?;
-  cleanup_expired_soft_deleted_tasks(&db)?;
 
   if let Some(ref title) = payload.title {
     validate_title(title)?;
@@ -764,7 +762,6 @@ pub fn task_delete(state: State<'_, AppState>, id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn task_restore(state: State<'_, AppState>, id: i64) -> Result<(), String> {
   let mut db = state.db().lock().map_err(|e| e.to_string())?;
-  cleanup_expired_soft_deleted_tasks(&db)?;
 
   let deleted_at: Option<String> = db
     .query_row(
