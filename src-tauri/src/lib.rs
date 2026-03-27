@@ -126,6 +126,7 @@ pub fn run() {
       commands::health::app_version,
       commands::health::is_debug_build,
       commands::init::app_init,
+      commands::init::task_list_init,
       commands::task::task_list,
       commands::task::task_create,
       commands::task::task_update,
