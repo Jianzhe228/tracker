@@ -15,6 +15,29 @@ import { useSettingsStore } from '../stores/settingsStore';
 
 export type SuggestionSource = 'pattern' | 'learning' | 'ai';
 
+/**
+ * Normalize a suggestion title for semantic deduplication.
+ * Strips common action prefixes like "带", "准备", "购买", etc.
+ * so that "带衣服" and "衣服" are treated as duplicates.
+ */
+/**
+ * Normalize a suggestion title for semantic deduplication.
+ * Checks if titles are substrings of each other (e.g., "衣服" ⊆ "带衣服").
+ * Returns the shorter title if they're substrings, otherwise empty.
+ */
+function normalizeForDedup(title: string): string {
+  return title.toLowerCase().trim();
+}
+
+/**
+ * Check if two titles are semantically duplicate (one is substring of other).
+ */
+function isSemanticDuplicate(a: string, b: string): boolean {
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  if (shorter.length < 2) return false;
+  return longer.includes(shorter);
+}
+
 export interface SidebarSuggestion {
   title: string;
   source: SuggestionSource;
@@ -108,6 +131,7 @@ export function useSuggestionPanel() {
               const currentSubtaskTitles = new Set(
                 taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
               );
+              // Build set of existing titles for exact-match deduplication
               const existingTitles = new Set([
                 ...currentSubtaskTitles,
                 ...state.suggestions.map((s) => s.title),
@@ -115,13 +139,22 @@ export function useSuggestionPanel() {
               for (const action of job.actions) {
                 if (
                   action.type === 'create_subtask' &&
-                  action.params.title &&
-                  !existingTitles.has(String(action.params.title))
+                  action.params.title
                 ) {
-                  state.suggestions.push({
-                    title: String(action.params.title),
-                    source: 'ai',
-                  });
+                  const title = String(action.params.title);
+                  // Skip if exact match already exists
+                  if (existingTitles.has(title)) continue;
+                  // Skip if semantically duplicate (e.g., "衣服" in "带衣服")
+                  const isDup = [...existingTitles].some(
+                    (existing) => isSemanticDuplicate(normalizeForDedup(existing), normalizeForDedup(title))
+                  );
+                  if (!isDup) {
+                    state.suggestions.push({
+                      title,
+                      source: 'ai',
+                    });
+                    existingTitles.add(title); // prevent duplicates within AI batch too
+                  }
                 }
                 // Mark action so it doesn't appear in NotificationCenter
                 action.status = 'executed';
