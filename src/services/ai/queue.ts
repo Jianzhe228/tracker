@@ -20,11 +20,11 @@ type JobQueueItem = {
 };
 
 let queue: JobQueueItem[] = [];
-let processing = false;
+let processingPromise: Promise<void> | null = null;
 let cachedSkills: AiSkill[] | null = null;
 
 export function getProcessingCount(): number {
-  return processing ? 1 : 0;
+  return processingPromise !== null ? 1 : 0;
 }
 
 async function loadSkills(): Promise<AiSkill[]> {
@@ -41,10 +41,7 @@ export function invalidateSkillCache(): void {
   cachedSkills = null;
 }
 
-async function processQueue(): Promise<void> {
-  if (processing) return;
-  processing = true;
-
+async function doProcessQueue(): Promise<void> {
   while (queue.length > 0) {
     const item = queue.shift()!;
     try {
@@ -55,8 +52,16 @@ async function processQueue(): Promise<void> {
       item.resolve(null);
     }
   }
+}
 
-  processing = false;
+async function processQueue(): Promise<void> {
+  if (processingPromise) return;
+  processingPromise = doProcessQueue();
+  try {
+    await processingPromise;
+  } finally {
+    processingPromise = null;
+  }
 }
 
 async function processJob(
