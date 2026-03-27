@@ -84,9 +84,11 @@ pub fn focus_session_create(
   state: State<'_, AppState>,
   payload: FocusSessionCreatePayload,
 ) -> Result<FocusSessionRow, String> {
-  let db = state.db().lock().map_err(|e| e.to_string())?;
+  let mut db = state.db().lock().map_err(|e| e.to_string())?;
 
-  db.execute(
+  let tx = db.transaction().map_err(|e| e.to_string())?;
+
+  tx.execute(
     "INSERT INTO focus_sessions (task_id, start_time, end_time, duration_seconds, type, status, interruption_reason, pomodoro_count)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
     rusqlite::params![
@@ -102,12 +104,12 @@ pub fn focus_session_create(
   )
   .map_err(|e| e.to_string())?;
 
-  let id = db.last_insert_rowid();
+  let id = tx.last_insert_rowid();
 
   // Insert segments if provided
   if let Some(ref segments) = payload.segments {
     for seg in segments {
-      db.execute(
+      tx.execute(
         "INSERT INTO focus_session_segments (session_id, task_id, start_time, duration_seconds, sort_order)
          VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![id, seg.task_id, seg.start_time, seg.duration_seconds, seg.sort_order],
@@ -115,6 +117,8 @@ pub fn focus_session_create(
       .map_err(|e| e.to_string())?;
     }
   }
+
+  tx.commit().map_err(|e| e.to_string())?;
 
   let created_at: String = db
     .query_row(
