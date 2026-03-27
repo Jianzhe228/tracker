@@ -64,6 +64,13 @@ async function processQueue(): Promise<void> {
   });
   try {
     await doProcessQueue();
+  } catch (e) {
+    console.error('[ai-queue] queue processing failed', e);
+    // Reject all pending items so callers are not left hanging
+    for (const item of queue) {
+      item.reject(e instanceof Error ? e : new Error(String(e)));
+    }
+    queue = [];
   } finally {
     resolveProcessing?.();
     processingPromise = null;
