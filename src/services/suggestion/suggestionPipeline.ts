@@ -15,6 +15,7 @@ import { matchPatterns } from './patternMatcher';
 import { suggestFromLearning } from './learningEngine';
 import { computeConfidence, type Strategy } from './confidenceScorer';
 import { historySuggest, feedbackRejectedTitles } from '../commands/learning';
+import { useTaskStore } from '../../stores/taskStore';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -112,7 +113,7 @@ export async function buildAiContext(ctx: SuggestionContext): Promise<{
   let learnedItems = '';
   let rejectedItems = '';
   let manualSubtasks = '';
-  const siblingTasks = ''; // TODO: query sibling tasks from task store
+  let siblingTasks = '';
 
   if (!isTauri || keywords.length === 0) {
     return { userPatterns, learnedItems, rejectedItems, manualSubtasks, siblingTasks };
@@ -137,6 +138,20 @@ export async function buildAiContext(ctx: SuggestionContext): Promise<{
     }
     if (history.length > 0) {
       manualSubtasks = history.join(', ');
+    }
+
+    // Query sibling tasks from task store (after async queries to not block)
+    if (ctx.projectId !== null) {
+      try {
+        const taskStore = useTaskStore();
+        const siblings = taskStore.tasks
+          .filter((t) => t.projectId === ctx.projectId && t.status !== 'done' && t.status !== 'cancelled')
+          .slice(0, 10)
+          .map((t) => t.title);
+        siblingTasks = siblings.join(', ');
+      } catch {
+        // Ignore task store errors
+      }
     }
   } catch (e) {
     console.error('[suggestion-pipeline] buildAiContext failed', e);
