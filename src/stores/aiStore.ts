@@ -48,6 +48,13 @@ export const useAiStore = defineStore('ai', () => {
     }, 10_000);
   }
 
+  function dispose(): void {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+  }
+
   async function submitJob(skillKey: string, context: Record<string, unknown>): Promise<void> {
     processingCount.value = 1;
     const job = await enqueue(skillKey, context);
@@ -234,6 +241,7 @@ export const useAiStore = defineStore('ai', () => {
     loadSkills,
     loadPendingJobs,
     init,
+    dispose,
     submitJob,
     approveJob,
     rejectJob,
