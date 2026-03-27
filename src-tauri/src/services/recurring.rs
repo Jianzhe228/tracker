@@ -78,6 +78,7 @@ pub fn generate_recurring_tasks(conn: &Connection, today: &str) -> Result<(), St
   let today_date =
     NaiveDate::parse_from_str(today, "%Y-%m-%d").map_err(|e| format!("invalid today date: {}", e))?;
 
+  // Fetch all active rules
   let mut stmt = conn
     .prepare(
       "SELECT id, title, priority, project_id, repeat_type, repeat_days,
@@ -109,6 +110,38 @@ pub fn generate_recurring_tasks(conn: &Connection, today: &str) -> Result<(), St
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| e.to_string())?;
 
+  if rules.is_empty() {
+    return Ok(());
+  }
+
+  let rule_ids: Vec<i64> = rules.iter().map(|r| r.id).collect();
+
+  // Batch fetch all existing recurring tasks for these rules
+  let mut existing_tasks: Vec<(i64, String)> = Vec::new();
+  {
+    let placeholders: String = rule_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+      "SELECT recurring_rule_id, due_at FROM tasks
+       WHERE recurring_rule_id IN ({}) AND deleted_at IS NULL",
+      placeholders
+    );
+    let mut check_stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let mut rows = check_stmt
+      .query_map(rusqlite::params_from_iter(rule_ids.iter()), |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+      })
+      .map_err(|e| e.to_string())?;
+    while let Some(row) = rows.next().transpose().map_err(|e| e.to_string())? {
+      existing_tasks.push(row);
+    }
+  }
+
+  let existing_set: std::collections::HashSet<(i64, String)> =
+    existing_tasks.into_iter().collect();
+
+  // Collect all tasks to insert
+  let mut tasks_to_insert: Vec<(i64, String)> = Vec::new(); // (rule_id, due_at)
+
   for rule in &rules {
     let start_date = if let Some(ref last) = rule.last_generated_date {
       match NaiveDate::parse_from_str(last, "%Y-%m-%d") {
@@ -132,36 +165,8 @@ pub fn generate_recurring_tasks(conn: &Connection, today: &str) -> Result<(), St
     while current <= today_date {
       if matches_rule(current, rule) {
         let date_str = current.format("%Y-%m-%d").to_string();
-
-        // Check for duplicate: same rule + same due_at date
-        let exists: bool = conn
-          .query_row(
-            "SELECT COUNT(*) > 0 FROM tasks WHERE recurring_rule_id = ?1 AND due_at = ?2 AND deleted_at IS NULL",
-            rusqlite::params![rule.id, date_str],
-            |row| row.get(0),
-          )
-          .unwrap_or(false);
-
-        if !exists {
-          let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-          conn
-            .execute(
-              "INSERT INTO tasks (title, status, priority, project_id, due_at, reminder_time, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at)
-               VALUES (?1, 'todo', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?10)",
-              rusqlite::params![
-                rule.title,
-                rule.priority,
-                rule.project_id,
-                date_str,
-                rule.reminder_time,
-                rule.notes,
-                rule.pomodoro_count,
-                rule.pomodoro_duration,
-                rule.id,
-                now,
-              ],
-            )
-            .map_err(|e| format!("failed to insert recurring task: {}", e))?;
+        if !existing_set.contains(&(rule.id, date_str.clone())) {
+          tasks_to_insert.push((rule.id, date_str));
         }
       }
       current = match current.succ_opt() {
@@ -169,13 +174,49 @@ pub fn generate_recurring_tasks(conn: &Connection, today: &str) -> Result<(), St
         None => break,
       };
     }
+  }
 
-    // Update last_generated_date
-    conn
-      .execute(
-        "UPDATE recurring_rules SET last_generated_date = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        rusqlite::params![today, rule.id],
+  // Batch insert all tasks
+  if !tasks_to_insert.is_empty() {
+    let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let mut insert_stmt = conn
+      .prepare(
+        "INSERT INTO tasks (title, status, priority, project_id, due_at, reminder_time, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at)
+         SELECT ?1, 'todo', ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?10
+         WHERE NOT EXISTS (
+           SELECT 1 FROM tasks WHERE recurring_rule_id = ?9 AND due_at = ?4 AND deleted_at IS NULL
+         )",
       )
+      .map_err(|e| e.to_string())?;
+
+    for &(rule_id, ref due_at) in &tasks_to_insert {
+      let rule = rules.iter().find(|r| r.id == rule_id).unwrap();
+      insert_stmt
+        .execute(rusqlite::params![
+          rule.title,
+          rule.priority,
+          rule.project_id,
+          due_at,
+          rule.reminder_time,
+          rule.notes,
+          rule.pomodoro_count,
+          rule.pomodoro_duration,
+          rule_id,
+          now,
+        ])
+        .map_err(|e| format!("failed to insert recurring task: {}", e))?;
+    }
+  }
+
+  // Batch update last_generated_date for all rules
+  let mut update_stmt = conn
+    .prepare(
+      "UPDATE recurring_rules SET last_generated_date = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+    )
+    .map_err(|e| e.to_string())?;
+  for rule in &rules {
+    update_stmt
+      .execute(rusqlite::params![today, rule.id])
       .map_err(|e| format!("failed to update last_generated_date: {}", e))?;
   }
 
