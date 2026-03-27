@@ -530,12 +530,10 @@ export const useTaskStore = defineStore('task', () => {
 
   async function removeProject(id: number): Promise<void> {
     projects.value = projects.value.filter((p) => p.id !== id);
-    // Move tasks from deleted project to inbox (id=1)
-    for (const task of tasks.value) {
-      if (task.projectId === id) {
-        task.projectId = 1;
-      }
-    }
+    // Move tasks from deleted project to inbox (id=1) - use map to trigger reactivity
+    tasks.value = tasks.value.map((task) =>
+      task.projectId === id ? { ...task, projectId: 1 } : task
+    );
     if (isTauri) {
       await deleteProjectCmd(id).catch(console.error);
     }
