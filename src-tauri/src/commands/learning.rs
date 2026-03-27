@@ -152,30 +152,52 @@ pub fn learn_record_batch(
   let db = state.db().lock().map_err(|e| e.to_string())?;
   let src = source.unwrap_or_else(|| "user".to_string());
 
-  for keyword in &keywords {
-    let existing_id: Option<i64> = db
-      .query_row(
-        "SELECT id FROM subtask_learn_log
-         WHERE keyword = ?1 AND subtask_title = ?2 AND (project_id IS ?3)",
-        rusqlite::params![keyword, subtask_title, project_id],
-        |row| row.get(0),
-      )
-      .optional()
-      .map_err(|e| e.to_string())?;
+  // Batch query: find all existing keywords in one go
+  let placeholders: String = keywords.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+  let sql = format!(
+    "SELECT keyword FROM subtask_learn_log
+     WHERE subtask_title = ?1 AND (project_id IS ?2) AND keyword IN ({})",
+    placeholders
+  );
+  let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
+  let mut params: Vec<&dyn rusqlite::ToSql> = vec![&subtask_title, &project_id];
+  params.extend(keywords.iter().map(|k| k as &dyn rusqlite::ToSql));
 
-    if let Some(id) = existing_id {
-      db.execute(
-        "UPDATE subtask_learn_log SET score = score + ?2, last_used_at = CURRENT_TIMESTAMP WHERE id = ?1",
-        rusqlite::params![id, delta],
-      )
-      .map_err(|e| e.to_string())?;
-    } else {
-      db.execute(
-        "INSERT INTO subtask_learn_log (keyword, subtask_title, project_id, score, source)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![keyword, subtask_title, project_id, delta, src],
-      )
-      .map_err(|e| e.to_string())?;
+  let existing_keywords: std::collections::HashSet<String> = stmt
+    .query_map(params.as_slice(), |row| row.get(0))
+    .map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+
+  // Batch update existing ones
+  let mut update_stmt = db
+    .prepare(
+      "UPDATE subtask_learn_log SET score = score + ?3, last_used_at = CURRENT_TIMESTAMP
+       WHERE keyword = ?1 AND subtask_title = ?2 AND project_id IS ?3",
+    )
+    .map_err(|e| e.to_string())?;
+
+  for keyword in &keywords {
+    if existing_keywords.contains(keyword) {
+      update_stmt
+        .execute(rusqlite::params![keyword, subtask_title, project_id, delta])
+        .map_err(|e| e.to_string())?;
+    }
+  }
+
+  // Batch insert new ones
+  let mut insert_stmt = db
+    .prepare(
+      "INSERT INTO subtask_learn_log (keyword, subtask_title, project_id, score, source)
+       VALUES (?1, ?2, ?3, ?4, ?5)",
+    )
+    .map_err(|e| e.to_string())?;
+
+  for keyword in &keywords {
+    if !existing_keywords.contains(keyword) {
+      insert_stmt
+        .execute(rusqlite::params![keyword, subtask_title, project_id, delta, src])
+        .map_err(|e| e.to_string())?;
     }
   }
 
