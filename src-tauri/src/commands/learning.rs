@@ -36,11 +36,11 @@ fn expand_keywords_cluster(db: &rusqlite::Connection, keywords: &[String]) -> Ve
                 Err(_) => continue,
             };
         // Escape SQL LIKE wildcards in keyword to prevent accidental matches
-        let escaped = kw.replace(['%', '_'], |c: char| match c {
+        let escaped: String = kw.chars().map(|c| match c {
             '%' => "%".to_string(),
             '_' => "_".to_string(),
             _ => c.to_string(),
-        });
+        }).collect();
         let pattern = format!("%\"{}%", escaped);
         let rows = match stmt.query_map(rusqlite::params![pattern], |row| row.get::<_, String>(0)) {
             Ok(r) => r,
