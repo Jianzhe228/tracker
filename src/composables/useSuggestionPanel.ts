@@ -277,9 +277,7 @@ export function useSuggestionPanel() {
 
     // Copy the list because it mutates during accept
     const items = [...panel.suggestions];
-    for (const item of items) {
-      await acceptSuggestion(taskId, item);
-    }
+    await Promise.all(items.map((item) => acceptSuggestion(taskId, item)));
   }
 
   /**
