@@ -18,33 +18,32 @@ impl AppState {
 
   pub fn db(&self) -> &Mutex<Connection> {
     self.db.get_or_init(|| {
-      Mutex::new(init_db(&self.app_handle))
+      Mutex::new(init_db(&self.app_handle).expect("failed to initialize database"))
     })
   }
 }
 
-fn init_db(app: &AppHandle) -> Connection {
+fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
   let app_dir = app
     .path()
     .app_data_dir()
-    .expect("FATAL: cannot resolve app data dir — is the app manifest correct?");
+    .map_err(|e| format!("cannot resolve app data dir: {}", e))?;
   std::fs::create_dir_all(&app_dir)
-    .expect("FATAL: cannot create app data dir — check filesystem permissions");
+    .map_err(|e| format!("cannot create app data dir: {}", e))?;
 
   let db_path = app_dir.join("tracker.db");
   let conn = Connection::open(&db_path)
-    .unwrap_or_else(|e| panic!("FATAL: cannot open database at {}: {}", db_path.display(), e));
+    .map_err(|e| format!("cannot open database at {}: {}", db_path.display(), e))?;
 
   // Enable WAL mode for better concurrency
-  conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
+  conn.execute_batch("PRAGMA journal_mode=WAL;")?;
   // Enable foreign keys
-  conn
-    .execute_batch("PRAGMA foreign_keys=ON;")
-    .expect("FATAL: cannot enable foreign keys");
+  conn.execute_batch("PRAGMA foreign_keys=ON;")
+    .map_err(|e| format!("cannot enable foreign keys: {}", e))?;
 
-  run_migrations(&conn);
+  run_migrations(&conn)?;
 
-  conn
+  Ok(conn)
 }
 
 const SCHEMA_V2: &str = "
@@ -191,7 +190,7 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
 );
 ";
 
-pub(crate) fn run_migrations(conn: &Connection) {
+pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
   let version: i32 = conn
     .pragma_query_value(None, "user_version", |row| row.get(0))
     .unwrap_or(0);
@@ -208,13 +207,13 @@ pub(crate) fn run_migrations(conn: &Connection) {
           DROP TABLE IF EXISTS settings;
           ",
         )
-        .expect("failed to drop old v1 tables");
+        .map_err(|e| format!("failed to drop old v1 tables: {}", e))?;
     }
 
     // Create all v2 tables
     conn
       .execute_batch(SCHEMA_V2)
-      .expect("failed to run migration v2");
+      .map_err(|e| format!("failed to run migration v2: {}", e))?;
 
     // Insert default project "收集箱" if not exists
     conn
@@ -222,11 +221,11 @@ pub(crate) fn run_migrations(conn: &Connection) {
         "INSERT OR IGNORE INTO projects (id, title, color, icon) VALUES (1, '收集箱', '#6b7280', 'inbox')",
         [],
       )
-      .expect("failed to insert default project");
+      .map_err(|e| format!("failed to insert default project: {}", e))?;
 
     conn
       .execute_batch("PRAGMA user_version = 2;")
-      .expect("failed to set user_version");
+      .map_err(|e| format!("failed to set user_version: {}", e))?;
   }
 
   if version < 3 {
@@ -256,7 +255,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
         PRAGMA user_version = 3;
         ",
       )
-      .expect("failed to run migration v3");
+      .map_err(|e| format!("failed to run migration v3: {}", e))?;
 
     // Add recurring_rule_id column if not exists
     let has_recurring_rule_id: bool = conn
@@ -267,7 +266,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
     if !has_recurring_rule_id {
       conn
         .execute_batch("ALTER TABLE tasks ADD COLUMN recurring_rule_id INTEGER REFERENCES recurring_rules(id) ON DELETE SET NULL;")
-        .expect("failed to add recurring_rule_id column");
+        .map_err(|e| format!("failed to add recurring_rule_id column: {}", e))?;
     }
 
     // Drop legacy columns if they exist
@@ -284,7 +283,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
       if exists {
         conn
           .execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
-          .expect(&format!("failed to drop column {}", col));
+          .map_err(|e| format!("failed to drop column {}: {}", col, e))?;
       }
     }
   }
@@ -304,13 +303,13 @@ pub(crate) fn run_migrations(conn: &Connection) {
       if exists {
         conn
           .execute_batch(&format!("ALTER TABLE tasks DROP COLUMN {};", col))
-          .expect(&format!("failed to drop column {}", col));
+          .map_err(|e| format!("failed to drop column {}: {}", col, e))?;
       }
     }
 
     conn
       .execute_batch("PRAGMA user_version = 4;")
-      .expect("failed to set user_version to 4");
+      .map_err(|e| format!("failed to set user_version to 4: {}", e))?;
   }
 
   if version < 5 {
@@ -324,7 +323,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
         PRAGMA user_version = 5;
         ",
       )
-      .expect("failed to run migration v5");
+      .map_err(|e| format!("failed to run migration v5: {}", e))?;
   }
 
   if version < 6 {
@@ -346,7 +345,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
         PRAGMA user_version = 6;
         ",
       )
-      .expect("failed to run migration v6");
+      .map_err(|e| format!("failed to run migration v6: {}", e))?;
   }
 
   if version < 7 {
@@ -386,7 +385,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
         PRAGMA user_version = 7;
         ",
       )
-      .expect("failed to run migration v7");
+      .map_err(|e| format!("failed to run migration v7: {}", e))?;
 
     // Seed builtin skill: task_decompose
     conn
@@ -399,7 +398,7 @@ pub(crate) fn run_migrations(conn: &Connection) {
            'on_task_create', 1, 1)",
         [],
       )
-      .expect("failed to seed task_decompose skill");
+      .map_err(|e| format!("failed to seed task_decompose skill: {}", e))?;
   }
 
   if version < 8 {
@@ -422,11 +421,11 @@ Existing tasks: {{existingTasks}}',
          WHERE key = 'task_decompose' AND is_builtin = 1",
         [],
       )
-      .expect("failed to update task_decompose prompt");
+      .map_err(|e| format!("failed to update task_decompose prompt: {}", e))?;
 
     conn
       .execute_batch("PRAGMA user_version = 8;")
-      .expect("failed to set user_version to 8");
+      .map_err(|e| format!("failed to set user_version to 8: {}", e))?;
   }
 
   if version < 9 {
@@ -438,7 +437,7 @@ Existing tasks: {{existingTasks}}',
         PRAGMA user_version = 9;
         ",
       )
-      .expect("failed to run migration v9");
+      .map_err(|e| format!("failed to run migration v9: {}", e))?;
   }
 
   if version < 10 {
@@ -489,7 +488,7 @@ Existing tasks: {{existingTasks}}',
         PRAGMA user_version = 10;
         ",
       )
-      .expect("failed to run migration v10");
+      .map_err(|e| format!("failed to run migration v10: {}", e))?;
 
     // v10 prompt replaced by v11 below
   }
@@ -531,7 +530,7 @@ Existing tasks: {{existingTasks}}',
         PRAGMA user_version = 11;
         ",
       )
-      .expect("failed to run migration v11");
+      .map_err(|e| format!("failed to run migration v11: {}", e))?;
 
     // Replace task_decompose prompt with universal version
     conn
@@ -562,7 +561,7 @@ Detail level: {{detailLevel}}
          WHERE key = 'task_decompose' AND is_builtin = 1",
         [],
       )
-      .expect("failed to update task_decompose prompt v11");
+      .map_err(|e| format!("failed to update task_decompose prompt v11: {}", e))?;
   }
 
   if version < 12 {
@@ -598,11 +597,11 @@ Detail level: {{detailLevel}}
          WHERE key = 'task_decompose' AND is_builtin = 1",
         [],
       )
-      .expect("failed to update task_decompose prompt v12");
+      .map_err(|e| format!("failed to update task_decompose prompt v12: {}", e))?;
 
     conn
       .execute_batch("PRAGMA user_version = 12;")
-      .expect("failed to set user_version to 12");
+      .map_err(|e| format!("failed to set user_version to 12: {}", e))?;
   }
 
   if version < 13 {
@@ -620,7 +619,7 @@ Detail level: {{detailLevel}}
         PRAGMA user_version = 13;
         ",
       )
-      .expect("failed to run migration v13");
+      .map_err(|e| format!("failed to run migration v13: {}", e))?;
   }
 
   if version < 14 {
@@ -629,11 +628,11 @@ Detail level: {{detailLevel}}
         "DELETE FROM user_settings WHERE key = 'aiDetailLevel'",
         [],
       )
-      .expect("failed to clean up aiDetailLevel setting");
+      .map_err(|e| format!("failed to clean up aiDetailLevel setting: {}", e))?;
 
     conn
       .execute_batch("PRAGMA user_version = 14;")
-      .expect("failed to set user_version to 14");
+      .map_err(|e| format!("failed to set user_version to 14: {}", e))?;
   }
 
   if version < 15 {
@@ -645,6 +644,8 @@ Detail level: {{detailLevel}}
         PRAGMA user_version = 15;
         ",
       )
-      .expect("failed to run migration v15");
+      .map_err(|e| format!("failed to run migration v15: {}", e))?;
   }
+
+  Ok(())
 }
