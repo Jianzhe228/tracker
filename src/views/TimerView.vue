@@ -119,7 +119,7 @@ const statusLabel = computed(() => {
             </div>
             <div class="flex items-center gap-2 text-xs text-slate-500">
               <span class="h-2 w-2 rounded-full bg-emerald-400" />
-              <span>今日番茄 {{ timerStore.completedPomodoros }}</span>
+              <span>今日番茄 {{ timerStore.completedPomodoros.toFixed(1) }}</span>
             </div>
           </div>
 
@@ -298,7 +298,7 @@ const statusLabel = computed(() => {
               <span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">番茄</span>
             </div>
             <div class="mt-3 text-3xl font-semibold text-slate-900">
-              {{ timerStore.completedPomodoros }}
+              {{ timerStore.completedPomodoros.toFixed(1) }}
               <span class="text-base font-medium text-slate-500">个</span>
             </div>
             <div class="mt-2 h-2 rounded-full bg-slate-100">
