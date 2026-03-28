@@ -149,10 +149,10 @@ export const useTimerStore = defineStore('timer', () => {
   const progress = computed(() => {
     if (timerKind.value === 'countdown') {
       if (totalSeconds.value <= 0) return 0;
-      return ((totalSeconds.value - remainingSeconds.value) / totalSeconds.value) * 100;
+      return Math.round(((totalSeconds.value - remainingSeconds.value) / totalSeconds.value) * 1000) / 10;
     }
     const baseline = Math.max(60, totalSeconds.value);
-    return Math.min(100, (elapsedSeconds.value / baseline) * 100);
+    return Math.round(Math.min(100, (elapsedSeconds.value / baseline) * 1000) / 10);
   });
 
   const modeLabel = computed(() => {
