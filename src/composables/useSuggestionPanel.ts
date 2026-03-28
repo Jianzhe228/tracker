@@ -277,7 +277,10 @@ export function useSuggestionPanel() {
 
     // Copy the list because it mutates during accept
     const items = [...panel.suggestions];
-    await Promise.all(items.map((item) => acceptSuggestion(taskId, item)));
+    // 顺序执行，避免并行导致的竞态条件
+    for (const item of items) {
+      await acceptSuggestion(taskId, item);
+    }
   }
 
   /**
