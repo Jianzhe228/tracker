@@ -56,6 +56,17 @@ onUnmounted(() => {
 // --- Overview metric cards ---
 const overview = computed(() => statisticsStore.overview);
 
+// 今日专注总时长（含当前正在进行的 session）
+const currentSessionFocusSeconds = computed(() => {
+  if (timerStore.mode !== 'focus' || timerStore.idle) return 0;
+  return timerStore.timerKind === 'countdown'
+    ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
+    : Math.max(0, timerStore.elapsedSeconds);
+});
+const todayFocusSecondsIncludingCurrentSession = computed(
+  () => (overview.value?.today.focusSeconds ?? 0) + timerStore.focusSecondsToday + currentSessionFocusSeconds.value,
+);
+
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
@@ -486,8 +497,8 @@ onMounted(() => {
           <div class="min-w-0">
             <p class="text-xs text-slate-500">今日专注</p>
             <p class="text-xl font-bold tabular-nums text-slate-800">
-              {{ formatDuration(overview?.today.focusSeconds ?? 0) }}
-              <span v-if="!overview?.today.focusSeconds || overview.today.focusSeconds < 3600" class="text-xs font-normal text-slate-400">分钟</span>
+              {{ formatDuration(todayFocusSecondsIncludingCurrentSession) }}
+              <span v-if="todayFocusSecondsIncludingCurrentSession < 3600" class="text-xs font-normal text-slate-400">分钟</span>
             </p>
           </div>
         </div>
