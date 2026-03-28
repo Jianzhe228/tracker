@@ -56,13 +56,31 @@ onUnmounted(() => {
 // --- Overview metric cards ---
 const overview = computed(() => statisticsStore.overview);
 
-// 今日专注总时长（含当前正在进行的 session）
-const currentSessionFocusSeconds = computed(() => {
-  if (timerStore.mode !== 'focus' || timerStore.idle) return 0;
-  return timerStore.timerKind === 'countdown'
-    ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
-    : Math.max(0, timerStore.elapsedSeconds);
+// 今日专注总时长（含当前正在进行的 session，每分钟更新一次）
+const currentSessionFocusSeconds = ref(0);
+let currentSessionInterval: ReturnType<typeof setInterval> | null = null;
+
+function updateCurrentSessionFocusSeconds() {
+  if (timerStore.mode !== 'focus' || timerStore.idle) {
+    currentSessionFocusSeconds.value = 0;
+  } else {
+    currentSessionFocusSeconds.value = timerStore.timerKind === 'countdown'
+      ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
+      : Math.max(0, timerStore.elapsedSeconds);
+  }
+}
+
+onMounted(() => {
+  updateCurrentSessionFocusSeconds();
+  currentSessionInterval = setInterval(updateCurrentSessionFocusSeconds, 60_000);
 });
+
+onUnmounted(() => {
+  if (currentSessionInterval !== null) {
+    clearInterval(currentSessionInterval);
+  }
+});
+
 const todayFocusSecondsIncludingCurrentSession = computed(
   () => (overview.value?.today.focusSeconds ?? 0) + timerStore.focusSecondsToday + currentSessionFocusSeconds.value,
 );
