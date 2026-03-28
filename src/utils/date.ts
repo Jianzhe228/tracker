@@ -1,3 +1,11 @@
+/** Format total minutes as "X小时Y分钟" or "Y分钟" if less than 1 hour. */
+export function formatMinutes(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = Math.round(totalMinutes % 60);
+  if (h > 0) return `${h}小时${m > 0 ? m + '分钟' : ''}`;
+  return `${m}分钟`;
+}
+
 /** Format a Date as YYYY-MM-DD (local timezone). */
 export function toDateKey(date: Date): string {
   const year = date.getFullYear();

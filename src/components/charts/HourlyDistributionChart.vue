@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { VChart } from '../../composables/useECharts';
 import type { HourlyBucket } from '../../types/domain';
+import { formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   data: HourlyBucket[];
@@ -22,7 +23,7 @@ const option = computed(() => ({
     trigger: 'axis',
     formatter: (params: { name: string; value: number }[]) => {
       const p = params[0];
-      return `${p.name}:00<br/>专注 ${Math.round(p.value)} 分钟`;
+      return `${p.name}:00<br/>专注 ${formatMinutes(Math.round(p.value))}`;
     },
   },
   grid: {

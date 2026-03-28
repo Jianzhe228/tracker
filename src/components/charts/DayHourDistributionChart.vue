@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { VChart } from '../../composables/useECharts';
 import type { DayHourDistributionEntry } from '../../types/domain';
-import { toDateKey } from '../../utils/date';
+import { toDateKey, formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   data: DayHourDistributionEntry[];
@@ -102,7 +102,7 @@ const option = computed(() => ({
       if (!d || d[2] === 0) return '';
       const dateKey = dayKeys.value[d[1]];
       const label = formatDayLabel(dateKey, d[1]);
-      return `<b>${label} ${d[0]}:00–${d[0] + 1}:00</b><br/>专注 ${d[2]} 分钟 · ${d[3]} 次 · ${d[4]} 番茄`;
+      return `<b>${label} ${d[0]}:00–${d[0] + 1}:00</b><br/>专注 ${formatMinutes(d[2])} · ${d[3]} 次 · ${d[4]} 番茄`;
     },
   },
   grid: {
