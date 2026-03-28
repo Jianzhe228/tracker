@@ -504,7 +504,7 @@ onMounted(() => {
           <div class="min-w-0">
             <p class="text-xs text-slate-500">今日番茄</p>
             <p class="text-xl font-bold tabular-nums text-slate-800">
-              {{ (overview?.today.pomodoros ?? 0) + timerStore.completedPomodoros }}
+              {{ ((overview?.today.pomodoros ?? 0) + timerStore.completedPomodoros).toFixed(1) }}
               <span class="text-xs font-normal text-slate-400">个</span>
             </p>
           </div>
