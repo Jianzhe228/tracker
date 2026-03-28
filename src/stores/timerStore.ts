@@ -136,13 +136,14 @@ export const useTimerStore = defineStore('timer', () => {
   const displaySeconds = computed(() => (timerKind.value === 'countup' ? elapsedSeconds.value : remainingSeconds.value));
 
   const display = computed(() => {
-    const min = Math.floor(displaySeconds.value / 60)
-      .toString()
-      .padStart(2, '0');
-    const sec = Math.max(0, displaySeconds.value % 60)
-      .toString()
-      .padStart(2, '0');
-    return `${min}:${sec}`;
+    const totalSecs = displaySeconds.value;
+    const hours = Math.floor(totalSecs / 3600);
+    const min = Math.floor((totalSecs % 3600) / 60);
+    const sec = Math.max(0, totalSecs % 60);
+    if (hours > 0) {
+      return `${hours}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
+    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   });
 
   const progress = computed(() => {
