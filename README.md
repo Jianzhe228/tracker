@@ -2,16 +2,8 @@
 
 基于 **Tauri 2 + Vue 3 + TypeScript** 的桌面效率应用初始化骨架。
 
-## 当前状态
 
-已完成：
-
-- 前端基础工程（Vite + Vue Router + Pinia + Tailwind）
-- `src-tauri` 基础工程（Tauri v2 配置 + Rust 命令入口）
-- 基础页面：仪表盘、任务、~~习惯~~、设置（习惯模块暂缓）
-- 前后端命令边界示例：`health_check` / `app_version`
-
-## 本地初始化命令（你执行）
+## 初始化
 
 ### 1) 安装 Rust 工具链
 
@@ -20,7 +12,7 @@ curl https://sh.rustup.rs -sSf | sh
 source "$HOME/.cargo/env"
 ```
 
-### 2) 安装 Linux 桌面依赖（Ubuntu/Debian）
+### 2) 安装依赖
 
 ```bash
 pkexec apt update
