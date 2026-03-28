@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { VChart } from '../../composables/useECharts';
 import type { ProjectTimeStat } from '../../types/domain';
+import { formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   data: ProjectTimeStat[];
@@ -16,7 +17,7 @@ const option = computed(() => {
     tooltip: {
       trigger: 'item',
       formatter: (params: { name: string; value: number; percent: number }) =>
-        `${params.name}<br/>${Math.round(params.value)} 分钟 (${params.percent}%)`,
+        `${params.name}<br/>${formatMinutes(Math.round(params.value))} (${params.percent}%)`,
     },
     legend: {
       orient: 'vertical' as const,

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { VChart } from '../../composables/useECharts';
 import type { FocusSession } from '../../types/domain';
+import { formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   sessions: FocusSession[];
@@ -38,7 +39,7 @@ const option = computed(() => {
         const [, startH, , dur] = params.value;
         const h = Math.floor(startH);
         const m = Math.round((startH - h) * 60);
-        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}<br/>专注 ${Math.round(dur / 60)} 分钟`;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}<br/>专注 ${formatMinutes(Math.round(dur / 60))}`;
       },
     },
     grid: {
