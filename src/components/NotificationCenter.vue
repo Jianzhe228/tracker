@@ -110,6 +110,11 @@ function getActionLabel(type: string): string {
   }
 }
 
+function getJobTargetTitle(job: { inputContext: Record<string, unknown> }): string {
+  const title = job.inputContext.taskTitle;
+  return typeof title === 'string' ? title : '';
+}
+
 function handleClickOutside(event: MouseEvent): void {
   if (panelRef.value && !panelRef.value.contains(event.target as Node)) {
     open.value = false;
@@ -183,7 +188,12 @@ onUnmounted(() => {
             class="border-b border-slate-100 px-4 py-3"
           >
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-violet-600">{{ getSkillName(job.skillId) }}</span>
+              <div class="min-w-0">
+                <span class="text-xs font-semibold text-violet-600">{{ getSkillName(job.skillId) }}</span>
+                <p v-if="getJobTargetTitle(job)" class="mt-0.5 truncate text-[11px] text-slate-400">
+                  目标任务：{{ getJobTargetTitle(job) }}
+                </p>
+              </div>
               <div class="flex gap-1.5">
                 <button
                   class="rounded bg-violet-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-violet-700"

@@ -9,34 +9,12 @@ import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../ser
 import { enqueue } from '../services/ai/queue';
 import { feedbackRecord } from '../services/commands/learning';
 import { updateAiJob } from '../services/commands/ai';
+import { isSemanticDuplicateTitle } from '../services/ai/subtaskDedup';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { useTaskStore } from '../stores/taskStore';
 import { useSettingsStore } from '../stores/settingsStore';
 
 export type SuggestionSource = 'pattern' | 'learning' | 'ai';
-
-/**
- * Normalize a suggestion title for semantic deduplication.
- * Strips common action prefixes like "带", "准备", "购买", etc.
- * so that "带衣服" and "衣服" are treated as duplicates.
- */
-/**
- * Normalize a suggestion title for semantic deduplication.
- * Checks if titles are substrings of each other (e.g., "衣服" ⊆ "带衣服").
- * Returns the shorter title if they're substrings, otherwise empty.
- */
-function normalizeForDedup(title: string): string {
-  return title.toLowerCase().trim();
-}
-
-/**
- * Check if two titles are semantically duplicate (one is substring of other).
- */
-function isSemanticDuplicate(a: string, b: string): boolean {
-  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
-  if (shorter.length < 2) return false;
-  return longer.includes(shorter);
-}
 
 export interface SidebarSuggestion {
   title: string;
@@ -146,7 +124,7 @@ export function useSuggestionPanel() {
                   if (existingTitles.has(title)) continue;
                   // Skip if semantically duplicate (e.g., "衣服" in "带衣服")
                   const isDup = [...existingTitles].some(
-                    (existing) => isSemanticDuplicate(normalizeForDedup(existing), normalizeForDedup(title))
+                    (existing) => isSemanticDuplicateTitle(existing, title)
                   );
                   if (!isDup) {
                     state.suggestions.push({

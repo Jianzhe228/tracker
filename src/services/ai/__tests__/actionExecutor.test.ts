@@ -99,6 +99,30 @@ describe('executeAction', () => {
         dueAt: null,
       });
     });
+
+    it('does not create an exact duplicate subtask under the same parent', async () => {
+      const store = makeMockStore([
+        { id: 10, title: 'Parent', parentId: null, projectId: 5, dueAt: '2026-04-01' },
+        { id: 11, title: 'Write tests', parentId: 10, projectId: 5, dueAt: '2026-04-01' },
+      ]);
+      const action = makeAction('create_subtask', { title: 'Write tests' });
+
+      await executeAction(action, { taskId: 10 }, store);
+
+      expect(store.addTask).not.toHaveBeenCalled();
+    });
+
+    it('does not create a semantic duplicate subtask under the same parent', async () => {
+      const store = makeMockStore([
+        { id: 10, title: '备考六级', parentId: null, projectId: 1, dueAt: null },
+        { id: 11, title: '复习昨天的词汇', parentId: 10, projectId: 1, dueAt: null },
+      ]);
+      const action = makeAction('create_subtask', { title: '复习昨天词汇' });
+
+      await executeAction(action, { taskId: 10 }, store);
+
+      expect(store.addTask).not.toHaveBeenCalled();
+    });
   });
 
   describe('create_task', () => {

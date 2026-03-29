@@ -3,10 +3,11 @@
  * Accepts a TaskStore-like interface to avoid direct store dependency.
  */
 import type { AiAction } from './types';
+import { isSemanticDuplicateTitle } from './subtaskDedup';
 import { createNotification } from '../commands/notification';
 
 export interface ActionExecutorTaskStore {
-  tasks: Array<{ id: number; projectId: number | null; dueAt: string | null }>;
+  tasks: Array<{ id: number; title: string; parentId: number | null; projectId: number | null; dueAt: string | null }>;
   addTask: (title: string, opts: { parentId?: number | null; projectId?: number | null; dueAt?: string | null }) => Promise<unknown>;
   updateTask: (id: number, data: Record<string, unknown>) => Promise<void>;
 }
@@ -16,11 +17,19 @@ type ActionHandler = (action: AiAction, context: Record<string, unknown>, taskSt
 const handlers: Record<string, ActionHandler> = {
   async create_subtask(action, context, taskStore) {
     const parentId = context.taskId as number | undefined;
+    const title = String(action.params.title ?? '');
     const parentTask = parentId
       ? taskStore.tasks.find((t) => t.id === parentId)
       : undefined;
 
-    await taskStore.addTask(String(action.params.title ?? ''), {
+    if (parentId) {
+      const hasDuplicate = taskStore.tasks.some((task) =>
+        task.parentId === parentId && isSemanticDuplicateTitle(task.title, title)
+      );
+      if (hasDuplicate) return;
+    }
+
+    await taskStore.addTask(title, {
       parentId: parentId ?? null,
       projectId: parentTask?.projectId ?? null,
       dueAt: parentTask?.dueAt ?? null,

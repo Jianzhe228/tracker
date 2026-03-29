@@ -8,6 +8,7 @@ import { executeAction } from '../services/ai/actionExecutor';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { feedbackRecord } from '../services/commands/learning';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
+import { partitionPendingJobs, rejectPendingActions } from './aiPendingJobs';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -31,7 +32,17 @@ export const useAiStore = defineStore('ai', () => {
   async function loadPendingJobs(): Promise<void> {
     if (!isTauri) return;
     try {
-      pendingJobs.value = await listPendingActionJobs();
+      const jobs = await listPendingActionJobs();
+      const { visibleJobs, supersededJobs } = partitionPendingJobs(jobs);
+      pendingJobs.value = visibleJobs;
+
+      for (const job of supersededJobs) {
+        const actions = rejectPendingActions(job.actions);
+        if (!actions) continue;
+        updateAiJob(job.id, { actions }).catch((e) => {
+          console.warn('[ai-store] failed to dismiss superseded job', e);
+        });
+      }
     } catch (e) {
       console.error('[ai-store] failed to load pending jobs', e);
     }
