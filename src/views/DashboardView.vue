@@ -4,6 +4,11 @@ import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useStatisticsStore } from '../stores/statisticsStore';
 import type { HeatmapEntry } from '../types/domain';
+import {
+  getDisplayedTodayFocusSeconds,
+  getDisplayedTodayPomodoros,
+  type DashboardTimerState,
+} from '../utils/dashboardMetrics';
 import { toDateKey } from '../utils/date';
 
 // Lazy-load heavy ECharts components — only create instances when needed
@@ -56,33 +61,21 @@ onUnmounted(() => {
 // --- Overview metric cards ---
 const overview = computed(() => statisticsStore.overview);
 
-// 今日专注总时长（含当前正在进行的 session，每分钟更新一次）
-const currentSessionFocusSeconds = ref(0);
-let currentSessionInterval: ReturnType<typeof setInterval> | null = null;
+const dashboardTimerState = computed<DashboardTimerState>(() => ({
+  status: timerStore.status,
+  mode: timerStore.mode,
+  timerKind: timerStore.timerKind,
+  totalSeconds: timerStore.totalSeconds,
+  remainingSeconds: timerStore.remainingSeconds,
+  elapsedSeconds: timerStore.elapsedSeconds,
+}));
 
-function updateCurrentSessionFocusSeconds() {
-  if (timerStore.mode !== 'focus' || timerStore.idle) {
-    currentSessionFocusSeconds.value = 0;
-  } else {
-    currentSessionFocusSeconds.value = timerStore.timerKind === 'countdown'
-      ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
-      : Math.max(0, timerStore.elapsedSeconds);
-  }
-}
+const todayFocusSecondsIncludingCurrentSession = computed(() =>
+  getDisplayedTodayFocusSeconds(overview.value?.today.focusSeconds ?? 0, dashboardTimerState.value)
+);
 
-onMounted(() => {
-  updateCurrentSessionFocusSeconds();
-  currentSessionInterval = setInterval(updateCurrentSessionFocusSeconds, 60_000);
-});
-
-onUnmounted(() => {
-  if (currentSessionInterval !== null) {
-    clearInterval(currentSessionInterval);
-  }
-});
-
-const todayFocusSecondsIncludingCurrentSession = computed(
-  () => (overview.value?.today.focusSeconds ?? 0) + timerStore.focusSecondsToday + currentSessionFocusSeconds.value,
+const todayPomodorosIncludingCurrentSession = computed(() =>
+  getDisplayedTodayPomodoros(overview.value?.today.pomodoros ?? 0, dashboardTimerState.value)
 );
 
 function formatDuration(seconds: number): string {
@@ -90,6 +83,10 @@ function formatDuration(seconds: number): string {
   const m = Math.round((seconds % 3600) / 60);
   if (h > 0) return `${h}h${m > 0 ? m + 'm' : ''}`;
   return `${m}`;
+}
+
+function formatPomodoros(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 // --- Heatmap ---
@@ -533,7 +530,7 @@ onMounted(() => {
           <div class="min-w-0">
             <p class="text-xs text-slate-500">今日番茄</p>
             <p class="text-xl font-bold tabular-nums text-slate-800">
-              {{ ((overview?.today.pomodoros ?? 0) + timerStore.completedPomodoros).toFixed(1) }}
+              {{ formatPomodoros(todayPomodorosIncludingCurrentSession) }}
               <span class="text-xs font-normal text-slate-400">个</span>
             </p>
           </div>
@@ -571,7 +568,7 @@ onMounted(() => {
               <span v-if="!overview?.week.focusSeconds || overview.week.focusSeconds < 3600" class="text-xs font-normal text-slate-400">分钟</span>
             </p>
             <p class="text-[11px] tabular-nums text-slate-400">
-              {{ overview?.week.pomodoros ?? 0 }} 番茄 · {{ overview?.week.tasksCompleted ?? 0 }} 任务
+              {{ formatPomodoros(overview?.week.pomodoros ?? 0) }} 番茄 · {{ overview?.week.tasksCompleted ?? 0 }} 任务
             </p>
           </div>
         </div>
@@ -610,7 +607,7 @@ onMounted(() => {
             任务 {{ selectedHeatmapCell?.taskCount || 0 }}
           </span>
           <span class="rounded-full bg-white px-2 py-0.5 text-slate-600">
-            番茄 {{ selectedHeatmapCell?.pomodoroCount || 0 }}
+            番茄 {{ formatPomodoros(selectedHeatmapCell?.pomodoroCount || 0) }}
           </span>
           <span v-if="selectedHeatmapCell?.count" class="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700">
             活跃强度 {{ selectedHeatmapCell.count }}
@@ -662,7 +659,7 @@ onMounted(() => {
                   <div class="mt-1 text-slate-300">
                     专注 {{ Math.round(hoveredCell.focusSeconds / 60) }} 分钟
                     · 任务 {{ hoveredCell.taskCount }}
-                    · 番茄 {{ hoveredCell.pomodoroCount }}
+                    · 番茄 {{ formatPomodoros(hoveredCell.pomodoroCount) }}
                   </div>
                 </div>
               </div>

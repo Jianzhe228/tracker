@@ -9,7 +9,7 @@ use crate::db::AppState;
 #[serde(rename_all = "camelCase")]
 pub struct PeriodStats {
     pub focus_seconds: i64,
-    pub pomodoros: i64,
+    pub pomodoros: f64,
     pub tasks_completed: i64,
 }
 
@@ -27,7 +27,7 @@ pub struct HeatmapEntry {
     pub date: String,
     pub focus_seconds: i64,
     pub task_count: i64,
-    pub pomodoro_count: i64,
+    pub pomodoro_count: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,7 +37,7 @@ pub struct DayHourDistributionEntry {
     pub hour: i64,
     pub total_seconds: i64,
     pub session_count: i64,
-    pub pomodoro_count: i64,
+    pub pomodoro_count: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -63,9 +63,9 @@ pub struct EstimationComparison {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn query_focus_stats(db: &rusqlite::Connection, date_filter: &str) -> Result<(i64, i64), String> {
+fn query_focus_stats(db: &rusqlite::Connection, date_filter: &str) -> Result<(i64, f64), String> {
     let sql = format!(
-        "SELECT COALESCE(SUM(duration_seconds), 0), COALESCE(SUM(pomodoro_count), 0)
+        "SELECT COALESCE(SUM(duration_seconds), 0), COALESCE(SUM(pomodoro_count), 0.0)
      FROM focus_sessions
      WHERE type = 'focus' AND status IN ('completed', 'stopped')
      {}",
@@ -141,7 +141,7 @@ pub fn stats_heatmap(state: State<'_, AppState>, year: i64) -> Result<Vec<Heatma
         .prepare(
             "SELECT date(start_time, 'localtime') as d,
               COALESCE(SUM(duration_seconds), 0),
-              COALESCE(SUM(pomodoro_count), 0)
+              COALESCE(SUM(pomodoro_count), 0.0)
        FROM focus_sessions
        WHERE type = 'focus'
          AND status IN ('completed', 'stopped')
@@ -150,21 +150,21 @@ pub fn stats_heatmap(state: State<'_, AppState>, year: i64) -> Result<Vec<Heatma
         )
         .map_err(|e| e.to_string())?;
 
-    let mut map = std::collections::HashMap::<String, (i64, i64, i64)>::new();
+    let mut map = std::collections::HashMap::<String, (i64, i64, f64)>::new();
 
     let rows = stmt
         .query_map(rusqlite::params![year_start, year_end], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
+                row.get::<_, f64>(2)?,
             ))
         })
         .map_err(|e| e.to_string())?;
 
     for row in rows {
         let (date, focus_secs, pom_count) = row.map_err(|e| e.to_string())?;
-        let entry = map.entry(date).or_insert((0, 0, 0));
+        let entry = map.entry(date).or_insert((0, 0, 0.0));
         entry.0 += focus_secs;
         entry.2 += pom_count;
     }
@@ -188,7 +188,7 @@ pub fn stats_heatmap(state: State<'_, AppState>, year: i64) -> Result<Vec<Heatma
 
     for row in rows2 {
         let (date, task_count) = row.map_err(|e| e.to_string())?;
-        let entry = map.entry(date).or_insert((0, 0, 0));
+        let entry = map.entry(date).or_insert((0, 0, 0.0));
         entry.1 += task_count;
     }
 
@@ -224,7 +224,7 @@ pub fn stats_day_hour_distribution(
               CAST(strftime('%H', start_time, 'localtime') AS INTEGER) as hour,
               COALESCE(SUM(duration_seconds), 0),
               COUNT(*),
-              COALESCE(SUM(pomodoro_count), 0)
+              COALESCE(SUM(pomodoro_count), 0.0)
        FROM focus_sessions
        WHERE type = 'focus'
          AND status IN ('completed', 'stopped')
@@ -371,7 +371,7 @@ pub struct WeeklyFocusStat {
     pub week_start: String,
     pub total_seconds: i64,
     pub session_count: i64,
-    pub pomodoro_count: i64,
+    pub pomodoro_count: f64,
 }
 
 #[tauri::command]
@@ -383,7 +383,7 @@ pub fn stats_weekly_focus(state: State<'_, AppState>) -> Result<Vec<WeeklyFocusS
       "SELECT strftime('%Y-%m-%d', date(start_time, 'localtime', 'weekday 0', '-6 days')) as week_start,
               SUM(duration_seconds) as total_seconds,
               COUNT(*) as session_count,
-              SUM(pomodoro_count) as pomodoro_count
+              COALESCE(SUM(pomodoro_count), 0.0) as pomodoro_count
        FROM focus_sessions
        WHERE type = 'focus' AND status IN ('completed', 'stopped')
          AND date(start_time, 'localtime') >= date('now', 'localtime', '-83 days')

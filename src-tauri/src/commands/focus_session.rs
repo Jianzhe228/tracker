@@ -23,7 +23,7 @@ pub struct FocusSessionCreatePayload {
     pub session_type: String,
     pub status: String,
     pub interruption_reason: Option<String>,
-    pub pomodoro_count: Option<i64>,
+    pub pomodoro_count: Option<f64>,
     pub segments: Option<Vec<SegmentPayload>>,
 }
 
@@ -39,7 +39,7 @@ pub struct FocusSessionRow {
     pub session_type: String,
     pub status: String,
     pub interruption_reason: Option<String>,
-    pub pomodoro_count: i64,
+    pub pomodoro_count: f64,
     pub created_at: String,
 }
 
@@ -47,7 +47,7 @@ pub struct FocusSessionRow {
 #[serde(rename_all = "camelCase")]
 pub struct FocusSessionStats {
     pub total_focus_seconds: i64,
-    pub total_pomodoros: i64,
+    pub total_pomodoros: f64,
     pub session_count: i64,
     pub hourly_distribution: Vec<HourlyBucket>,
     pub daily_totals: Vec<DailyTotal>,
@@ -66,7 +66,7 @@ pub struct HourlyBucket {
 pub struct DailyTotal {
     pub date: String,
     pub total_seconds: i64,
-    pub pomodoro_count: i64,
+    pub pomodoro_count: f64,
     pub session_count: i64,
 }
 
@@ -99,7 +99,7 @@ pub fn focus_session_create(
       payload.session_type,
       payload.status,
       payload.interruption_reason,
-      payload.pomodoro_count.unwrap_or(1),
+      payload.pomodoro_count.unwrap_or(1.0),
     ],
   )
   .map_err(|e| e.to_string())?;
@@ -137,7 +137,7 @@ pub fn focus_session_create(
         session_type: payload.session_type,
         status: payload.status,
         interruption_reason: payload.interruption_reason,
-        pomodoro_count: payload.pomodoro_count.unwrap_or(1),
+        pomodoro_count: payload.pomodoro_count.unwrap_or(1.0),
         created_at,
     })
 }
@@ -206,10 +206,10 @@ pub fn focus_session_stats(
 ) -> Result<FocusSessionStats, String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
 
-    let (total_focus_seconds, total_pomodoros, session_count): (i64, i64, i64) = db
+    let (total_focus_seconds, total_pomodoros, session_count): (i64, f64, i64) = db
         .query_row(
             "SELECT COALESCE(SUM(duration_seconds), 0),
-              COALESCE(SUM(pomodoro_count), 0),
+              COALESCE(SUM(pomodoro_count), 0.0),
               COUNT(*)
        FROM focus_sessions
        WHERE type = 'focus'
@@ -268,7 +268,7 @@ pub fn focus_session_stats(
         .prepare(
             "SELECT date(start_time, 'localtime') AS day,
               COALESCE(SUM(duration_seconds), 0),
-              COALESCE(SUM(pomodoro_count), 0),
+              COALESCE(SUM(pomodoro_count), 0.0),
               COUNT(*)
        FROM focus_sessions
        WHERE type = 'focus'
@@ -347,4 +347,35 @@ pub fn focus_session_project_distribution(
         results.push(row.map_err(|e| e.to_string())?);
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FocusSessionCreatePayload;
+    use serde_json::json;
+
+    #[test]
+    fn accepts_fractional_pomodoro_count() {
+        let result = serde_json::from_value::<FocusSessionCreatePayload>(json!({
+            "taskId": 1,
+            "startTime": "2026-03-29T10:00:00Z",
+            "endTime": "2026-03-29T10:06:00Z",
+            "durationSeconds": 360,
+            "type": "focus",
+            "status": "stopped",
+            "pomodoroCount": 0.2,
+            "segments": [{
+                "taskId": 1,
+                "startTime": "2026-03-29T10:00:00Z",
+                "durationSeconds": 360,
+                "sortOrder": 0
+            }]
+        }));
+
+        assert!(
+            result.is_ok(),
+            "fractional pomodoro counts should deserialize successfully: {:?}",
+            result
+        );
+    }
 }

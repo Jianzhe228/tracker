@@ -187,7 +187,7 @@ pub(crate) fn generate_export_json_from_db(db: &rusqlite::Connection) -> Result<
               "type": row.get::<_, String>(5)?,
               "status": row.get::<_, String>(6)?,
               "interruptionReason": row.get::<_, Option<String>>(7)?,
-              "pomodoroCount": row.get::<_, i64>(8)?,
+              "pomodoroCount": row.get::<_, f64>(8)?,
               "createdAt": row.get::<_, String>(9)?,
             }))
         })
@@ -436,7 +436,7 @@ pub(crate) fn import_json_data_to_db(
           s["type"].as_str().unwrap_or(""),
           s["status"].as_str().unwrap_or(""),
           s["interruptionReason"].as_str(),
-          s["pomodoroCount"].as_i64().unwrap_or(0),
+          s["pomodoroCount"].as_f64().unwrap_or(0.0),
           s["createdAt"].as_str().unwrap_or(""),
         ],
       )
