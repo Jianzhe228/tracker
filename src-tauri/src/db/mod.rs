@@ -680,5 +680,25 @@ Detail level: {{detailLevel}}
             .map_err(|e| format!("failed to set user_version to 17: {}", e))?;
     }
 
+    if version < 18 {
+        conn.execute_batch(
+            "
+        ALTER TABLE pending_predictions ADD COLUMN project_id INTEGER;
+        ALTER TABLE pending_predictions ADD COLUMN title_key TEXT;
+        ALTER TABLE pending_predictions ADD COLUMN score REAL;
+        ALTER TABLE pending_predictions ADD COLUMN score_breakdown TEXT;
+        ALTER TABLE pending_predictions ADD COLUMN algorithm_version TEXT;
+
+        CREATE INDEX IF NOT EXISTS idx_pending_predictions_algorithm_version
+          ON pending_predictions(algorithm_version, created_at);
+        CREATE INDEX IF NOT EXISTS idx_pending_predictions_title_key
+          ON pending_predictions(title_key, project_id, status);
+
+        PRAGMA user_version = 18;
+        ",
+        )
+        .map_err(|e| format!("failed to run migration v18: {}", e))?;
+    }
+
     Ok(())
 }

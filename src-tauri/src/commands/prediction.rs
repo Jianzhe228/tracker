@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::AppState;
+use crate::services::prediction_engine::{
+    derive_time_fields, refresh_predictions as refresh_predictions_internal,
+};
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -30,6 +33,11 @@ pub struct PendingPredictionRow {
     pub status: String,
     pub ai_context: Option<String>,
     pub source_job_id: Option<i64>,
+    pub project_id: Option<i64>,
+    pub title_key: Option<String>,
+    pub score: Option<f64>,
+    pub score_breakdown: Option<String>,
+    pub algorithm_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,40 +65,15 @@ pub struct PredictionAnalysisContext {
 use chrono::Datelike;
 
 fn get_dow(created_at: &str) -> Option<String> {
-    let parts: Vec<&str> = created_at.splitn(2, ' ').collect();
-    let date_part = parts.get(0).or(parts.first())?;
-    chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d")
-        .ok()
-        .map(|d| {
-            match d.weekday().num_days_from_monday() {
-                0 => "周一",
-                1 => "周二",
-                2 => "周三",
-                3 => "周四",
-                4 => "周五",
-                5 => "周六",
-                6 => "周日",
-                _ => "未知",
-            }.to_string()
-        })
+    derive_time_fields(created_at).0
 }
 
 fn get_hour(created_at: &str) -> Option<i32> {
-    let parts: Vec<&str> = created_at.splitn(2, ' ').collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let time_part = parts.get(1)?;
-    let hour_parts: Vec<&str> = time_part.split(':').collect();
-    hour_parts.first()?.parse().ok()
+    derive_time_fields(created_at).1
 }
 
 fn get_day_of_month(created_at: &str) -> Option<i32> {
-    let parts: Vec<&str> = created_at.splitn(2, ' ').collect();
-    let date_part = parts.get(0).or(parts.first())?;
-    chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d")
-        .ok()
-        .map(|d| d.day() as i32)
+    derive_time_fields(created_at).2
 }
 
 // ── Commands: Task Creation History ─────────────────────────────────
@@ -188,7 +171,8 @@ pub fn get_prediction_analysis_context(
         5 => "周六",
         6 => "周日",
         _ => "未知",
-    }.to_string();
+    }
+    .to_string();
 
     let count = history.len() as i32;
     let days_val = days.unwrap_or(14);
@@ -242,9 +226,22 @@ pub fn save_predictions(
     let mut ids = Vec::new();
     for pred in predictions {
         db.execute(
-            "INSERT INTO pending_predictions (title, reason, predicted_for_date, created_at, status, ai_context, source_job_id)
-             VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, 'pending', ?4, ?5)",
-            rusqlite::params![pred.title, pred.reason, today, ai_context, source_job_id],
+            "INSERT INTO pending_predictions (
+                title, reason, predicted_for_date, created_at, status, ai_context, source_job_id,
+                project_id, title_key, score, score_breakdown, algorithm_version
+             ) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, 'pending', ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                pred.title,
+                pred.reason,
+                today,
+                ai_context,
+                source_job_id,
+                pred.project_id,
+                pred.title_key,
+                pred.score,
+                pred.score_breakdown,
+                pred.algorithm_version,
+            ],
         )
         .map_err(|e| e.to_string())?;
         ids.push(db.last_insert_rowid());
@@ -258,6 +255,18 @@ pub fn save_predictions(
 pub struct PredictionSavePayload {
     pub title: String,
     pub reason: Option<String>,
+    pub project_id: Option<i64>,
+    pub title_key: Option<String>,
+    pub score: Option<f64>,
+    pub score_breakdown: Option<String>,
+    pub algorithm_version: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictionRefreshResult {
+    pub created_count: i64,
+    pub skipped: bool,
 }
 
 #[tauri::command]
@@ -270,10 +279,11 @@ pub fn get_pending_predictions(
 
     let mut stmt = db
         .prepare(
-            "SELECT id, title, reason, predicted_for_date, created_at, notified_at, status, ai_context, source_job_id
+            "SELECT id, title, reason, predicted_for_date, created_at, notified_at, status, ai_context, source_job_id,
+                    project_id, title_key, score, score_breakdown, algorithm_version
              FROM pending_predictions
              WHERE status IN ('pending', 'notified')
-             ORDER BY created_at DESC
+             ORDER BY score DESC, created_at DESC
              LIMIT ?1",
         )
         .map_err(|e| e.to_string())?;
@@ -290,6 +300,11 @@ pub fn get_pending_predictions(
                 status: row.get(6)?,
                 ai_context: row.get(7)?,
                 source_job_id: row.get(8)?,
+                project_id: row.get(9)?,
+                title_key: row.get(10)?,
+                score: row.get(11)?,
+                score_breakdown: row.get(12)?,
+                algorithm_version: row.get(13)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -299,6 +314,20 @@ pub fn get_pending_predictions(
         result.push(row.map_err(|e| e.to_string())?);
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub fn refresh_predictions(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<PredictionRefreshResult, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    let created = refresh_predictions_internal(&db, chrono::Local::now(), force.unwrap_or(false))?;
+
+    Ok(PredictionRefreshResult {
+        created_count: created.len() as i64,
+        skipped: created.is_empty(),
+    })
 }
 
 #[tauri::command]
@@ -321,8 +350,7 @@ pub fn update_prediction_status(
         "UPDATE pending_predictions SET {} WHERE id = ?",
         sets.join(", ")
     );
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     db.execute(&sql, param_refs.as_slice())
         .map_err(|e| e.to_string())?;
@@ -331,17 +359,13 @@ pub fn update_prediction_status(
 }
 
 #[tauri::command]
-pub fn get_prediction_stats(
-    state: State<'_, AppState>,
-) -> Result<PredictionStats, String> {
+pub fn get_prediction_stats(state: State<'_, AppState>) -> Result<PredictionStats, String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
 
     let total: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM pending_predictions",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM pending_predictions", [], |row| {
+            row.get(0)
+        })
         .map_err(|e| e.to_string())?;
 
     let pending: i64 = db
@@ -419,4 +443,27 @@ pub fn cleanup_expired_predictions(
         .map_err(|e| e.to_string())?;
 
     Ok(deleted as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_day_of_month, get_dow, get_hour};
+
+    #[test]
+    fn derives_time_parts_from_iso_timestamp() {
+        let created_at = "2026-03-29T10:24:52.954Z";
+
+        assert!(get_dow(created_at).is_some());
+        assert!(get_hour(created_at).is_some());
+        assert!(get_day_of_month(created_at).is_some());
+    }
+
+    #[test]
+    fn derives_time_parts_from_sqlite_timestamp() {
+        let created_at = "2026-03-29 10:24:52";
+
+        assert_eq!(get_dow(created_at).as_deref(), Some("周日"));
+        assert_eq!(get_hour(created_at), Some(10));
+        assert_eq!(get_day_of_month(created_at), Some(29));
+    }
 }

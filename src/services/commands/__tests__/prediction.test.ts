@@ -13,6 +13,7 @@ import {
   recordTaskCreation,
   getTaskCreationHistory,
   getPredictionAnalysisContext,
+  refreshPredictions,
   savePredictions,
   getPendingPredictions,
   updatePredictionStatus,
@@ -125,6 +126,36 @@ describe('prediction commands', () => {
         predictions,
         aiContext: null,
         sourceJobId: null,
+      });
+    });
+  });
+
+  describe('refreshPredictions', () => {
+    it('calls invokeCommand with force parameter', async () => {
+      const mockResult = {
+        createdCount: 2,
+        skipped: false,
+      };
+      vi.mocked(invokeCommand).mockResolvedValueOnce(mockResult);
+
+      const result = await refreshPredictions(true);
+
+      expect(invokeCommand).toHaveBeenCalledWith('refresh_predictions', {
+        force: true,
+      });
+      expect(result).toEqual(mockResult);
+    });
+
+    it('works without force parameter', async () => {
+      vi.mocked(invokeCommand).mockResolvedValueOnce({
+        createdCount: 0,
+        skipped: true,
+      });
+
+      await refreshPredictions();
+
+      expect(invokeCommand).toHaveBeenCalledWith('refresh_predictions', {
+        force: false,
       });
     });
   });

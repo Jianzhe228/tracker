@@ -1,25 +1,25 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { listen } from '@tauri-apps/api/event';
-import { useSettingsStore } from './settingsStore';
+
 import { useTaskStore } from './taskStore';
 import {
-  getPredictionAnalysisContext,
-  savePredictions,
+  refreshPredictions as refreshPredictionsCmd,
   getPendingPredictions,
   updatePredictionStatus,
   getPredictionStats,
   type PendingPredictionRow,
   type PredictionStats,
-  type PredictionSavePayload,
 } from '../services/commands/prediction';
-import { enqueue } from '../services/ai/queue';
 import { sendNotification } from '../services/notification';
+import { toDateKey } from '../utils/date';
 
-const isTauri = '__TAURI_INTERNALS__' in window;
+function isTauriRuntime(): boolean {
+  return '__TAURI_INTERNALS__' in window;
+}
 
-interface PredictionTriggerPayload {
-  historyCount: number;
+interface PredictionUpdatePayload {
+  createdCount: number;
   triggeredAt: string;
 }
 
@@ -33,7 +33,7 @@ export const usePredictionStore = defineStore('prediction', () => {
   const pendingCount = computed(() => pendingPredictions.value.length);
 
   async function loadPendingPredictions(): Promise<void> {
-    if (!isTauri) return;
+    if (!isTauriRuntime()) return;
     try {
       pendingPredictions.value = await getPendingPredictions(10);
     } catch (err) {
@@ -42,7 +42,7 @@ export const usePredictionStore = defineStore('prediction', () => {
   }
 
   async function loadStats(): Promise<void> {
-    if (!isTauri) return;
+    if (!isTauriRuntime()) return;
     try {
       stats.value = await getPredictionStats();
     } catch (err) {
@@ -50,117 +50,96 @@ export const usePredictionStore = defineStore('prediction', () => {
     }
   }
 
-  async function triggerAnalysis(): Promise<void> {
-    if (isAnalyzing.value) return;
+  async function notifyFreshPredictions(createdCount: number): Promise<void> {
+    if (createdCount <= 0) return;
 
-    const settingsStore = useSettingsStore();
-    if (!settingsStore.ai.endpoint || !settingsStore.ai.apiKey) {
-      console.log('[predictionStore] AI not configured, skipping analysis');
-      return;
+    const freshPredictions = pendingPredictions.value
+      .filter((prediction) => prediction.status === 'pending')
+      .slice(0, createdCount);
+
+    for (const prediction of freshPredictions) {
+      sendNotification({
+        type: 'prediction',
+        title: '今日任务预测',
+        body: `${prediction.title}${prediction.reason ? `（${prediction.reason}）` : ''}`,
+        payload: JSON.stringify({ predictionId: prediction.id }),
+      });
+
+      await updatePredictionStatus(prediction.id, 'notified');
+      prediction.status = 'notified';
+      prediction.notifiedAt = new Date().toISOString();
     }
+  }
+
+  async function refreshPredictions(force = false): Promise<void> {
+    if (!isTauriRuntime() || isAnalyzing.value) return;
 
     isAnalyzing.value = true;
     try {
-      const context = await getPredictionAnalysisContext(14);
-
-      // If not enough history, skip AI call
-      if (context.count < 7) {
-        console.log('[predictionStore] Not enough history for analysis:', context.count);
-        return;
-      }
-
-      // Enqueue AI analysis job
-      const job = await enqueue('task_history_analyzer', {
-        currentTime: context.currentTime,
-        dayOfWeek: context.dayOfWeek,
-        days: context.days,
-        count: context.count,
-        taskList: context.taskList,
-        recentProjects: context.recentProjects,
-      });
-
-      if (job && job.status === 'completed' && job.rawResponse) {
-        const response = JSON.parse(job.rawResponse);
-        const predictions: PredictionSavePayload[] = (response.predictions || []).map(
-          (p: { title: string; reason?: string }) => ({
-            title: p.title,
-            reason: p.reason || null,
-          })
-        );
-
-        if (predictions.length > 0) {
-          const ids = await savePredictions(predictions, job.rawResponse, job.id);
-          console.log('[predictionStore] Saved', ids.length, 'predictions');
-
-          // Notify user about new predictions
-          for (const pred of predictions.slice(0, 3)) {
-            sendNotification({
-              type: 'prediction',
-              title: '📅 今日任务预测',
-              body: `${pred.title}${pred.reason ? `（${pred.reason}）` : ''}`,
-              payload: JSON.stringify({ predictionId: ids[predictions.indexOf(pred)] }),
-            });
-          }
-
-          await loadPendingPredictions();
-          await loadStats();
-        }
-      }
-
+      const result = await refreshPredictionsCmd(force);
+      await loadPendingPredictions();
+      await loadStats();
+      await notifyFreshPredictions(result.createdCount);
       lastAnalysisAt.value = new Date().toISOString();
     } catch (err) {
-      console.error('[predictionStore] Analysis failed:', err);
+      console.error('[predictionStore] Refresh failed:', err);
     } finally {
       isAnalyzing.value = false;
     }
   }
 
   async function acceptPrediction(id: number): Promise<void> {
-    if (!isTauri) return;
+    if (!isTauriRuntime()) return;
 
-    const prediction = pendingPredictions.value.find((p) => p.id === id);
+    const prediction = pendingPredictions.value.find((item) => item.id === id);
     if (!prediction) return;
 
-    // Create the task
     const taskStore = useTaskStore();
-    await taskStore.addTask(prediction.title);
+    await taskStore.addTask(prediction.title, {
+      projectId: prediction.projectId,
+      dueAt: prediction.predictedForDate ?? toDateKey(new Date()),
+    });
 
-    // Update prediction status
     await updatePredictionStatus(id, 'accepted');
-    pendingPredictions.value = pendingPredictions.value.filter((p) => p.id !== id);
+    pendingPredictions.value = pendingPredictions.value.filter((item) => item.id !== id);
     await loadStats();
   }
 
   async function rejectPrediction(id: number): Promise<void> {
-    if (!isTauri) return;
+    if (!isTauriRuntime()) return;
 
     await updatePredictionStatus(id, 'rejected');
-    pendingPredictions.value = pendingPredictions.value.filter((p) => p.id !== id);
+    pendingPredictions.value = pendingPredictions.value.filter((item) => item.id !== id);
     await loadStats();
   }
 
   async function dismissPrediction(id: number): Promise<void> {
-    if (!isTauri) return;
+    if (!isTauriRuntime()) return;
 
     await updatePredictionStatus(id, 'notified');
-    await loadPendingPredictions();
+    const prediction = pendingPredictions.value.find((item) => item.id === id);
+    if (prediction) {
+      prediction.status = 'notified';
+      prediction.notifiedAt = new Date().toISOString();
+    }
   }
 
   let unlistenFn: (() => void) | null = null;
 
   async function startListening(): Promise<void> {
-    if (!isTauri) return;
-    if (unlistenFn) return;
+    if (!isTauriRuntime() || unlistenFn) return;
 
     try {
-      unlistenFn = await listen<PredictionTriggerPayload>(
-        'prediction:trigger-analysis',
-        (event) => {
-          console.log('[predictionStore] Received trigger event:', event.payload);
-          void triggerAnalysis();
-        }
-      );
-      console.log('[predictionStore] Listening for prediction triggers');
+      unlistenFn = await listen<PredictionUpdatePayload>('prediction:updated', (event) => {
+        console.log('[predictionStore] Received update event:', event.payload);
+        void loadPendingPredictions()
+          .then(() => notifyFreshPredictions(event.payload.createdCount))
+          .then(() => loadStats())
+          .then(() => {
+            lastAnalysisAt.value = new Date().toISOString();
+          });
+      });
+      console.log('[predictionStore] Listening for prediction updates');
     } catch (err) {
       console.error('[predictionStore] Failed to start listening:', err);
     }
@@ -173,7 +152,6 @@ export const usePredictionStore = defineStore('prediction', () => {
     }
   }
 
-  // Initial load
   void loadPendingPredictions();
   void loadStats();
   void startListening();
@@ -187,7 +165,7 @@ export const usePredictionStore = defineStore('prediction', () => {
     pendingCount,
     loadPendingPredictions,
     loadStats,
-    triggerAnalysis,
+    refreshPredictions,
     acceptPrediction,
     rejectPrediction,
     dismissPrediction,

@@ -1,36 +1,14 @@
 use crate::db::AppState;
+use crate::services::prediction_engine::{
+    refresh_predictions as refresh_predictions_internal, should_refresh_predictions,
+    MIN_HISTORY_FOR_PREDICTION,
+};
 use rusqlite::params;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 const ANALYSIS_INTERVAL_HOURS: u64 = 1;
-const MIN_HISTORY_FOR_ANALYSIS: i64 = 7;
-
-/// Check if enough time has passed since last analysis
-fn should_run_analysis(conn: &rusqlite::Connection) -> bool {
-    // Get the most recent prediction created time
-    let result: Result<Option<String>, _> = conn.query_row(
-        "SELECT MAX(created_at) FROM pending_predictions WHERE source_job_id IS NOT NULL",
-        [],
-        |row| row.get(0),
-    );
-
-    match result {
-        Ok(Some(last_run)) => {
-            // Parse the timestamp and check if 1 hour has passed
-            if let Ok(last_dt) = chrono::DateTime::parse_from_rfc3339(&last_run) {
-                let now = chrono::Utc::now();
-                let diff = now.signed_duration_since(last_dt);
-                diff.num_hours() >= ANALYSIS_INTERVAL_HOURS as i64
-            } else {
-                true // Invalid timestamp, should run
-            }
-        }
-        Ok(None) => true, // No previous analysis, should run
-        Err(_) => true,   // Error, should run
-    }
-}
 
 /// Get count of task creation history
 fn get_history_count(conn: &rusqlite::Connection) -> i64 {
@@ -42,15 +20,15 @@ fn get_history_count(conn: &rusqlite::Connection) -> i64 {
     .unwrap_or(0)
 }
 
-/// Emit event to frontend to trigger AI analysis
-fn emit_analysis_trigger(app: &AppHandle, history_count: i64) {
+/// Emit event to frontend after local prediction refresh.
+fn emit_prediction_update(app: &AppHandle, created_count: usize) {
     let payload = serde_json::json!({
-        "historyCount": history_count,
+        "createdCount": created_count,
         "triggeredAt": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     });
 
-    if let Err(e) = app.emit("prediction:trigger-analysis", payload) {
-        eprintln!("[prediction_scheduler] Failed to emit trigger event: {}", e);
+    if let Err(e) = app.emit("prediction:updated", payload) {
+        eprintln!("[prediction_scheduler] Failed to emit update event: {}", e);
     }
 }
 
@@ -109,19 +87,31 @@ pub fn start_scheduler(app: AppHandle) {
                         // Cleanup old predictions first
                         let _ = cleanup_old_predictions(&conn);
 
-                        // Check if we should run analysis
-                        if should_run_analysis(&conn) {
+                        let now = chrono::Local::now();
+                        if should_refresh_predictions(&conn, now).unwrap_or(true) {
                             let history_count = get_history_count(&conn);
-                            if history_count >= MIN_HISTORY_FOR_ANALYSIS {
-                                emit_analysis_trigger(&app, history_count);
-                                println!(
-                                    "[prediction_scheduler] Triggered analysis with {} history entries",
-                                    history_count
-                                );
+                            if history_count >= MIN_HISTORY_FOR_PREDICTION as i64 {
+                                match refresh_predictions_internal(&conn, now, false) {
+                                    Ok(created) if !created.is_empty() => {
+                                        emit_prediction_update(&app, created.len());
+                                        println!(
+                                            "[prediction_scheduler] Generated {} predictions from {} history entries",
+                                            created.len(),
+                                            history_count
+                                        );
+                                    }
+                                    Ok(_) => {}
+                                    Err(error) => {
+                                        eprintln!(
+                                            "[prediction_scheduler] Failed to refresh predictions: {}",
+                                            error
+                                        );
+                                    }
+                                }
                             } else {
                                 println!(
                                     "[prediction_scheduler] Skipping - only {} history entries (min: {})",
-                                    history_count, MIN_HISTORY_FOR_ANALYSIS
+                                    history_count, MIN_HISTORY_FOR_PREDICTION
                                 );
                             }
                         }

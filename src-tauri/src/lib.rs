@@ -201,6 +201,7 @@ pub fn run() {
             commands::prediction::record_task_creation,
             commands::prediction::get_task_creation_history,
             commands::prediction::get_prediction_analysis_context,
+            commands::prediction::refresh_predictions,
             commands::prediction::save_predictions,
             commands::prediction::get_pending_predictions,
             commands::prediction::update_prediction_status,

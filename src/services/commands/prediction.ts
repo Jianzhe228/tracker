@@ -21,11 +21,21 @@ export interface PendingPredictionRow {
   status: string;
   aiContext: string | null;
   sourceJobId: number | null;
+  projectId: number | null;
+  titleKey: string | null;
+  score: number | null;
+  scoreBreakdown: string | null;
+  algorithmVersion: string | null;
 }
 
 export interface PredictionSavePayload {
   title: string;
   reason?: string | null;
+  projectId?: number | null;
+  titleKey?: string | null;
+  score?: number | null;
+  scoreBreakdown?: string | null;
+  algorithmVersion?: string | null;
 }
 
 export interface PredictionAnalysisContext {
@@ -45,6 +55,11 @@ export interface PredictionStats {
   historyCount: number;
 }
 
+export interface PredictionRefreshResult {
+  createdCount: number;
+  skipped: boolean;
+}
+
 export function recordTaskCreation(payload: {
   taskTitle: string;
   projectId?: number | null;
@@ -60,6 +75,10 @@ export function getTaskCreationHistory(days?: number): Promise<TaskCreationHisto
 
 export function getPredictionAnalysisContext(days?: number): Promise<PredictionAnalysisContext> {
   return invokeCommand<PredictionAnalysisContext>('get_prediction_analysis_context', { days });
+}
+
+export function refreshPredictions(force = false): Promise<PredictionRefreshResult> {
+  return invokeCommand<PredictionRefreshResult>('refresh_predictions', { force });
 }
 
 export function savePredictions(

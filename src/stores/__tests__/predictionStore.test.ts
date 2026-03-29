@@ -7,6 +7,10 @@ import { setActivePinia, createPinia } from 'pinia';
 // Mock Tauri environment
 Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {} });
 
+const taskStoreMock = {
+  addTask: vi.fn().mockResolvedValue({ id: 1, title: '新任务' }),
+};
+
 // Mock modules
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
@@ -21,6 +25,10 @@ vi.mock('../../services/commands/prediction', () => ({
     rejected: 0,
     historyCount: 0,
   }),
+  refreshPredictions: vi.fn().mockResolvedValue({
+    createdCount: 1,
+    skipped: false,
+  }),
   getPredictionAnalysisContext: vi.fn().mockResolvedValue({
     currentTime: '2026-03-28 10:00',
     dayOfWeek: '周六',
@@ -31,18 +39,6 @@ vi.mock('../../services/commands/prediction', () => ({
   }),
   savePredictions: vi.fn().mockResolvedValue([1, 2]),
   updatePredictionStatus: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../../services/ai/queue', () => ({
-  enqueue: vi.fn().mockResolvedValue({
-    id: 1,
-    status: 'completed',
-    rawResponse: JSON.stringify({
-      predictions: [
-        { title: '创建本周计划', reason: '你每周一常规划本周工作' },
-      ],
-    }),
-  }),
 }));
 
 vi.mock('../../services/notification', () => ({
@@ -60,9 +56,7 @@ vi.mock('../settingsStore', () => ({
 }));
 
 vi.mock('../taskStore', () => ({
-  useTaskStore: () => ({
-    addTask: vi.fn().mockResolvedValue({ id: 1, title: '新任务' }),
-  }),
+  useTaskStore: () => taskStoreMock,
 }));
 
 import { usePredictionStore } from '../predictionStore';
@@ -70,6 +64,7 @@ import { usePredictionStore } from '../predictionStore';
 describe('predictionStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    taskStoreMock.addTask.mockResolvedValue({ id: 1, title: '新任务' });
   });
 
   afterEach(() => {
@@ -126,53 +121,118 @@ describe('predictionStore', () => {
     });
   });
 
-  describe('triggerAnalysis', () => {
-    it('sets isAnalyzing to true during analysis', async () => {
+  describe('refreshPredictions', () => {
+    it('sets isAnalyzing to true during refresh', async () => {
       setActivePinia(createPinia());
       const store = usePredictionStore();
 
-      // The analysis is async, so isAnalyzing should be true during the call
-      const analysisPromise = store.triggerAnalysis();
+      const analysisPromise = store.refreshPredictions();
       expect(store.isAnalyzing).toBe(true);
       await analysisPromise;
       expect(store.isAnalyzing).toBe(false);
     });
 
-    it('calls AI queue with task_history_analyzer skill', async () => {
+    it('calls backend prediction refresh command', async () => {
       setActivePinia(createPinia());
       const store = usePredictionStore();
 
-      const { enqueue } = await import('../../services/ai/queue');
+      const { refreshPredictions } = await import('../../services/commands/prediction');
 
-      await store.triggerAnalysis();
+      await store.refreshPredictions();
 
-      expect(enqueue).toHaveBeenCalledWith(
-        'task_history_analyzer',
-        expect.objectContaining({
-          days: 14,
-        })
-      );
+      expect(refreshPredictions).toHaveBeenCalledWith(false);
     });
 
-    it('updates lastAnalysisAt after successful analysis', async () => {
+    it('updates lastAnalysisAt after successful refresh', async () => {
       setActivePinia(createPinia());
       const store = usePredictionStore();
 
-      await store.triggerAnalysis();
+      await store.refreshPredictions();
 
       expect(store.lastAnalysisAt).not.toBeNull();
     });
 
-    it('resets isAnalyzing even when AI call fails', async () => {
+    it('sends notifications for new predictions', async () => {
       setActivePinia(createPinia());
       const store = usePredictionStore();
 
-      const { enqueue } = await import('../../services/ai/queue');
-      vi.mocked(enqueue).mockRejectedValueOnce(new Error('Network error'));
+      const predictionCommands = await import('../../services/commands/prediction');
+      const notificationModule = await import('../../services/notification');
+      vi.mocked(predictionCommands.getPendingPredictions).mockResolvedValueOnce([
+        {
+          id: 1,
+          title: '本周计划',
+          reason: '过去 4 周里你有 3 次在周一上午创建过类似任务',
+          predictedForDate: '2026-03-29',
+          createdAt: '2026-03-29 10:00:00',
+          notifiedAt: null,
+          status: 'pending',
+          aiContext: null,
+          sourceJobId: null,
+          projectId: 1,
+          titleKey: '本周计划',
+          score: 9.2,
+          scoreBreakdown: '{"frequency":4}',
+          algorithmVersion: 'local-v1',
+        },
+      ]);
 
-      await store.triggerAnalysis();
+      await store.refreshPredictions();
+
+      expect(notificationModule.sendNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'prediction',
+          title: '今日任务预测',
+        })
+      );
+    });
+
+    it('resets isAnalyzing even when refresh fails', async () => {
+      setActivePinia(createPinia());
+      const store = usePredictionStore();
+
+      const { refreshPredictions } = await import('../../services/commands/prediction');
+      vi.mocked(refreshPredictions).mockRejectedValueOnce(new Error('Refresh failed'));
+
+      await store.refreshPredictions();
 
       expect(store.isAnalyzing).toBe(false);
+    });
+  });
+
+  describe('acceptPrediction', () => {
+    it('creates the task with the predicted project and today due date', async () => {
+      setActivePinia(createPinia());
+      const store = usePredictionStore();
+
+      store.pendingPredictions = [
+        {
+          id: 7,
+          title: '写周报',
+          reason: '最近常在周五创建',
+          predictedForDate: '2026-03-29',
+          createdAt: '2026-03-29 10:00:00',
+          notifiedAt: null,
+          status: 'pending',
+          aiContext: null,
+          sourceJobId: null,
+          projectId: 1,
+          titleKey: '写周报',
+          score: 7.5,
+          scoreBreakdown: null,
+          algorithmVersion: 'local-v1',
+        },
+      ];
+
+      await store.acceptPrediction(7);
+
+      expect(taskStoreMock.addTask).toHaveBeenCalledWith(
+        '写周报',
+        expect.objectContaining({
+          projectId: 1,
+          dueAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        })
+      );
     });
   });
 

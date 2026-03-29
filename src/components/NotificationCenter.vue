@@ -9,16 +9,20 @@ import {
   getUnreadCount,
 } from '../services/commands/notification';
 import { useAiStore } from '../stores/aiStore';
+import { usePredictionStore } from '../stores/predictionStore';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 const aiStore = useAiStore();
+const predictionStore = usePredictionStore();
 
 const open = ref(false);
 const unreadCount = ref(0);
 const notifications = ref<NotificationLogItem[]>([]);
 const panelRef = ref<HTMLElement | null>(null);
 
-const totalBadge = computed(() => unreadCount.value + aiStore.pendingJobs.length);
+const totalBadge = computed(() =>
+  unreadCount.value + aiStore.pendingJobs.length + predictionStore.pendingPredictions.length
+);
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -123,6 +127,7 @@ function handleClickOutside(event: MouseEvent): void {
 
 onMounted(() => {
   refreshUnreadCount();
+  void predictionStore.refreshPredictions();
   pollInterval = setInterval(refreshUnreadCount, 30_000);
   document.addEventListener('click', handleClickOutside, true);
 });
@@ -175,6 +180,41 @@ onUnmounted(() => {
           >
             全部标记已读
           </button>
+        </div>
+
+        <!-- Task Predictions -->
+        <div v-if="predictionStore.pendingPredictions.length > 0">
+          <div class="border-b border-slate-100 bg-sky-50/80 px-4 py-2">
+            <span class="text-xs font-semibold text-sky-700">任务预测</span>
+          </div>
+          <div
+            v-for="prediction in predictionStore.pendingPredictions"
+            :key="'prediction-' + prediction.id"
+            class="border-b border-slate-100 px-4 py-3"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-slate-700">{{ prediction.title }}</p>
+                <p v-if="prediction.reason" class="mt-1 text-xs leading-5 text-slate-500">
+                  {{ prediction.reason }}
+                </p>
+              </div>
+              <div class="flex shrink-0 gap-1.5">
+                <button
+                  class="rounded bg-sky-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-sky-700"
+                  @click="predictionStore.acceptPrediction(prediction.id)"
+                >
+                  创建
+                </button>
+                <button
+                  class="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-50"
+                  @click="predictionStore.rejectPrediction(prediction.id)"
+                >
+                  忽略
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- AI Pending Actions -->
@@ -244,9 +284,17 @@ onUnmounted(() => {
           <span class="text-xs text-violet-600">AI 正在分析...</span>
         </div>
 
+        <div v-if="predictionStore.isAnalyzing" class="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
+          <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+          <span class="text-xs text-sky-600">任务预测更新中...</span>
+        </div>
+
         <!-- Notification list -->
         <div class="max-h-72 overflow-y-auto">
-          <div v-if="notifications.length === 0 && aiStore.pendingJobs.length === 0" class="px-4 py-8 text-center text-sm text-slate-400">
+          <div
+            v-if="notifications.length === 0 && aiStore.pendingJobs.length === 0 && predictionStore.pendingPredictions.length === 0"
+            class="px-4 py-8 text-center text-sm text-slate-400"
+          >
             暂无通知
           </div>
           <div
