@@ -741,7 +741,7 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">估算准确度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">预估 vs 实际专注时长</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">按绝对偏差排序，找出最容易估错的任务</p>
           <EstVsActualChart
             v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
             :data="statisticsStore.estVsActual"
