@@ -4,6 +4,7 @@ import { useSettingsStore } from './settingsStore';
 import { useUiStore } from './uiStore';
 import { sendNotification } from '../services/notification';
 import { createFocusSession } from '../services/commands/focusSession';
+import { toDateKey } from '../utils/date';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -18,6 +19,8 @@ export type TimerSegment = {
   durationMs: number; // accumulated duration in ms (finalized when segment is closed)
   closed: boolean;
   syncedToDb: boolean; // whether this segment has been saved to DB
+  pauseOffsetMs: number; // accumulated pause time at the moment this segment started
+  countedInToday: boolean; // whether this segment has been reflected in focusSecondsToday
 };
 
 type PersistedTimerState = {
@@ -39,7 +42,16 @@ type PersistedTimerState = {
   pauseStartedAt: number | null;
   pauseDurationSeconds: number;
   accumulatedPauseMs: number;
-  segments: Array<{ taskId: number | null; taskTitle: string | null; startedAt: number; durationMs: number; closed: boolean; syncedToDb: boolean }>;
+  segments: Array<{
+    taskId: number | null;
+    taskTitle: string | null;
+    startedAt: number;
+    durationMs: number;
+    closed: boolean;
+    syncedToDb: boolean;
+    pauseOffsetMs?: number;
+    countedInToday?: boolean;
+  }>;
   segmentSwitchCount: number;
 };
 
@@ -135,6 +147,26 @@ export const useTimerStore = defineStore('timer', () => {
 
   const displaySeconds = computed(() => (timerKind.value === 'countup' ? elapsedSeconds.value : remainingSeconds.value));
 
+  function getSegmentDurationMs(segment: TimerSegment, now = Date.now()): number {
+    const completedPauseMs = Math.max(0, accumulatedPauseMs.value - segment.pauseOffsetMs);
+    const ongoingPauseMs = pauseStartedAt.value ? now - pauseStartedAt.value : 0;
+    return Math.max(0, now - segment.startedAt - completedPauseMs - ongoingPauseMs);
+  }
+
+  const currentSegmentFocusSeconds = computed(() => {
+    const now = lastTickAt.value ?? Date.now();
+    if (mode.value !== 'focus' || idle.value || segments.value.length === 0) {
+      return 0;
+    }
+
+    const last = segments.value[segments.value.length - 1];
+    if (!last || last.closed) {
+      return 0;
+    }
+
+    return Math.max(0, Math.round(getSegmentDurationMs(last, now) / 1000));
+  });
+
   const display = computed(() => {
     const totalSecs = displaySeconds.value;
     const hours = Math.floor(totalSecs / 3600);
@@ -190,14 +222,7 @@ export const useTimerStore = defineStore('timer', () => {
     if (segs.length === 0) return;
     const last = segs[segs.length - 1];
     if (last.closed) return;
-    // Calculate duration: time from startedAt to now, minus any current pause
-    const now = Date.now();
-    let elapsed = now - last.startedAt;
-    // Subtract current ongoing pause if paused
-    if (pauseStartedAt.value) {
-      elapsed -= (now - pauseStartedAt.value);
-    }
-    last.durationMs = Math.max(0, elapsed);
+    last.durationMs = getSegmentDurationMs(last);
     last.closed = true;
   }
 
@@ -209,7 +234,27 @@ export const useTimerStore = defineStore('timer', () => {
       durationMs: 0,
       closed: false,
       syncedToDb: false,
+      pauseOffsetMs: accumulatedPauseMs.value,
+      countedInToday: false,
     });
+  }
+
+  function countClosedSegmentsInToday(): void {
+    const todayKey = getTodayKey();
+
+    for (const segment of segments.value) {
+      if (!segment.closed || segment.countedInToday) continue;
+      if (segment.durationMs <= 0) {
+        segment.countedInToday = true;
+        continue;
+      }
+
+      const segmentDateKey = toDateKey(new Date(segment.startedAt));
+      if (segmentDateKey === todayKey) {
+        focusSecondsToday.value += Math.round(segment.durationMs / 1000);
+      }
+      segment.countedInToday = true;
+    }
   }
 
   function resetSegments(): void {
@@ -242,7 +287,16 @@ export const useTimerStore = defineStore('timer', () => {
       pauseStartedAt: pauseStartedAt.value,
       pauseDurationSeconds: pauseDurationSeconds.value,
       accumulatedPauseMs: accumulatedPauseMs.value,
-      segments: segments.value.map(s => ({ taskId: s.taskId, taskTitle: s.taskTitle, startedAt: s.startedAt, durationMs: s.durationMs, closed: s.closed, syncedToDb: s.syncedToDb })),
+      segments: segments.value.map(s => ({
+        taskId: s.taskId,
+        taskTitle: s.taskTitle,
+        startedAt: s.startedAt,
+        durationMs: s.durationMs,
+        closed: s.closed,
+        syncedToDb: s.syncedToDb,
+        pauseOffsetMs: s.pauseOffsetMs,
+        countedInToday: s.countedInToday,
+      })),
       segmentSwitchCount: segmentSwitchCount.value,
     };
 
@@ -289,20 +343,26 @@ export const useTimerStore = defineStore('timer', () => {
 
     // Close last segment before building payload
     closeCurrentSegment();
+    countClosedSegmentsInToday();
 
     // Determine the primary task_id: the task with the longest total duration across segments
     let primaryTaskId = currentTaskId.value;
+    let primaryTaskTitle = currentTaskTitle.value;
     if (segments.value.length > 1) {
-      const taskDurations = new Map<number | null, number>();
+      const taskDurations = new Map<number | null, { durationMs: number; taskTitle: string | null }>();
       for (const seg of segments.value) {
-        const prev = taskDurations.get(seg.taskId) || 0;
-        taskDurations.set(seg.taskId, prev + seg.durationMs);
+        const prev = taskDurations.get(seg.taskId) || { durationMs: 0, taskTitle: seg.taskTitle };
+        taskDurations.set(seg.taskId, {
+          durationMs: prev.durationMs + seg.durationMs,
+          taskTitle: prev.taskTitle ?? seg.taskTitle,
+        });
       }
       let maxDuration = -1;
-      for (const [tid, dur] of taskDurations) {
-        if (dur > maxDuration) {
-          maxDuration = dur;
+      for (const [tid, summary] of taskDurations) {
+        if (summary.durationMs > maxDuration) {
+          maxDuration = summary.durationMs;
           primaryTaskId = tid;
+          primaryTaskTitle = summary.taskTitle;
         }
       }
     }
@@ -310,7 +370,7 @@ export const useTimerStore = defineStore('timer', () => {
     const entry: SessionLog = {
       id: `${Date.now()}`,
       taskId: primaryTaskId,
-      taskTitle: currentTaskTitle.value,
+      taskTitle: primaryTaskTitle,
       status: statusLabel,
       note,
       finishedAt,
@@ -322,14 +382,16 @@ export const useTimerStore = defineStore('timer', () => {
 
     // Persist focus sessions to SQLite (fire-and-forget)
     if (isTauri && spentSeconds > 0 && mode.value === 'focus') {
-      const sessionStartTime = startedAt.value
+      const sessionStartTime = segments.value[0]
+        ? new Date(segments.value[0].startedAt).toISOString()
+        : startedAt.value
         ? new Date(startedAt.value).toISOString()
         : new Date(Date.now() - spentSeconds * 1000).toISOString();
 
-      // Build segments payload (only unsynced segments - synced ones already saved individually)
-      const unsyncedSegments = segments.value.filter(seg => !seg.syncedToDb);
-      const segmentsPayload = unsyncedSegments.length > 0
-        ? unsyncedSegments.map((seg, idx) => ({
+      const segmentsPayload = segments.value.length > 0
+        ? segments.value
+          .filter(seg => seg.durationMs > 0)
+          .map((seg, idx) => ({
             taskId: seg.taskId,
             startTime: new Date(seg.startedAt).toISOString(),
             durationSeconds: Math.max(0, Math.round(seg.durationMs / 1000)),
@@ -359,51 +421,9 @@ export const useTimerStore = defineStore('timer', () => {
     resetSegments();
   }
 
-  // Flush a closed segment to the database immediately
-  function flushSegmentToDb(seg: TimerSegment): void {
-    if (!isTauri || seg.durationMs <= 0 || seg.syncedToDb) return;
-    const durationSeconds = Math.max(0, Math.round(seg.durationMs / 1000));
-    const endTime = new Date(seg.startedAt + seg.durationMs).toISOString();
-    const startTime = new Date(seg.startedAt).toISOString();
-
-    // Mark as synced immediately to prevent double-saving in recordSession
-    seg.syncedToDb = true;
-
-    createFocusSession({
-      taskId: seg.taskId,
-      startTime,
-      endTime,
-      durationSeconds,
-      type: 'focus',
-      status: 'stopped',
-      pomodoroCount: Math.max(0, durationSeconds / Math.max(60, totalSeconds.value)),
-      segments: [{
-        taskId: seg.taskId,
-        startTime,
-        durationSeconds,
-        sortOrder: 0,
-      }],
-    })
-      .then(() => {
-        // Update focusSecondsToday to trigger chart refresh
-        focusSecondsToday.value += durationSeconds;
-      })
-      .catch((err) => {
-        console.warn('[timer] failed to flush segment to DB', err);
-      });
-  }
-
-  // Flush all unsaved closed segments to DB
   function flushAllClosedSegments(): void {
-    for (const seg of segments.value) {
-      if (seg.closed && !seg.syncedToDb && seg.durationMs > 0) {
-        flushSegmentToDb(seg);
-      }
-    }
+    countClosedSegmentsInToday();
   }
-
-  let lastFlushAt = 0;
-  const FLUSH_INTERVAL_MS = 60_000; // Flush every 60 seconds during active timing
 
   function startTicker(): void {
     if (intervalId) return;
@@ -489,7 +509,6 @@ export const useTimerStore = defineStore('timer', () => {
       resetSegments();
       openNewSegment(currentTaskId.value, currentTaskTitle.value);
     }
-    lastFlushAt = Date.now();
     startTicker();
     if (mode.value === 'focus') {
       if (settingsStore.notification.notifyFocusStart) {
@@ -532,23 +551,18 @@ export const useTimerStore = defineStore('timer', () => {
   }
 
   function finalizeFocusSession(statusLabel: SessionStatus, startBreak = true, note?: string): void {
-    // First flush any unsynced closed segments (e.g., from task switches)
-    // This is async - we just trigger it and move on
-    flushAllClosedSegments();
+    closeCurrentSegment();
+    countClosedSegmentsInToday();
 
     const focusSeconds = Math.max(60, totalSeconds.value);
-    // Calculate total spent from all segments
     const allSegmentsDurationMs = segments.value.reduce((sum, seg) => sum + seg.durationMs, 0);
 
-    // For spentSeconds: use segments total, falling back to elapsed if no segments
     const spentSeconds = allSegmentsDurationMs > 0
       ? Math.round(allSegmentsDurationMs / 1000)
       : (timerKind.value === 'countdown'
         ? Math.max(0, totalSeconds.value - remainingSeconds.value)
         : elapsedSeconds.value);
 
-    // NOTE: flushAllClosedSegments will update focusSecondsToday asynchronously via .then()
-    // We do NOT add unsyncedDuration here to avoid double-counting
     const pomodorosEarned = Math.max(0, spentSeconds / focusSeconds);
     completedPomodoros.value += pomodorosEarned;
     recordSession(statusLabel, spentSeconds, pomodorosEarned, note);
@@ -614,11 +628,6 @@ export const useTimerStore = defineStore('timer', () => {
           completeBreak();
           return;
         }
-      }
-      // Periodic flush: save closed segments to DB every FLUSH_INTERVAL_MS
-      if (now - lastFlushAt >= FLUSH_INTERVAL_MS) {
-        flushAllClosedSegments();
-        lastFlushAt = now;
       }
     } else if (paused.value && pauseStartedAt.value) {
       pauseDurationSeconds.value = Math.max(
@@ -704,7 +713,7 @@ export const useTimerStore = defineStore('timer', () => {
     if (isTimerActive && switchingTask) {
       // Close current segment and open a new one
       closeCurrentSegment();
-      flushAllClosedSegments(); // Save closed segment to DB immediately
+      countClosedSegmentsInToday();
       currentTaskId.value = taskId;
       currentTaskTitle.value = taskTitle;
       openNewSegment(taskId, taskTitle);
@@ -716,7 +725,7 @@ export const useTimerStore = defineStore('timer', () => {
     if (isTimerActive && currentTaskId.value === null) {
       // Assigning a task mid-session (was null before)
       closeCurrentSegment();
-      flushAllClosedSegments(); // Save closed segment to DB immediately
+      countClosedSegmentsInToday();
       currentTaskId.value = taskId;
       currentTaskTitle.value = taskTitle;
       openNewSegment(taskId, taskTitle);
@@ -737,7 +746,7 @@ export const useTimerStore = defineStore('timer', () => {
     if (isTimerActive && currentTaskId.value !== null) {
       // Close current segment, open a null-task segment
       closeCurrentSegment();
-      flushAllClosedSegments(); // Save closed segment to DB immediately
+      countClosedSegmentsInToday();
       currentTaskId.value = null;
       currentTaskTitle.value = null;
       openNewSegment(null, null);
@@ -785,6 +794,8 @@ export const useTimerStore = defineStore('timer', () => {
       durationMs: s.durationMs,
       closed: s.closed,
       syncedToDb: s.syncedToDb ?? false,
+      pauseOffsetMs: s.pauseOffsetMs ?? 0,
+      countedInToday: s.countedInToday ?? false,
     }));
     segmentSwitchCount.value = restored.segmentSwitchCount || 0;
 
@@ -869,6 +880,7 @@ export const useTimerStore = defineStore('timer', () => {
     totalSeconds,
     completedPomodoros,
     focusSecondsToday,
+    currentSegmentFocusSeconds,
     lastFocusSessionSavedAt,
     currentTaskId,
     currentTaskTitle,

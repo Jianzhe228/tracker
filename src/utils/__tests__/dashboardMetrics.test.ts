@@ -16,6 +16,7 @@ describe('dashboardMetrics', () => {
       totalSeconds: 25 * 60,
       remainingSeconds: 25 * 60,
       elapsedSeconds: 360,
+      currentSegmentSeconds: 360,
     })).toBe(480);
   });
 
@@ -27,6 +28,7 @@ describe('dashboardMetrics', () => {
       totalSeconds: 25 * 60,
       remainingSeconds: 25 * 60,
       elapsedSeconds: 360,
+      currentSegmentSeconds: 360,
     })).toBe(360);
   });
 
@@ -38,6 +40,7 @@ describe('dashboardMetrics', () => {
       totalSeconds: 25 * 60,
       remainingSeconds: 25 * 60,
       elapsedSeconds: 360,
+      currentSegmentSeconds: 360,
     })).toBeCloseTo(0.24, 5);
   });
 
@@ -49,6 +52,7 @@ describe('dashboardMetrics', () => {
       totalSeconds: 25 * 60,
       remainingSeconds: 25 * 60,
       elapsedSeconds: 360,
+      currentSegmentSeconds: 360,
     })).toBeCloseTo(0.2, 5);
   });
 
@@ -60,6 +64,7 @@ describe('dashboardMetrics', () => {
       totalSeconds: 5 * 60,
       remainingSeconds: 120,
       elapsedSeconds: 0,
+      currentSegmentSeconds: 120,
     })).toBe(0);
   });
 });

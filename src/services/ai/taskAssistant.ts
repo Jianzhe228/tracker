@@ -27,7 +27,7 @@ function normalizeTitle(value: string): string {
 }
 
 export function inferDueAtFromTitle(title: string): string | null {
-  const now = new Date();
+  const now = new Date(Date.now());
 
   if (title.includes('大后天')) {
     const next = new Date(now);

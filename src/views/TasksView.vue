@@ -184,17 +184,7 @@ const tasksToComplete = computed(() => {
 });
 
 const elapsedTime = computed(() => {
-  const currentFocusElapsedSeconds = (
-    timerStore.mode === 'focus' && (timerStore.running || timerStore.paused)
-  )
-    ? (
-      timerStore.timerKind === 'countdown'
-        ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
-        : Math.max(0, timerStore.elapsedSeconds)
-    )
-    : 0;
-
-  const elapsedMinutes = Math.floor((timerStore.focusSecondsToday + currentFocusElapsedSeconds) / 60);
+  const elapsedMinutes = Math.floor((timerStore.focusSecondsToday + timerStore.currentSegmentFocusSeconds) / 60);
   return formatDuration(elapsedMinutes);
 });
 
@@ -998,8 +988,24 @@ async function deleteSubtask(subtaskId: number): Promise<void> {
   if (selectedTaskId.value === subtaskId) {
     selectedTaskId.value = selectedTask.value?.id ?? null;
   }
+
+  const removedIds = new Set<number>([subtaskId]);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const task of taskStore.tasks) {
+      if (task.parentId != null && removedIds.has(task.parentId) && !removedIds.has(task.id)) {
+        removedIds.add(task.id);
+        expanded = true;
+      }
+    }
+  }
+
   try {
     await taskStore.removeTask(subtaskId);
+    if (timerStore.currentTaskId != null && removedIds.has(timerStore.currentTaskId)) {
+      timerStore.clearTask();
+    }
   } catch (error) {
     console.error(error);
     showInlineNotice('删除子任务失败，请重试');
@@ -1305,6 +1311,7 @@ async function saveTaskDetail(): Promise<void> {
         await taskStore.updateTask(editingTaskId, { recurringRuleId: rule.id });
       } else if (hadRepeat && !newRepeatType) {
         if (prevRuleId) {
+          await taskStore.updateTask(editingTaskId, { recurringRuleId: null });
           await deactivateRecurringRule(prevRuleId);
           taskStore.removeRecurringRule(prevRuleId);
         }
@@ -1339,9 +1346,23 @@ async function saveTaskDetail(): Promise<void> {
 async function deleteSelectedTask(): Promise<void> {
   if (!selectedTask.value) return;
   const taskId = selectedTask.value.id;
+  const removedIds = new Set<number>([taskId]);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const task of taskStore.tasks) {
+      if (task.parentId != null && removedIds.has(task.parentId) && !removedIds.has(task.id)) {
+        removedIds.add(task.id);
+        expanded = true;
+      }
+    }
+  }
   selectedTaskId.value = null;
   try {
     await taskStore.removeTask(taskId);
+    if (timerStore.currentTaskId != null && removedIds.has(timerStore.currentTaskId)) {
+      timerStore.clearTask();
+    }
   } catch (error) {
     console.error(error);
     showInlineNotice('删除任务失败，请重试');

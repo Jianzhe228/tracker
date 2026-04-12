@@ -5,6 +5,7 @@ export type DashboardTimerState = {
   totalSeconds: number;
   remainingSeconds: number;
   elapsedSeconds: number;
+  currentSegmentSeconds: number;
 };
 
 export function getLiveFocusSeconds(timer: DashboardTimerState): number {
@@ -12,11 +13,7 @@ export function getLiveFocusSeconds(timer: DashboardTimerState): number {
     return 0;
   }
 
-  if (timer.timerKind === 'countdown') {
-    return Math.max(0, timer.totalSeconds - timer.remainingSeconds);
-  }
-
-  return Math.max(0, timer.elapsedSeconds);
+  return Math.max(0, timer.currentSegmentSeconds);
 }
 
 export function getLivePomodoros(timer: DashboardTimerState): number {

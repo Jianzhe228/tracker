@@ -309,7 +309,7 @@ fn insert_completion_log(
             "SELECT COALESCE(SUM(duration_seconds), 0)
        FROM focus_sessions
        WHERE task_id = ?1
-         AND status = 'completed'
+         AND status IN ('completed', 'stopped')
          AND type = 'focus'",
             rusqlite::params![task_id],
             |row| row.get(0),

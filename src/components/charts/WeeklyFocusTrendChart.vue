@@ -5,6 +5,10 @@ import type { WeeklyFocusStat } from '../../types/domain';
 
 const props = defineProps<{ data: WeeklyFocusStat[] }>();
 
+function formatPomodoros(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 const option = computed(() => {
   const d = props.data;
   if (!d.length) return {};
@@ -23,7 +27,7 @@ const option = computed(() => {
         const p = params[0];
         const w = d[p.dataIndex];
         const h = (w.totalSeconds / 3600).toFixed(1);
-        return `<b>${w.weekStart} 起</b><br/>专注 ${h} 小时<br/>${w.sessionCount} 次 · ${w.pomodoroCount} 番茄`;
+        return `<b>${w.weekStart} 起</b><br/>专注 ${h} 小时<br/>${w.sessionCount} 次 · ${formatPomodoros(w.pomodoroCount)} 番茄`;
       },
     },
     grid: { left: 40, right: 12, top: 16, bottom: 24 },

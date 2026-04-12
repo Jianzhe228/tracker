@@ -3,7 +3,13 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineAsyncComp
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useStatisticsStore } from '../stores/statisticsStore';
-import type { HeatmapEntry } from '../types/domain';
+import type {
+  DayHourDistributionEntry,
+  DailyTotal,
+  HeatmapEntry,
+  HourlyBucket,
+  ProjectTimeStat,
+} from '../types/domain';
 import {
   getDisplayedTodayFocusSeconds,
   getDisplayedTodayPomodoros,
@@ -68,14 +74,21 @@ const dashboardTimerState = computed<DashboardTimerState>(() => ({
   totalSeconds: timerStore.totalSeconds,
   remainingSeconds: timerStore.remainingSeconds,
   elapsedSeconds: timerStore.elapsedSeconds,
+  currentSegmentSeconds: timerStore.currentSegmentFocusSeconds,
 }));
 
 const todayFocusSecondsIncludingCurrentSession = computed(() =>
-  getDisplayedTodayFocusSeconds(overview.value?.today.focusSeconds ?? 0, dashboardTimerState.value)
+  getDisplayedTodayFocusSeconds(
+    Math.max(overview.value?.today.focusSeconds ?? 0, timerStore.focusSecondsToday),
+    dashboardTimerState.value,
+  )
 );
 
 const todayPomodorosIncludingCurrentSession = computed(() =>
-  getDisplayedTodayPomodoros(overview.value?.today.pomodoros ?? 0, dashboardTimerState.value)
+  getDisplayedTodayPomodoros(
+    Math.max(overview.value?.today.pomodoros ?? 0, timerStore.completedPomodoros),
+    dashboardTimerState.value,
+  )
 );
 
 function formatDuration(seconds: number): string {
@@ -88,6 +101,171 @@ function formatDuration(seconds: number): string {
 function formatPomodoros(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
+
+type LiveFocusSegment = {
+  taskId: number | null;
+  dateKey: string;
+  hour: number;
+  durationSeconds: number;
+  pomodoroCount: number;
+};
+
+const activeFocusSegments = computed<LiveFocusSegment[]>(() => {
+  if (timerStore.mode !== 'focus' || timerStore.idle || timerStore.segments.length === 0) {
+    return [];
+  }
+
+  const baselineSeconds = Math.max(60, timerStore.totalSeconds);
+
+  return timerStore.segments
+    .map((segment, index) => {
+      const durationSeconds = segment.closed
+        ? Math.max(0, Math.round(segment.durationMs / 1000))
+        : (index === timerStore.segments.length - 1 ? timerStore.currentSegmentFocusSeconds : 0);
+
+      if (durationSeconds <= 0) {
+        return null;
+      }
+
+      const startedAt = new Date(segment.startedAt);
+      return {
+        taskId: segment.taskId,
+        dateKey: toDateKey(startedAt),
+        hour: startedAt.getHours(),
+        durationSeconds,
+        pomodoroCount: durationSeconds / baselineSeconds,
+      };
+    })
+    .filter((segment): segment is LiveFocusSegment => segment != null);
+});
+
+const displayedDailyTotals = computed<DailyTotal[]>(() => {
+  const base = new Map<string, DailyTotal>();
+
+  for (const row of statisticsStore.focusStats?.dailyTotals ?? []) {
+    base.set(row.date, { ...row });
+  }
+
+  for (const segment of activeFocusSegments.value) {
+    const current = base.get(segment.dateKey) ?? {
+      date: segment.dateKey,
+      totalSeconds: 0,
+      pomodoroCount: 0,
+      sessionCount: 0,
+    };
+    current.totalSeconds += segment.durationSeconds;
+    current.pomodoroCount += segment.pomodoroCount;
+    current.sessionCount += 1;
+    base.set(segment.dateKey, current);
+  }
+
+  return Array.from(base.values()).sort((left, right) => left.date.localeCompare(right.date));
+});
+
+const displayedHourlyDistribution = computed<HourlyBucket[]>(() => {
+  const base = new Map<number, HourlyBucket>();
+
+  for (const row of statisticsStore.focusStats?.hourlyDistribution ?? []) {
+    base.set(row.hour, { ...row });
+  }
+
+  for (const segment of activeFocusSegments.value) {
+    const current = base.get(segment.hour) ?? {
+      hour: segment.hour,
+      totalSeconds: 0,
+      sessionCount: 0,
+    };
+    current.totalSeconds += segment.durationSeconds;
+    current.sessionCount += 1;
+    base.set(segment.hour, current);
+  }
+
+  return Array.from({ length: 24 }, (_value, hour) => base.get(hour) ?? {
+    hour,
+    totalSeconds: 0,
+    sessionCount: 0,
+  });
+});
+
+const displayedDayHourDistribution = computed<DayHourDistributionEntry[]>(() => {
+  const base = new Map<string, DayHourDistributionEntry>();
+
+  for (const row of statisticsStore.dayHourDistribution) {
+    base.set(`${row.date}-${row.hour}`, { ...row });
+  }
+
+  for (const segment of activeFocusSegments.value) {
+    const key = `${segment.dateKey}-${segment.hour}`;
+    const current = base.get(key) ?? {
+      date: segment.dateKey,
+      hour: segment.hour,
+      totalSeconds: 0,
+      sessionCount: 0,
+      pomodoroCount: 0,
+    };
+    current.totalSeconds += segment.durationSeconds;
+    current.sessionCount += 1;
+    current.pomodoroCount += segment.pomodoroCount;
+    base.set(key, current);
+  }
+
+  return Array.from(base.values()).sort((left, right) =>
+    right.date.localeCompare(left.date) || left.hour - right.hour
+  );
+});
+
+function getProjectTitle(projectId: number | null): string {
+  if (projectId == null) return '未分类';
+  return taskStore.projects.find(project => project.id === projectId)?.title ?? '未分类';
+}
+
+const displayedProjectDistribution = computed<ProjectTimeStat[]>(() => {
+  const base = new Map<string, ProjectTimeStat>();
+
+  for (const row of statisticsStore.projectDistribution) {
+    base.set(String(row.projectId ?? 'null'), { ...row });
+  }
+
+  for (const segment of activeFocusSegments.value) {
+    const projectId = segment.taskId != null
+      ? (taskStore.tasks.find(task => task.id === segment.taskId)?.projectId ?? null)
+      : null;
+    const key = String(projectId ?? 'null');
+    const current = base.get(key) ?? {
+      projectId,
+      projectTitle: getProjectTitle(projectId),
+      totalSeconds: 0,
+      sessionCount: 0,
+    };
+    current.totalSeconds += segment.durationSeconds;
+    current.sessionCount += 1;
+    base.set(key, current);
+  }
+
+  return Array.from(base.values()).sort((left, right) => right.totalSeconds - left.totalSeconds);
+});
+
+const displayedHeatmapEntries = computed<HeatmapEntry[]>(() => {
+  const base = new Map<string, HeatmapEntry>();
+
+  for (const entry of statisticsStore.heatmapEntries) {
+    base.set(entry.date, { ...entry });
+  }
+
+  for (const segment of activeFocusSegments.value) {
+    const current = base.get(segment.dateKey) ?? {
+      date: segment.dateKey,
+      focusSeconds: 0,
+      taskCount: 0,
+      pomodoroCount: 0,
+    };
+    current.focusSeconds += segment.durationSeconds;
+    current.pomodoroCount += segment.pomodoroCount;
+    base.set(segment.dateKey, current);
+  }
+
+  return Array.from(base.values()).sort((left, right) => left.date.localeCompare(right.date));
+});
 
 // --- Heatmap ---
 type HeatmapCell = {
@@ -157,6 +335,8 @@ function scheduleStatsRefresh(): void {
       statisticsStore.fetchOverview(),
       statisticsStore.fetchFocusStats(),
       statisticsStore.fetchDayHourDistribution(),
+      statisticsStore.fetchProjectDistribution(),
+      statisticsStore.fetchWeeklyFocus(),
       statisticsStore.fetchHeatmap(selectedYear.value),
     ]);
   }, 2000);
@@ -175,14 +355,6 @@ watch(
   () => timerStore.lastFocusSessionSavedAt,
   savedAt => {
     if (!savedAt) return;
-    scheduleStatsRefresh();
-  }
-);
-
-watch(
-  () => timerStore.focusSecondsToday,
-  (next, prev) => {
-    if (next <= prev) return;
     scheduleStatsRefresh();
   }
 );
@@ -213,7 +385,7 @@ const heatmapData = computed<HeatmapData>(() => {
   const contributionByDate = new Map<string, number>();
   const entryByDate = new Map<string, HeatmapEntry>();
 
-  for (const entry of statisticsStore.heatmapEntries) {
+  for (const entry of displayedHeatmapEntries.value) {
     const dateObj = new Date(entry.date);
     if (dateObj.getFullYear() !== displayYear) continue;
     entryByDate.set(entry.date, entry);
@@ -682,10 +854,10 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">近期专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">过去 {{ statisticsStore.focusStats?.dailyTotals.length ?? 0 }} 天每日专注时长</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">过去 {{ displayedDailyTotals.length }} 天每日专注时长</p>
           <FocusTrendChart
-            v-if="renderPhase >= 1 && statisticsStore.focusStats?.dailyTotals.length"
-            :data="statisticsStore.focusStats!.dailyTotals"
+            v-if="renderPhase >= 1 && displayedDailyTotals.length"
+            :data="displayedDailyTotals"
             compact
           />
           <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
@@ -697,8 +869,8 @@ onMounted(() => {
           <h3 class="font-semibold text-slate-800">高产时段分布</h3>
           <p class="mt-0.5 mb-2 text-xs text-slate-500">各小时累计专注时长</p>
           <HourlyDistributionChart
-            v-if="renderPhase >= 1 && statisticsStore.focusStats?.hourlyDistribution.length"
-            :data="statisticsStore.focusStats!.hourlyDistribution"
+            v-if="renderPhase >= 1 && displayedHourlyDistribution.length"
+            :data="displayedHourlyDistribution"
             compact
           />
           <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
@@ -717,7 +889,7 @@ onMounted(() => {
         </div>
         <DayHourDistributionChart
           v-if="renderPhase >= 2"
-          :data="statisticsStore.dayHourDistribution"
+          :data="displayedDayHourDistribution"
           :days="statisticsStore.dayHourWindowDays"
         />
         <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
@@ -731,8 +903,8 @@ onMounted(() => {
           <h3 class="font-semibold text-slate-800">项目时间分布</h3>
           <p class="mt-0.5 mb-2 text-xs text-slate-500">各项目专注时长占比</p>
           <ProjectDistributionChart
-            v-if="renderPhase >= 3 && statisticsStore.projectDistribution.length"
-            :data="statisticsStore.projectDistribution"
+            v-if="renderPhase >= 3 && displayedProjectDistribution.length"
+            :data="displayedProjectDistribution"
           />
           <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}

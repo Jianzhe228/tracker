@@ -72,17 +72,8 @@ const pauseDurationText = computed(() => {
   const seconds = timerStore.pauseDurationSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 });
-const currentFocusElapsedSeconds = computed(() => (
-  timerStore.mode === 'focus' && (timerStore.running || timerStore.paused)
-    ? (
-      timerStore.timerKind === 'countdown'
-        ? Math.max(0, timerStore.totalSeconds - timerStore.remainingSeconds)
-        : Math.max(0, timerStore.elapsedSeconds)
-    )
-    : 0
-));
 const focusMinutesToday = computed(() =>
-  Math.floor((timerStore.focusSecondsToday + currentFocusElapsedSeconds.value) / 60)
+  Math.floor((timerStore.focusSecondsToday + timerStore.currentSegmentFocusSeconds) / 60)
 );
 const isBreakMode = computed(() => timerStore.mode !== 'focus');
 const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '倒计时' : '正计时');

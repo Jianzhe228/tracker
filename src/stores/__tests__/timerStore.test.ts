@@ -26,11 +26,10 @@ describe('timerStore', () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-03-28T10:00:00'));
     setActivePinia(createPinia());
     timerStore = useTimerStore();
     localStorageMock.clear();
-    // Reset Date.now
-    vi.setSystemTime(new Date('2026-03-28T10:00:00'));
   });
 
   afterEach(() => {
@@ -182,6 +181,21 @@ describe('timerStore', () => {
       expect(timerStore.segments[2].taskId).toBeNull();
       expect(timerStore.segments[2].closed).toBe(false);
     });
+
+    it('excludes paused time when closing a segment after resume', () => {
+      timerStore.start();
+      vi.advanceTimersByTime(5000);
+
+      timerStore.pause();
+      vi.advanceTimersByTime(10000);
+      timerStore.resume();
+      vi.advanceTimersByTime(3000);
+
+      timerStore.setTask(1, 'Task 1');
+
+      expect(timerStore.segments[0].durationMs).toBeGreaterThanOrEqual(7900);
+      expect(timerStore.segments[0].durationMs).toBeLessThanOrEqual(9000);
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -300,6 +314,30 @@ describe('timerStore', () => {
       // First segment is now closed but not synced
       expect(timerStore.segments[0].closed).toBe(true);
       expect(timerStore.segments[0].syncedToDb).toBe(false);
+    });
+  });
+
+  describe('today focus accounting', () => {
+    it('includes the active segment when finalizing after a task switch', () => {
+      timerStore.start();
+      vi.advanceTimersByTime(5000);
+
+      timerStore.setTask(1, 'Task 1');
+      vi.advanceTimersByTime(3000);
+
+      timerStore.stop();
+
+      expect(timerStore.focusSecondsToday).toBe(8);
+      expect(timerStore.completedPomodoros).toBeCloseTo(8 / (25 * 60), 3);
+    });
+
+    it('updates focusSecondsToday when a focus session ends without switching tasks', () => {
+      timerStore.start();
+      vi.advanceTimersByTime(10000);
+
+      timerStore.stop();
+
+      expect(timerStore.focusSecondsToday).toBe(10);
     });
   });
 

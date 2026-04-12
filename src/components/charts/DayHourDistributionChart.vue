@@ -35,6 +35,10 @@ function formatDayLabel(dateKey: string, index: number): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function formatPomodoros(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 const dayLabels = computed(() => dayKeys.value.map((key, index) => formatDayLabel(key, index)));
 
 const entryMap = computed(() => {
@@ -102,7 +106,7 @@ const option = computed(() => ({
       if (!d || d[2] === 0) return '';
       const dateKey = dayKeys.value[d[1]];
       const label = formatDayLabel(dateKey, d[1]);
-      return `<b>${label} ${d[0]}:00–${d[0] + 1}:00</b><br/>专注 ${formatMinutes(d[2])} · ${d[3]} 次 · ${d[4]} 番茄`;
+      return `<b>${label} ${d[0]}:00–${d[0] + 1}:00</b><br/>专注 ${formatMinutes(d[2])} · ${d[3]} 次 · ${formatPomodoros(d[4])} 番茄`;
     },
   },
   grid: {
