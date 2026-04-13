@@ -689,9 +689,13 @@ async function submitTask(): Promise<void> {
     newTaskDate.value = '';
     showNewTaskCalendar.value = false;
 
-    // Run suggestion pipeline via composable
+    const historyAutofilled = taskStore.consumeHistoryAutofill(createdTask.id);
+
+    // Run suggestion pipeline via composable only when no history template applied
     selectedTaskId.value = createdTask.id;
-    requestSuggestions(createdTask.id, createdTask.title, projectId);
+    if (!historyAutofilled) {
+      requestSuggestions(createdTask.id, createdTask.title, projectId);
+    }
   } catch (error) {
     console.error(error);
     showInlineNotice('创建任务失败，请重试');
@@ -2304,6 +2308,12 @@ onMounted(() => {
                       {{ subtask.title }}
                     </button>
                     <span
+                      v-if="hasTaskSubtasks(subtask.id)"
+                      class="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500"
+                    >
+                      {{ getTaskSubtaskDoneCount(subtask.id) }}/{{ getTaskSubtasks(subtask.id).length }} 子任务
+                    </span>
+                    <span
                       v-if="priorityBadge(subtask.priority)"
                       class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none"
                       :class="priorityBadge(subtask.priority)!.cls"
@@ -2399,7 +2409,12 @@ onMounted(() => {
                         >
                           {{ s.source === 'ai' ? 'AI' : s.source === 'pattern' ? '模板' : '学习' }}
                         </span>
-                        <span class="truncate text-xs text-slate-700">{{ s.title }}</span>
+                        <div class="min-w-0">
+                          <span class="block truncate text-xs text-slate-700">{{ s.title }}</span>
+                          <span v-if="s.childCount" class="block text-[10px] text-slate-400">
+                            {{ s.childCount }} 个子任务
+                          </span>
+                        </div>
                       </div>
                       <div class="flex shrink-0 gap-1">
                         <button

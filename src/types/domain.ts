@@ -232,6 +232,11 @@ export interface LearnStats {
   historyCount: number;
 }
 
+export interface HistoryTemplateNode {
+  title: string;
+  children: HistoryTemplateNode[];
+}
+
 // ── Suggestion feedback ─────────────────────────────────────────────
 
 export interface SuggestionFeedbackPayload {
@@ -287,6 +292,7 @@ export interface SuggestionCandidate {
   sources: Array<'pattern' | 'learning' | 'history' | 'sibling' | 'ai_generated'>;
   evidence: string[];
   rawScore?: number;
+  children?: HistoryTemplateNode[];
 }
 
 export interface RankedSuggestion {
@@ -295,4 +301,5 @@ export interface RankedSuggestion {
   sources: string[];
   evidence: string[];
   reasons: string[];
+  children?: HistoryTemplateNode[];
 }

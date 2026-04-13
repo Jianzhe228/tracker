@@ -1,5 +1,11 @@
 import { invokeCommand } from './invoke';
-import type { LearnSuggestion, LearnStats, KeywordCluster, SuggestionFeedbackPayload } from '../../types/domain';
+import type {
+  HistoryTemplateNode,
+  KeywordCluster,
+  LearnStats,
+  LearnSuggestion,
+  SuggestionFeedbackPayload,
+} from '../../types/domain';
 
 export function learnRecord(
   keyword: string,
@@ -89,6 +95,20 @@ export function historySuggest(
     keywords,
     projectId,
     limit: limit ?? null,
+  });
+}
+
+export function historyGetTemplate(
+  taskTitle: string,
+  keywords: string[],
+  projectId: number | null,
+  maxDepth = 2,
+): Promise<HistoryTemplateNode[]> {
+  return invokeCommand<HistoryTemplateNode[]>('history_get_template', {
+    taskTitle,
+    keywords,
+    projectId,
+    maxDepth,
   });
 }
 

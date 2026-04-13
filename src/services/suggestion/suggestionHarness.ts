@@ -80,8 +80,8 @@ export async function runHarness(ctx: HarnessContext): Promise<HarnessOutput> {
     await Promise.all([
       retrievePatternCandidates(analysis.keywords, ctx.projectId),
       retrieveLearningCandidates(analysis.keywords, ctx.projectId),
-      retrieveHistoryCandidates(analysis.keywords, ctx.projectId),
-      retrieveSiblingCandidates(ctx.projectId, ctx.taskId),
+      retrieveHistoryCandidates(ctx.taskTitle, analysis.keywords, ctx.projectId),
+      retrieveSiblingCandidates(ctx.projectId, ctx.taskId, analysis.keywords),
     ]);
 
   // Merge all candidates from all sources
@@ -158,7 +158,11 @@ export async function buildAiContextFromAnalysis(
     try {
       // Use task store directly (siblingRetriever already does this)
       const { retrieveSiblingCandidates } = await import('./retrievers');
-      const siblings = await retrieveSiblingCandidates(input.projectId ?? null, input.taskId);
+      const siblings = await retrieveSiblingCandidates(
+        input.projectId ?? null,
+        input.taskId,
+        input.analysis.keywords,
+      );
       siblingTasks = siblings.map(s => s.title).join(', ');
     } catch {
       // ignore
@@ -180,13 +184,21 @@ export async function buildAiContextFromAnalysis(
  */
 export function toSidebarSuggestions(
   ranked: RankedSuggestion[],
-): Array<{ title: string; source: 'pattern' | 'learning' | 'history' | 'sibling' | 'ai_generated'; patternName?: string }> {
+): Array<{
+  title: string;
+  source: 'pattern' | 'learning' | 'history' | 'sibling' | 'ai_generated';
+  patternName?: string;
+  children: NonNullable<RankedSuggestion['children']>;
+  childCount: number;
+}> {
   return ranked.map(r => {
     const patternName = extractPatternName(r.evidence);
     return {
       title: r.title,
       source: (r.sources[0] ?? 'learning') as 'pattern' | 'learning' | 'history' | 'sibling' | 'ai_generated',
       patternName,
+      children: r.children ?? [],
+      childCount: r.children?.length ?? 0,
     };
   });
 }

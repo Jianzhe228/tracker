@@ -27,6 +27,7 @@ export function mergeCandidates(allCandidates: SuggestionCandidate[]): Suggestio
         sources: [...candidate.sources],
         evidence: [...candidate.evidence],
         rawScore: candidate.rawScore,
+        children: candidate.children ? [...candidate.children] : undefined,
       });
     } else {
       // Merge: accumulate evidence and sources, keep highest rawScore
@@ -41,6 +42,7 @@ export function mergeCandidates(allCandidates: SuggestionCandidate[]): Suggestio
         sources: mergedSources,
         evidence: mergedEvidence,
         rawScore: mergedScore,
+        children: existing.children?.length ? existing.children : candidate.children,
       });
     }
   }

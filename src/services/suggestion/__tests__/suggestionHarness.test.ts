@@ -59,6 +59,6 @@ describe('suggestionHarness', () => {
       existingSubtaskTitles: new Set<string>(),
     } as never);
 
-    expect(retrieveSiblingCandidates).toHaveBeenCalledWith(7, 42);
+    expect(retrieveSiblingCandidates).toHaveBeenCalledWith(7, 42, ['周会']);
   });
 });

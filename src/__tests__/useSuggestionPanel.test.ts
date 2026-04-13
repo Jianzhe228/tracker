@@ -27,6 +27,8 @@ vi.mock('../services/suggestion/suggestionHarness', () => ({
       title: r.title,
       source: r.sources[0] ?? 'learning',
       patternName: r.evidence.find((e: string) => e.startsWith('pattern: '))?.slice(9),
+      children: r.children ?? [],
+      childCount: r.children?.length ?? 0,
     })),
   ),
 }));
@@ -37,6 +39,7 @@ vi.mock('../services/ai/queue', () => ({
 
 vi.mock('../services/commands/learning', () => ({
   feedbackRecord: vi.fn(() => Promise.resolve()),
+  historyGetTemplate: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock('../services/commands/ai', () => ({
@@ -454,6 +457,62 @@ describe('useSuggestionPanel', () => {
       const subtasks = taskStore.tasks.filter((t) => t.parentId === parent.id);
       expect(subtasks).toHaveLength(1);
       expect(subtasks[0].title).toBe('建议1');
+    });
+
+    it('acceptSuggestion creates nested subtasks for a history suggestion', async () => {
+      let localId = 1_000;
+      const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => localId++);
+      (runHarness as Mock).mockResolvedValueOnce({
+        ranked: [{
+          title: '完成一套模拟试题',
+          score: 1,
+          sources: ['history'],
+          evidence: ['from_task_subtask_history'],
+          reasons: [],
+          children: [
+            { title: '写三篇阅读', children: [] },
+            { title: '一篇翻译', children: [] },
+            { title: '一篇写作', children: [] },
+          ],
+        }],
+        analysis: {
+          rawTitle: '四六级学习',
+          normalizedTitle: '四六级学习',
+          keywords: ['四六级', '学习'],
+          intentHints: [],
+          entityHints: [],
+          timeHints: [],
+          englishTerms: [],
+          segmentTrace: [],
+        },
+        strategy: 'local',
+        rejectedTitles: [],
+      });
+
+      try {
+        const parent = await taskStore.addTask('四六级学习');
+        const { requestSuggestions, acceptSuggestion, getPanel } = useSuggestionPanel();
+
+        await requestSuggestions(parent.id, '四六级学习', null);
+        const suggestion = getPanel(parent.id)!.suggestions[0] as {
+          title: string;
+          childCount: number;
+        };
+        expect(suggestion.childCount).toBe(3);
+
+        await acceptSuggestion(parent.id, suggestion as never);
+
+        const mockExam = taskStore.tasks.find((t) => t.parentId === parent.id && t.title === '完成一套模拟试题');
+        expect(mockExam).toBeDefined();
+        expect(
+          taskStore.tasks
+            .filter((t) => t.parentId === mockExam?.id)
+            .map((t) => t.title)
+            .sort(),
+        ).toEqual(['一篇写作', '一篇翻译', '写三篇阅读'].sort());
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
 
     it('rejectSuggestion removes suggestion from panel without creating subtask', async () => {

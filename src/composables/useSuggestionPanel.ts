@@ -25,6 +25,7 @@ import {
 } from '../services/commands/suggestionTrace';
 import { patternIncrementUsage } from '../services/commands/pattern';
 import type { RankedSuggestion, TitleAnalysis } from '../types/domain';
+import type { HistoryTemplateNode } from '../types/domain';
 
 export type SuggestionSource = 'pattern' | 'learning' | 'ai' | 'history' | 'sibling' | 'ai_generated';
 
@@ -33,6 +34,8 @@ export interface SidebarSuggestion {
   source: SuggestionSource;
   patternName?: string;
   candidateId?: number; // set after trace is persisted
+  children?: HistoryTemplateNode[];
+  childCount?: number;
 }
 
 export interface SuggestionPanelState {
@@ -254,11 +257,17 @@ export function useSuggestionPanel() {
     if (!panel) return;
 
     try {
-      await taskStore.addTask(suggestion.title, {
+      const created = await taskStore.addTask(suggestion.title, {
         parentId: parentTask.id,
         projectId: parentTask.projectId,
         dueAt: parentTask.dueAt,
       });
+
+      if (suggestion.children?.length) {
+        for (const child of suggestion.children) {
+          await createSuggestionChildren(taskStore, created.id, child, parentTask.projectId, parentTask.dueAt);
+        }
+      }
 
       // Record positive feedback to learning engine
       recordFeedback(
@@ -315,6 +324,28 @@ export function useSuggestionPanel() {
       removeSuggestion(taskId, suggestion.title);
     } catch (e) {
       console.error('[suggestion-panel] accept failed', e);
+    }
+  }
+
+  async function createSuggestionChildren(
+    taskStore: ReturnType<typeof useTaskStore>,
+    parentId: number,
+    node: HistoryTemplateNode,
+    projectId: number | null,
+    dueAt: string | null,
+  ): Promise<void> {
+    const created = await taskStore.addTask(node.title, {
+      parentId,
+      projectId,
+      dueAt,
+      forceHistoryAutofill: node.children.length === 0,
+      skipHistoryAutofill: node.children.length > 0,
+    });
+
+    if (!node.children.length) return;
+
+    for (const child of node.children) {
+      await createSuggestionChildren(taskStore, created.id, child, projectId, dueAt);
     }
   }
 

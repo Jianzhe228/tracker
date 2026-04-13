@@ -84,6 +84,7 @@ export function rankCandidates(
       sources: c.sources,
       evidence: c.evidence,
       reasons,
+      children: c.children,
     } satisfies RankedSuggestion;
   });
 

@@ -194,6 +194,7 @@ pub fn run() {
             commands::learning::learn_stats,
             commands::learning::learn_known_keywords,
             commands::learning::history_suggest,
+            commands::learning::history_get_template,
             commands::learning::feedback_record,
             commands::learning::feedback_rejected_titles,
             commands::learning::cluster_list,

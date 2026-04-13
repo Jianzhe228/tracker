@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import type { TaskItem, ProjectItem, RecurringRuleItem, TaskStatus } from '../types/domain';
+import type {
+  HistoryTemplateNode,
+  ProjectItem,
+  RecurringRuleItem,
+  TaskItem,
+  TaskStatus,
+} from '../types/domain';
 import {
   listTasks as listTasksCmd,
   createTask as createTaskCmd,
@@ -10,8 +16,10 @@ import {
   restoreTask as restoreTaskCmd,
 } from '../services/commands/task';
 import { createProject as createProjectCmd, updateProject as updateProjectCmd, deleteProject as deleteProjectCmd } from '../services/commands/project';
+import { historyGetTemplate } from '../services/commands/learning';
 import { sendNotification } from '../services/notification';
 import { recordTaskCreation } from '../services/commands/prediction';
+import { extractKeywords } from '../services/suggestion/keywordExtractor';
 import { useSettingsStore } from './settingsStore';
 import { toDateKey } from '../utils/date';
 
@@ -44,7 +52,13 @@ export const useTaskStore = defineStore('task', () => {
 
   const todoCount = computed(() => tasks.value.filter((task) => task.parentId === null && task.status === 'todo').length);
 
-  type TaskCreateOptions = Partial<Omit<TaskItem, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt'>>;
+  type TaskCreateOptions = Partial<Omit<TaskItem, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt'>> & {
+    skipHistoryAutofill?: boolean;
+    skipPredictionRecord?: boolean;
+    forceHistoryAutofill?: boolean;
+  };
+
+  const historyAutofilledTaskIds = new Set<number>();
 
   function buildTask(title: string, options: TaskCreateOptions = {}): TaskItem {
     const now = new Date().toISOString();
@@ -139,22 +153,94 @@ export const useTaskStore = defineStore('task', () => {
     tasks.value = await listTasksCmd();
   }
 
-  async function addTask(title: string, options: TaskCreateOptions = {}): Promise<TaskItem> {
+  async function createTaskRecord(title: string, options: TaskCreateOptions = {}): Promise<TaskItem> {
     const task = buildTask(title, options);
     if (isTauri) {
       const created = await createTaskCmd(task);
       tasks.value = [created, ...tasks.value];
-      // Record task creation for AI prediction analysis (fire-and-forget)
-      void recordTaskCreation({
-        taskTitle: title,
-        projectId: options.projectId,
-        createdAt: new Date().toISOString(),
-        isRecurringInstance: options.recurringRuleId != null,
-      }).catch((err) => console.warn('[taskStore] Failed to record task creation:', err));
+      if (!options.skipPredictionRecord) {
+        // Record task creation for AI prediction analysis (fire-and-forget)
+        void recordTaskCreation({
+          taskTitle: title,
+          projectId: options.projectId,
+          createdAt: new Date().toISOString(),
+          isRecurringInstance: options.recurringRuleId != null,
+        }).catch((err) => console.warn('[taskStore] Failed to record task creation:', err));
+      }
       return created;
     }
     tasks.value = [task, ...tasks.value];
     return task;
+  }
+
+  async function createTasksFromHistoryTemplate(
+    parentTask: TaskItem,
+    nodes: HistoryTemplateNode[],
+  ): Promise<boolean> {
+    let applied = false;
+
+    for (const node of nodes) {
+      const duplicate = tasks.value.some(
+        (task) => task.parentId === parentTask.id && task.title === node.title,
+      );
+      if (duplicate) continue;
+
+      const childTask = await addTask(node.title, {
+        parentId: parentTask.id,
+        projectId: parentTask.projectId,
+        dueAt: parentTask.dueAt,
+        skipPredictionRecord: true,
+        forceHistoryAutofill: node.children.length === 0,
+        skipHistoryAutofill: node.children.length > 0,
+      });
+      applied = true;
+
+      if (node.children.length > 0) {
+        await createTasksFromHistoryTemplate(childTask, node.children);
+      }
+    }
+
+    return applied;
+  }
+
+  async function applyHistoryTemplate(task: TaskItem): Promise<boolean> {
+    if (!isTauri) return false;
+
+    const keywords = extractKeywords(task.title);
+    if (keywords.length === 0) return false;
+
+    try {
+      const template = await historyGetTemplate(task.title, keywords, task.projectId, 2);
+      if (template.length === 0) return false;
+      return await createTasksFromHistoryTemplate(task, template);
+    } catch (err) {
+      console.warn('[taskStore] Failed to apply history template:', err);
+      return false;
+    }
+  }
+
+  async function addTask(title: string, options: TaskCreateOptions = {}): Promise<TaskItem> {
+    const created = await createTaskRecord(title, options);
+
+    const shouldApplyHistoryTemplate = !options.skipHistoryAutofill
+      && (options.parentId == null || options.forceHistoryAutofill);
+
+    if (shouldApplyHistoryTemplate) {
+      const applied = await applyHistoryTemplate(created);
+      if (applied && options.parentId == null) {
+        historyAutofilledTaskIds.add(created.id);
+      } else if (options.parentId == null) {
+        historyAutofilledTaskIds.delete(created.id);
+      }
+    }
+
+    return created;
+  }
+
+  function consumeHistoryAutofill(taskId: number): boolean {
+    const hadAutofill = historyAutofilledTaskIds.has(taskId);
+    historyAutofilledTaskIds.delete(taskId);
+    return hadAutofill;
   }
 
   function getDirectSubtasks(parentId: number): TaskItem[] {
@@ -671,6 +757,7 @@ export const useTaskStore = defineStore('task', () => {
       pomodoroCount: original.pomodoroCount,
       pomodoroDuration: original.pomodoroDuration,
       recurringRuleId: original.recurringRuleId,
+      skipHistoryAutofill: true,
     });
 
     // Clone incomplete subtasks
@@ -685,6 +772,7 @@ export const useTaskStore = defineStore('task', () => {
         dueAt: todayKey,
         pomodoroCount: sub.pomodoroCount,
         pomodoroDuration: sub.pomodoroDuration,
+        skipHistoryAutofill: true,
       });
     }
 
@@ -710,6 +798,7 @@ export const useTaskStore = defineStore('task', () => {
     getRecurringRule,
     syncTasksFromBackend,
     addTask,
+    consumeHistoryAutofill,
     toggleTask,
     updateTask,
     removeTask,

@@ -127,6 +127,13 @@ pub struct KeywordClusterRow {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryTemplateNode {
+    pub title: String,
+    pub children: Vec<HistoryTemplateNode>,
+}
+
 // ── Learn commands ──────────────────────────────────────────────────
 
 /// Record a learn event (adopt/reject). Upserts by keyword+subtask_title+project_id.
@@ -599,6 +606,128 @@ pub fn history_suggest(
 
     result.truncate(max_results as usize);
     Ok(result)
+}
+
+fn history_titles_for_exact_parent(
+    db: &rusqlite::Connection,
+    parent_title: &str,
+    project_id: Option<i64>,
+) -> Result<Option<Vec<String>>, String> {
+    let json_str: Option<String> = db
+        .query_row(
+            "SELECT subtask_titles FROM task_subtask_history
+       WHERE parent_title = ?1
+         AND (project_id IS NULL OR project_id = ?2)
+       ORDER BY captured_at DESC
+       LIMIT 1",
+            rusqlite::params![parent_title, project_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    match json_str {
+        Some(value) => serde_json::from_str::<Vec<String>>(&value)
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
+fn history_titles_for_root(
+    db: &rusqlite::Connection,
+    task_title: &str,
+    keywords: &[String],
+    project_id: Option<i64>,
+) -> Result<Option<Vec<String>>, String> {
+    if let Some(exact) = history_titles_for_exact_parent(db, task_title, project_id)? {
+        return Ok(Some(exact));
+    }
+
+    if keywords.is_empty() {
+        return Ok(None);
+    }
+
+    let project_idx = keywords.len() + 1;
+    let where_clause: Vec<String> = keywords
+        .iter()
+        .enumerate()
+        .map(|(i, _)| format!("parent_title LIKE ?{}", i + 1))
+        .collect();
+
+    let sql = format!(
+        "SELECT subtask_titles FROM task_subtask_history
+     WHERE ({})
+       AND (project_id IS NULL OR project_id = ?{})
+     ORDER BY captured_at DESC
+     LIMIT 1",
+        where_clause.join(" OR "),
+        project_idx
+    );
+
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    for kw in keywords {
+        params.push(Box::new(format!("%{}%", kw)));
+    }
+    params.push(Box::new(project_id));
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params.iter().map(|p| p.as_ref()).collect();
+
+    let json_str: Option<String> = db
+        .query_row(&sql, param_refs.as_slice(), |row| row.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    match json_str {
+        Some(value) => serde_json::from_str::<Vec<String>>(&value)
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
+fn build_history_template_tree(
+    db: &rusqlite::Connection,
+    titles: Vec<String>,
+    project_id: Option<i64>,
+    remaining_depth: i64,
+) -> Result<Vec<HistoryTemplateNode>, String> {
+    let mut nodes = Vec::new();
+
+    for title in titles {
+        let children = if remaining_depth > 1 {
+            match history_titles_for_exact_parent(db, &title, project_id)? {
+                Some(child_titles) => {
+                    build_history_template_tree(db, child_titles, project_id, remaining_depth - 1)?
+                }
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+
+        nodes.push(HistoryTemplateNode { title, children });
+    }
+
+    Ok(nodes)
+}
+
+#[tauri::command]
+pub fn history_get_template(
+    state: State<'_, AppState>,
+    task_title: String,
+    keywords: Vec<String>,
+    project_id: Option<i64>,
+    max_depth: Option<i64>,
+) -> Result<Vec<HistoryTemplateNode>, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    let depth = max_depth.unwrap_or(2).clamp(1, 2);
+
+    let Some(titles) = history_titles_for_root(&db, &task_title, &keywords, project_id)? else {
+        return Ok(vec![]);
+    };
+
+    build_history_template_tree(&db, titles, project_id, depth)
 }
 
 // ── Suggestion feedback commands ────────────────────────────────────
