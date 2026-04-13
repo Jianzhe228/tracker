@@ -11,5 +11,6 @@ pub mod project;
 pub mod recurring;
 pub mod settings;
 pub mod statistics;
+pub mod suggestion_trace;
 pub mod sync;
 pub mod task;

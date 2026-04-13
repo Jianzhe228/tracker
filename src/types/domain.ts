@@ -264,3 +264,35 @@ export interface SuggestionResult {
   suggestions: string[];
   patternName?: string;
 }
+
+// ── Suggestion Harness types ──────────────────────────────────────
+
+export interface TitleAnalysis {
+  rawTitle: string;
+  normalizedTitle: string;
+  keywords: string[];
+  intentHints: string[];
+  entityHints: string[];
+  timeHints: string[];
+  englishTerms: string[];
+  segmentTrace: Array<{
+    text: string;
+    type: 'content' | 'temporal' | 'run' | 'english' | 'noise';
+    source: 'segmenter' | 'recovery' | 'join' | 'fallback';
+  }>;
+}
+
+export interface SuggestionCandidate {
+  title: string;
+  sources: Array<'pattern' | 'learning' | 'history' | 'sibling' | 'ai_generated'>;
+  evidence: string[];
+  rawScore?: number;
+}
+
+export interface RankedSuggestion {
+  title: string;
+  score: number;
+  sources: string[];
+  evidence: string[];
+  reasons: string[];
+}

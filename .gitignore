@@ -35,3 +35,4 @@ yarn.lock
 CLAUDE.md
 !AGENTS.md
 diagrams
+.ace-tool/

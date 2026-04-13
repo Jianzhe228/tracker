@@ -2,10 +2,14 @@
  * Composable: suggestion panel state for task detail sidebar.
  *
  * Manages per-task suggestion state (keyed by taskId), triggers the
- * suggestion pipeline, and handles accept/reject with feedback recording.
+ * suggestion pipeline via the Phase 1 harness, and handles accept/reject
+ * with feedback recording and trace persistence.
  */
 import { shallowRef, triggerRef, reactive, type ShallowRef } from 'vue';
-import { suggest, buildAiContext, extractKeywords, recordFeedback } from '../services/suggestion';
+import { runHarness, toSidebarSuggestions } from '../services/suggestion/suggestionHarness';
+import { buildAiContextFromAnalysis } from '../services/suggestion/suggestionHarness';
+import { extractKeywords } from '../services/suggestion/keywordExtractor';
+import { recordFeedback } from '../services/suggestion/learningEngine';
 import { enqueue } from '../services/ai/queue';
 import { feedbackRecord } from '../services/commands/learning';
 import { updateAiJob } from '../services/commands/ai';
@@ -13,13 +17,22 @@ import { isSemanticDuplicateTitle } from '../services/ai/subtaskDedup';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { useTaskStore } from '../stores/taskStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import {
+  suggestionRunCreate,
+  suggestionCandidateInsert,
+  suggestionCandidateMarkSelected,
+  suggestionCandidateMarkRejected,
+} from '../services/commands/suggestionTrace';
+import { patternIncrementUsage } from '../services/commands/pattern';
+import type { RankedSuggestion, TitleAnalysis } from '../types/domain';
 
-export type SuggestionSource = 'pattern' | 'learning' | 'ai';
+export type SuggestionSource = 'pattern' | 'learning' | 'ai' | 'history' | 'sibling' | 'ai_generated';
 
 export interface SidebarSuggestion {
   title: string;
   source: SuggestionSource;
   patternName?: string;
+  candidateId?: number; // set after trace is persisted
 }
 
 export interface SuggestionPanelState {
@@ -28,10 +41,12 @@ export interface SuggestionPanelState {
   loading: boolean;
   collapsed: boolean;
   requested: boolean;  // true once user/system triggered suggestions
+  runId?: number;     // suggestion_runs.id after trace is persisted
+  rankedSuggestions: RankedSuggestion[]; // full ranked data for trace
 }
 
 function emptyState(): SuggestionPanelState {
-  return reactive({ suggestions: [], keywords: [], loading: false, collapsed: false, requested: false });
+  return reactive({ suggestions: [], keywords: [], loading: false, collapsed: false, requested: false, rankedSuggestions: [] });
 }
 
 export function useSuggestionPanel() {
@@ -45,8 +60,60 @@ export function useSuggestionPanel() {
     return panels.value.get(taskId);
   }
 
+  async function persistTrace(
+    state: SuggestionPanelState,
+    taskId: number,
+    taskTitle: string,
+    projectId: number | null,
+    analysis: TitleAnalysis,
+    ranked: RankedSuggestion[],
+    strategy: string,
+    baseSuggestions: SidebarSuggestion[],
+  ): Promise<void> {
+    if (ranked.length === 0) return;
+
+    try {
+      const runId = await suggestionRunCreate({
+        taskId,
+        taskTitle,
+        projectId,
+        analysisJson: JSON.stringify(analysis),
+        strategy,
+      });
+      state.runId = runId;
+
+      const titleToCandidateId = new Map<string, number>();
+      for (let i = 0; i < ranked.length; i++) {
+        const candidate = ranked[i];
+        const candidateId = await suggestionCandidateInsert({
+          runId,
+          title: candidate.title,
+          source: candidate.sources[0] ?? 'learning',
+          mergedSourcesJson: JSON.stringify(candidate.sources),
+          score: candidate.score,
+          evidenceJson: JSON.stringify(candidate.evidence),
+          reasonsJson: JSON.stringify(candidate.reasons),
+          shownRank: i + 1,
+        });
+        titleToCandidateId.set(candidate.title, candidateId);
+      }
+
+      state.suggestions = state.suggestions.map((suggestion) => {
+        const fallback = baseSuggestions.find((item) => item.title === suggestion.title);
+        return {
+          ...suggestion,
+          patternName: suggestion.patternName ?? fallback?.patternName,
+          candidateId: titleToCandidateId.get(suggestion.title) ?? suggestion.candidateId,
+        };
+      });
+      notify();
+    } catch (e) {
+      console.warn('[suggestion-panel] failed to persist trace', e);
+    }
+  }
+
   /**
-   * Run the full suggestion pipeline for a task.
+   * Run the full suggestion harness for a task.
    * Local results appear instantly; AI results append when ready.
    */
   async function requestSuggestions(
@@ -67,31 +134,50 @@ export function useSuggestionPanel() {
       const existingSubtaskTitles = new Set(
         taskStore.tasks
           .filter((t) => t.parentId === taskId)
-          .map((t) => t.title)
+          .map((t) => t.title),
       );
 
-      // 1. Run local pipeline
-      const output = await suggest({ taskTitle, projectId });
-      state.keywords = output.keywords;
+      // Run the harness (all retrievers in parallel, then merge + rank)
+      const output = await runHarness({
+        taskId,
+        taskTitle,
+        projectId,
+        existingSubtaskTitles,
+      });
 
-      if (output.result.suggestions.length > 0) {
-        state.suggestions = output.result.suggestions
-          .filter((s) => !existingSubtaskTitles.has(s))
-          .map((s) => ({
-            title: s,
-            source: output.result.source as SuggestionSource,
-            patternName: output.result.patternName,
-          }));
-        notify();
-      }
+      state.keywords = output.analysis.keywords;
+      state.rankedSuggestions = output.ranked;
+      const initialSuggestions = toSidebarSuggestions(output.ranked);
+      state.suggestions = initialSuggestions;
 
-      // 2. Fire AI if strategy requires it
+      notify();
+
+      void persistTrace(
+        state,
+        taskId,
+        taskTitle,
+        projectId,
+        output.analysis,
+        output.ranked,
+        output.strategy,
+        initialSuggestions,
+      );
+
+      // Fire AI if strategy requires it
       if (output.strategy !== 'local') {
         const settingsStore = useSettingsStore();
         if (settingsStore.ai.endpoint && settingsStore.ai.apiKey) {
           try {
-            const aiContext = await buildAiContext({ taskTitle, projectId });
             const project = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
+            const aiContext = await buildAiContextFromAnalysis({
+              taskId,
+              taskTitle,
+              projectId,
+              projectName: project?.title ?? '',
+              analysis: output.analysis,
+              ranked: output.ranked,
+              rejectedTitles: output.rejectedTitles,
+            });
 
             const job = await enqueue('task_decompose', {
               taskId,
@@ -109,11 +195,11 @@ export function useSuggestionPanel() {
               const currentSubtaskTitles = new Set(
                 taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
               );
-              // Build set of existing titles for exact-match deduplication
               const existingTitles = new Set([
                 ...currentSubtaskTitles,
                 ...state.suggestions.map((s) => s.title),
               ]);
+
               for (const action of job.actions) {
                 if (
                   action.type === 'create_subtask' &&
@@ -122,7 +208,7 @@ export function useSuggestionPanel() {
                   const title = String(action.params.title);
                   // Skip if exact match already exists
                   if (existingTitles.has(title)) continue;
-                  // Skip if semantically duplicate (e.g., "衣服" in "带衣服")
+                  // Skip if semantically duplicate
                   const isDup = [...existingTitles].some(
                     (existing) => isSemanticDuplicateTitle(existing, title)
                   );
@@ -131,13 +217,11 @@ export function useSuggestionPanel() {
                       title,
                       source: 'ai',
                     });
-                    existingTitles.add(title); // prevent duplicates within AI batch too
+                    existingTitles.add(title);
                   }
                 }
-                // Mark action so it doesn't appear in NotificationCenter
                 action.status = 'executed';
               }
-              // Persist the status change to DB
               updateAiJob(job.id, { actions: job.actions }).catch((e) => {
                 console.warn('[suggestion-panel] failed to persist AI job status', e);
               });
@@ -148,7 +232,7 @@ export function useSuggestionPanel() {
         }
       }
     } catch (e) {
-      console.error('[suggestion-panel] suggestion pipeline failed', e);
+      console.error('[suggestion-panel] suggestion harness failed', e);
     } finally {
       state.loading = false;
       notify();
@@ -176,7 +260,7 @@ export function useSuggestionPanel() {
         dueAt: parentTask.dueAt,
       });
 
-      // Record positive feedback (single path — learning engine + feedback table)
+      // Record positive feedback to learning engine
       recordFeedback(
         panel.keywords,
         suggestion.title,
@@ -184,6 +268,32 @@ export function useSuggestionPanel() {
         true,
         suggestion.source,
       );
+
+      // Persist selection to trace
+      if (suggestion.candidateId !== undefined) {
+        suggestionCandidateMarkSelected(suggestion.candidateId).catch((e) => {
+          console.warn('[suggestion-panel] failed to mark candidate selected', e);
+        });
+      }
+
+      // Increment pattern usage if 'pattern' is among the candidate's sources
+      // (for merged candidates, pattern may not be sources[0])
+      const ranked = panel.rankedSuggestions.find(r => r.title === suggestion.title);
+      const hasPatternSource = ranked?.sources.includes('pattern') ?? false;
+      if (hasPatternSource && suggestion.patternName) {
+        try {
+          const { patternList } = await import('../services/commands/pattern');
+          const patterns = await patternList(parentTask.projectId ?? undefined);
+          const matched = patterns.find(p => p.name === suggestion.patternName);
+          if (matched) {
+            patternIncrementUsage(matched.id).catch((e) => {
+              console.warn('[suggestion-panel] failed to increment pattern usage', e);
+            });
+          }
+        } catch (e) {
+          console.warn('[suggestion-panel] failed to find pattern for usage increment', e);
+        }
+      }
 
       if (suggestion.source === 'ai') {
         feedbackRecord({
@@ -202,7 +312,6 @@ export function useSuggestionPanel() {
         });
       }
 
-      // Remove from list
       removeSuggestion(taskId, suggestion.title);
     } catch (e) {
       console.error('[suggestion-panel] accept failed', e);
@@ -229,6 +338,13 @@ export function useSuggestionPanel() {
       suggestion.source,
     );
 
+    // Persist rejection to trace
+    if (suggestion.candidateId !== undefined) {
+      suggestionCandidateMarkRejected(suggestion.candidateId).catch((e) => {
+        console.warn('[suggestion-panel] failed to mark candidate rejected', e);
+      });
+    }
+
     if (suggestion.source === 'ai' && parentTask) {
       feedbackRecord({
         taskId,
@@ -253,17 +369,12 @@ export function useSuggestionPanel() {
     const panel = panels.value.get(taskId);
     if (!panel) return;
 
-    // Copy the list because it mutates during accept
     const items = [...panel.suggestions];
-    // 顺序执行，避免并行导致的竞态条件
     for (const item of items) {
       await acceptSuggestion(taskId, item);
     }
   }
 
-  /**
-   * Dismiss/collapse the panel for a task.
-   */
   function dismissPanel(taskId: number): void {
     const panel = panels.value.get(taskId);
     if (panel) {
@@ -272,9 +383,6 @@ export function useSuggestionPanel() {
     }
   }
 
-  /**
-   * Toggle collapsed state.
-   */
   function toggleCollapsed(taskId: number): void {
     const panel = panels.value.get(taskId);
     if (panel) {
@@ -290,17 +398,11 @@ export function useSuggestionPanel() {
     notify();
   }
 
-  /**
-   * Remove a panel completely (for cleanup on unmount).
-   */
   function removePanel(taskId: number): void {
     panels.value.delete(taskId);
     notify();
   }
 
-  /**
-   * Clear all panels (for unmount cleanup).
-   */
   function clearAllPanels(): void {
     panels.value.clear();
     notify();

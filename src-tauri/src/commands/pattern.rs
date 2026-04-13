@@ -236,13 +236,22 @@ pub fn pattern_match(
         });
     }
 
-    // Increment usage_count for matched patterns
-    for p in &matched {
-        let _ = db.execute(
-            "UPDATE subtask_patterns SET usage_count = usage_count + 1 WHERE id = ?1",
-            rusqlite::params![p.id],
-        );
-    }
-
     Ok(matched)
+}
+
+/// Increment usage_count for a pattern — called when a pattern-backed
+/// suggestion is accepted by the user. Separated from pattern_match to
+/// keep matching side-effect-free (Phase 1 harness design).
+#[tauri::command]
+pub fn pattern_increment_usage(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<(), String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE subtask_patterns SET usage_count = usage_count + 1 WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
