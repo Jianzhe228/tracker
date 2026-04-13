@@ -21,7 +21,7 @@ const option = computed(() => {
       formatter: (params: any) => {
         const p = params[0];
         const w = d[p.dataIndex];
-        return `<b>${w.weekStart} 起</b><br/>完成 ${w.completedCount} 个任务`;
+        return `${w.weekStart} 起<br/>完成 ${w.completedCount} 个`;
       },
     },
     grid: { left: 40, right: 12, top: 16, bottom: 24 },

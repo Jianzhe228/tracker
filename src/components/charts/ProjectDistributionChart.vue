@@ -17,7 +17,7 @@ const option = computed(() => {
     tooltip: {
       trigger: 'item',
       formatter: (params: { name: string; value: number; percent: number }) =>
-        `${params.name}<br/>${formatMinutes(Math.round(params.value))} (${params.percent}%)`,
+        `${params.name}<br/>${formatMinutes(Math.round(params.value))} · ${params.percent}%`,
     },
     legend: {
       orient: 'vertical' as const,

@@ -854,7 +854,7 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">近期专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">过去 {{ displayedDailyTotals.length }} 天每日专注时长</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">{{ displayedDailyTotals.length }} 天趋势</p>
           <FocusTrendChart
             v-if="renderPhase >= 1 && displayedDailyTotals.length"
             :data="displayedDailyTotals"
@@ -867,7 +867,7 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">高产时段分布</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">各小时累计专注时长</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">按小时分布</p>
           <HourlyDistributionChart
             v-if="renderPhase >= 1 && displayedHourlyDistribution.length"
             :data="displayedHourlyDistribution"
@@ -884,7 +884,7 @@ onMounted(() => {
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="font-semibold text-slate-800">每日时段消耗分布</h3>
-            <p class="mt-0.5 text-xs text-slate-500">近 {{ statisticsStore.dayHourWindowDays }} 天按小时分布</p>
+            <p class="mt-0.5 text-xs text-slate-500">{{ statisticsStore.dayHourWindowDays }} 天分布</p>
           </div>
         </div>
         <DayHourDistributionChart
@@ -901,7 +901,7 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">项目时间分布</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">各项目专注时长占比</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">时间占比</p>
           <ProjectDistributionChart
             v-if="renderPhase >= 3 && displayedProjectDistribution.length"
             :data="displayedProjectDistribution"
@@ -913,7 +913,7 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">估算准确度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">按绝对偏差排序，找出最容易估错的任务</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">按偏差排序</p>
           <EstVsActualChart
             v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
             :data="statisticsStore.estVsActual"
@@ -928,7 +928,7 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">每周专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">最近 12 周每周专注时长</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">12 周趋势</p>
           <WeeklyFocusTrendChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
             :data="statisticsStore.weeklyFocus"
@@ -940,7 +940,7 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 class="font-semibold text-slate-800">任务完成速度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">最近 12 周每周完成任务数</p>
+          <p class="mt-0.5 mb-2 text-xs text-slate-500">12 周趋势</p>
           <TaskVelocityChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
             :data="statisticsStore.weeklyTaskVelocity"

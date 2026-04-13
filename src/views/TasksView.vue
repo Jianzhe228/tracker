@@ -2254,7 +2254,7 @@ onMounted(() => {
                       <svg v-else class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                       </svg>
-                      {{ currentSuggestionPanel?.loading ? '分析中…' : '智能建议' }}
+                      {{ currentSuggestionPanel?.loading ? '加载中…' : '建议' }}
                     </button>
                     <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
                   </div>
@@ -2407,7 +2407,7 @@ onMounted(() => {
                               ? 'bg-emerald-100 text-emerald-600'
                               : 'bg-blue-100 text-blue-600'"
                         >
-                          {{ s.source === 'ai' ? 'AI' : s.source === 'pattern' ? '模板' : '学习' }}
+                          {{ s.source === 'ai' ? '远程' : s.source === 'pattern' ? '模板' : '学习' }}
                         </span>
                         <div class="min-w-0">
                           <span class="block truncate text-xs text-slate-700">{{ s.title }}</span>
@@ -2441,7 +2441,7 @@ onMounted(() => {
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
-                      <span class="text-xs text-violet-600">AI 正在生成建议…</span>
+                      <span class="text-xs text-violet-600">正在生成建议…</span>
                     </div>
 
                     <!-- Empty state after all dismissed -->
@@ -2449,7 +2449,7 @@ onMounted(() => {
                       v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.suggestions.length === 0"
                       class="py-1 text-center text-xs text-slate-400"
                     >
-                      暂无建议
+                      暂无内容
                     </p>
                   </div>
                 </div>

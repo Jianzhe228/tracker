@@ -23,7 +23,7 @@ const option = computed(() => ({
     trigger: 'axis',
     formatter: (params: { name: string; value: number }[]) => {
       const p = params[0];
-      return `${p.name}:00<br/>专注 ${formatMinutes(Math.round(p.value))}`;
+      return `${p.name}:00 · ${formatMinutes(Math.round(p.value))}`;
     },
   },
   grid: {

@@ -106,7 +106,7 @@ const option = computed(() => ({
       if (!d || d[2] === 0) return '';
       const dateKey = dayKeys.value[d[1]];
       const label = formatDayLabel(dateKey, d[1]);
-      return `<b>${label} ${d[0]}:00–${d[0] + 1}:00</b><br/>专注 ${formatMinutes(d[2])} · ${d[3]} 次 · ${formatPomodoros(d[4])} 番茄`;
+      return `${label} ${d[0]}:00–${d[0] + 1}:00<br/>${formatMinutes(d[2])} · ${d[3]} 次 · ${formatPomodoros(d[4])} 番茄`;
     },
   },
   grid: {

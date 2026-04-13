@@ -220,7 +220,7 @@ onUnmounted(() => {
         <!-- AI Pending Actions -->
         <div v-if="aiStore.pendingJobs.length > 0">
           <div class="border-b border-slate-100 bg-violet-50/60 px-4 py-2">
-            <span class="text-xs font-semibold text-violet-700">AI 待确认</span>
+            <span class="text-xs font-semibold text-violet-700">待确认</span>
           </div>
           <div
             v-for="job in aiStore.pendingJobs"
@@ -281,12 +281,12 @@ onUnmounted(() => {
         <!-- Processing indicator -->
         <div v-if="aiStore.processingCount > 0" class="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
           <span class="h-2 w-2 animate-pulse rounded-full bg-violet-400" />
-          <span class="text-xs text-violet-600">AI 正在分析...</span>
+          <span class="text-xs text-violet-600">正在分析...</span>
         </div>
 
         <div v-if="predictionStore.isAnalyzing" class="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
           <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
-          <span class="text-xs text-sky-600">任务预测更新中...</span>
+          <span class="text-xs text-sky-600">预测更新中...</span>
         </div>
 
         <!-- Notification list -->
