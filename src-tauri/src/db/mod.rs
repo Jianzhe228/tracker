@@ -700,5 +700,44 @@ Detail level: {{detailLevel}}
         .map_err(|e| format!("failed to run migration v18: {}", e))?;
     }
 
+    if version < 19 {
+        conn.execute_batch(
+            "
+        CREATE TABLE IF NOT EXISTS suggestion_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            task_title TEXT NOT NULL,
+            project_id INTEGER,
+            analysis_json TEXT NOT NULL DEFAULT '{}',
+            strategy TEXT NOT NULL DEFAULT 'ai',
+            ranker_version TEXT NOT NULL DEFAULT 'v1',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_suggestion_runs_task_id ON suggestion_runs(task_id);
+        CREATE INDEX IF NOT EXISTS idx_suggestion_runs_created_at ON suggestion_runs(created_at);
+
+        CREATE TABLE IF NOT EXISTS suggestion_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL REFERENCES suggestion_runs(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            source TEXT NOT NULL,
+            merged_sources_json TEXT NOT NULL DEFAULT '[]',
+            score REAL NOT NULL DEFAULT 0,
+            evidence_json TEXT NOT NULL DEFAULT '[]',
+            reasons_json TEXT NOT NULL DEFAULT '[]',
+            shown_rank INTEGER,
+            selected INTEGER NOT NULL DEFAULT 0,
+            rejected INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_suggestion_candidates_run_id ON suggestion_candidates(run_id);
+
+        PRAGMA user_version = 19;
+        ",
+        )
+        .map_err(|e| format!("failed to run migration v19: {}", e))?;
+    }
+
     Ok(())
 }

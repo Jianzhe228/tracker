@@ -46,3 +46,7 @@ export function patternMatch(
     projectId: projectId ?? null,
   });
 }
+
+export function patternIncrementUsage(id: number): Promise<void> {
+  return invokeCommand<void>('pattern_increment_usage', { id });
+}

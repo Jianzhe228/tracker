@@ -187,6 +187,7 @@ pub fn run() {
             commands::pattern::pattern_update,
             commands::pattern::pattern_delete,
             commands::pattern::pattern_match,
+            commands::pattern::pattern_increment_usage,
             commands::learning::learn_record,
             commands::learning::learn_record_batch,
             commands::learning::learn_suggest,
@@ -207,6 +208,10 @@ pub fn run() {
             commands::prediction::update_prediction_status,
             commands::prediction::get_prediction_stats,
             commands::prediction::cleanup_expired_predictions,
+            commands::suggestion_trace::suggestion_run_create,
+            commands::suggestion_trace::suggestion_candidate_insert,
+            commands::suggestion_trace::suggestion_candidate_mark_selected,
+            commands::suggestion_trace::suggestion_candidate_mark_rejected,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")

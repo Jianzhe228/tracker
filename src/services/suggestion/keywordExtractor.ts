@@ -47,30 +47,27 @@ function segmentWords(text: string): string[] {
 
 // ── Noise detection (closed linguistic classes) ────────────────────
 
-const TEMPORAL_WORDS = new Set([
+export const TEMPORAL_WORDS = new Set([
   '早上', '上午', '中午', '下午', '傍晚', '晚上', '凌晨',
   '今天', '明天', '后天', '昨天', '前天', '大后天',
   '周末', '每天', '每周',
-  // 不可分解的时段词（与"早上/晚上"同类的封闭集）
   '清晨', '深夜', '半夜', '午夜', '黄昏', '拂晓',
 ]);
 const TEMPORAL_DAY_RE = /^(周[一二三四五六日]|星期[一二三四五六日天])$/;
 const TEMPORAL_NUM_RE = /^[一二三四五六七八九十百千\d]+[点时分秒月日号年]$/;
-// 构词模式: 时间名词+位置后缀 (月底/年初/周中/...)
 const TEMPORAL_PERIOD_RE = /^[月年周][底初末中]$/;
-// 构词模式: 方向前缀+时间单位 (上周/下月/本年/...)
 const TEMPORAL_RELATIVE_RE = /^[上下这本去明后前][周月年]$/;
 
-function isTemporalWord(w: string): boolean {
+export function isTemporalWord(w: string): boolean {
   return TEMPORAL_WORDS.has(w) || TEMPORAL_DAY_RE.test(w) || TEMPORAL_NUM_RE.test(w)
     || TEMPORAL_PERIOD_RE.test(w) || TEMPORAL_RELATIVE_RE.test(w);
 }
 
-const FUNC_HEADS = new Set('去到来在把的了着过给让被得地和或与'.split(''));
+export const FUNC_HEADS = new Set('去到来在把的了着过给让被得地和或与'.split(''));
 const PART_TAILS = new Set('的了着过得地'.split(''));
 const TIME_HEADS = new Set('点时分秒'.split(''));
 
-function isNoiseNgram(ng: string): boolean {
+export function isNoiseNgram(ng: string): boolean {
   if (isTemporalWord(ng)) return true;
   if (FUNC_HEADS.has(ng[0])) return true;
   if (PART_TAILS.has(ng[ng.length - 1])) return true;
@@ -90,23 +87,26 @@ function extractNgrams(chineseChars: string): string[] {
   return ngrams;
 }
 
-// ── Main extraction ────────────────────────────────────────────────
+// ── Pass 1: Segment classification ────────────────────────────────
 
-type SegInfo = { text: string; type: 'content' | 'temporal' | 'run'; runIdx?: number };
+export type SegInfo = { text: string; type: 'content' | 'temporal' | 'run'; runIdx?: number };
 
-export function extractKeywords(title: string): string[] {
-  const normalized = title.trim();
-  if (!normalized) return [];
+export interface ClassifySegmentsResult {
+  segInfos: SegInfo[];
+  contentWords: string[];
+  runs: string[][];
+}
 
-  const known = getKnownKeywords();
+/**
+ * Classify segments into content / temporal / run groups.
+ * Exported for reuse by titleAnalyzer.ts (Phase 1 harness).
+ */
+export function classifySegments(normalized: string): ClassifySegmentsResult {
   const segments = segmentWords(normalized);
 
   if (segments.length === 0) {
-    const chars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
-    return extractNgrams(chars).filter(ng => !isNoiseNgram(ng)).slice(0, 10);
+    return { segInfos: [], contentWords: [], runs: [] };
   }
-
-  // ── Pass 1: Classify segments, collect runs ──
 
   const segInfos: SegInfo[] = [];
   const contentWords: string[] = [];
@@ -135,12 +135,26 @@ export function extractKeywords(title: string): string[] {
     runs.push([...run]);
   }
 
-  const seen = new Set(contentWords);
-  const add = (w: string) => {
-    if (!seen.has(w) && w.length >= 2) { seen.add(w); return true; }
-    return false;
-  };
+  return { segInfos, contentWords, runs };
+}
 
+// ── C3 Passes 2-4 (shared between extractKeywords and titleAnalyzer) ─
+
+export interface C3PassesResult {
+  adjacentJoins: string[];
+  runNgrams: string[];
+  boundaryMerges: string[];
+  runRecovered: Map<number, string[]>;
+}
+
+/**
+ * Run C3 algorithm passes 2-4 (adjacent joins, run recovery, boundary merges).
+ * Exported for reuse by titleAnalyzer.ts to avoid duplicating the algorithm.
+ */
+export function computeC3Passes(
+  segInfos: SegInfo[],
+  runs: string[][],
+): C3PassesResult {
   // ── Pass 2: Adjacent multi-char word joins ──
   // Only truly adjacent in original order (don't skip runs/temporal)
 
@@ -150,7 +164,7 @@ export function extractKeywords(title: string): string[] {
     if (a.type === 'content' && b.type === 'content' &&
         a.text.length >= 2 && b.text.length >= 2) {
       const joined = a.text + b.text;
-      if (joined.length <= 6 && !isNoiseNgram(joined) && add(joined)) {
+      if (joined.length <= 6 && !isNoiseNgram(joined)) {
         adjacentJoins.push(joined);
       }
     }
@@ -163,7 +177,6 @@ export function extractKeywords(title: string): string[] {
 
   for (let ri = 0; ri < runs.length; ri++) {
     const r = runs[ri];
-    // Split at functional chars
     const subs: string[][] = [];
     let cur: string[] = [];
     for (const ch of r) {
@@ -174,17 +187,17 @@ export function extractKeywords(title: string): string[] {
         cur.push(ch);
       }
     }
-    if (cur.length > 0) subs.push(cur);
+    if (cur.length > 0) subs.push([...cur]);
 
     const recovered: string[] = [];
     for (const sub of subs) {
       for (let i = 0; i < sub.length - 1; i++) {
         const ng = sub[i] + sub[i + 1];
-        if (!isNoiseNgram(ng) && add(ng)) { runNgrams.push(ng); recovered.push(ng); }
+        if (!isNoiseNgram(ng)) { runNgrams.push(ng); recovered.push(ng); }
       }
       for (let i = 0; i < sub.length - 2; i++) {
         const ng = sub[i] + sub[i + 1] + sub[i + 2];
-        if (!isNoiseNgram(ng) && add(ng)) { runNgrams.push(ng); recovered.push(ng); }
+        if (!isNoiseNgram(ng)) { runNgrams.push(ng); recovered.push(ng); }
       }
     }
     runRecovered.set(ri, recovered);
@@ -205,7 +218,7 @@ export function extractKeywords(title: string): string[] {
         const r = runs[nextInfo.runIdx];
         if (r.length === 1 && !FUNC_HEADS.has(r[0])) {
           const merged = info.text + r[0];
-          if (merged.length <= 5 && !isNoiseNgram(merged) && add(merged)) {
+          if (merged.length <= 5 && !isNoiseNgram(merged)) {
             boundaryMerges.push(merged);
           }
         }
@@ -222,13 +235,11 @@ export function extractKeywords(title: string): string[] {
     // 4c first: Recovered bigram + following content word
     // e.g., 开题 + 报告 → 开题报告
     const recovered = runRecovered.get(info.runIdx) || [];
-    let has4c = false;
     for (const rec of recovered) {
       if (rec.length === 2) {
         const merged = rec + nextSeg.text;
-        if (merged.length <= 6 && !isNoiseNgram(merged) && add(merged)) {
+        if (merged.length <= 6 && !isNoiseNgram(merged)) {
           boundaryMerges.push(merged);
-          has4c = true;
         }
       }
     }
@@ -242,12 +253,32 @@ export function extractKeywords(title: string): string[] {
       const lastCharCovered = recovered.some(bg => bg.endsWith(lastChar));
       if (!lastCharCovered && !FUNC_HEADS.has(lastChar)) {
         const merged = lastChar + nextSeg.text;
-        if (merged.length <= 5 && !isNoiseNgram(merged) && add(merged)) {
+        if (merged.length <= 5 && !isNoiseNgram(merged)) {
           boundaryMerges.push(merged);
         }
       }
     }
   }
+
+  return { adjacentJoins, runNgrams, boundaryMerges, runRecovered };
+}
+
+// ── Main extraction ────────────────────────────────────────────────
+
+export function extractKeywords(title: string): string[] {
+  const normalized = title.trim();
+  if (!normalized) return [];
+
+  const known = getKnownKeywords();
+  const { segInfos, contentWords, runs } = classifySegments(normalized);
+
+  // Empty segmenter fallback
+  if (segInfos.length === 0 && runs.length === 0) {
+    const chars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
+    return extractNgrams(chars).filter(ng => !isNoiseNgram(ng)).slice(0, 10);
+  }
+
+  const { adjacentJoins, runNgrams, boundaryMerges } = computeC3Passes(segInfos, runs);
 
   // ── Assemble with priority: content > adjacentJoins > boundaryMerges > runNgrams ──
 

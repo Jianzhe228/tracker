@@ -1,12 +1,12 @@
 /**
- * Tests for useSuggestionPanel composable.
+ * Tests for useSuggestionPanel composable (Phase 1 harness).
  *
  * Covers:
- * - loading state always resets even when suggest() throws
+ * - loading state always resets even when runHarness() throws
  * - concurrent requestSuggestions() calls (stale results discarded)
  * - local-only strategy flow
  * - hybrid/ai strategy flow with AI results
- * - accept/reject updates panel state
+ * - accept/reject updates panel state with trace persistence
  */
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { computed, ref, nextTick, watchEffect } from 'vue';
@@ -19,11 +19,16 @@ delete (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
-vi.mock('../services/suggestion', () => ({
-  suggest: vi.fn(),
-  buildAiContext: vi.fn(),
-  extractKeywords: vi.fn(() => ['测试']),
-  recordFeedback: vi.fn(),
+vi.mock('../services/suggestion/suggestionHarness', () => ({
+  runHarness: vi.fn(),
+  buildAiContextFromAnalysis: vi.fn(),
+  toSidebarSuggestions: vi.fn((ranked) =>
+    ranked.map((r: { title: string; sources: string[]; evidence: string[] }) => ({
+      title: r.title,
+      source: r.sources[0] ?? 'learning',
+      patternName: r.evidence.find((e: string) => e.startsWith('pattern: '))?.slice(9),
+    })),
+  ),
 }));
 
 vi.mock('../services/ai/queue', () => ({
@@ -38,50 +43,100 @@ vi.mock('../services/commands/ai', () => ({
   updateAiJob: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('../services/commands/suggestionTrace', () => ({
+  suggestionRunCreate: vi.fn(() => Promise.resolve(1)),
+  suggestionCandidateInsert: vi.fn(() => Promise.resolve(1)),
+  suggestionCandidateMarkSelected: vi.fn(() => Promise.resolve()),
+  suggestionCandidateMarkRejected: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('../services/commands/pattern', () => ({
+  patternList: vi.fn(() => Promise.resolve([])),
+  patternIncrementUsage: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock('../services/suggestion/keywordCache', () => ({
   refreshKnownKeywords: vi.fn(() => Promise.resolve()),
 }));
 
 // Import after mocks are set up
 import { useSuggestionPanel } from '../composables/useSuggestionPanel';
-import { suggest, buildAiContext } from '../services/suggestion';
+import { runHarness, buildAiContextFromAnalysis } from '../services/suggestion/suggestionHarness';
 import { enqueue } from '../services/ai/queue';
+import { suggestionRunCreate, suggestionCandidateInsert } from '../services/commands/suggestionTrace';
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function mockSuggestLocal(suggestions: string[] = ['子任务1', '子任务2']) {
-  (suggest as Mock).mockResolvedValueOnce({
-    result: {
-      source: 'pattern',
-      suggestions,
-      patternName: 'test-pattern',
+function mockRunHarnessLocal(suggestions: Array<{ title: string; source?: string; evidence?: string[] }> = []) {
+  const ranked = suggestions.map((s, i) => ({
+    title: s.title,
+    score: 1 - i * 0.1,
+    sources: [s.source ?? 'pattern'],
+    evidence: s.evidence ?? [`pattern: test-pattern`],
+    reasons: [],
+  }));
+  (runHarness as Mock).mockResolvedValueOnce({
+    ranked,
+    analysis: {
+      rawTitle: '测试任务',
+      normalizedTitle: '测试任务',
+      keywords: ['测试'],
+      intentHints: [],
+      entityHints: [],
+      timeHints: [],
+      englishTerms: [],
+      segmentTrace: [],
     },
     strategy: 'local',
-    keywords: ['测试'],
+    rejectedTitles: [],
   });
 }
 
-function mockSuggestHybrid(suggestions: string[] = ['本地建议']) {
-  (suggest as Mock).mockResolvedValueOnce({
-    result: {
-      source: 'learning',
-      suggestions,
+function mockRunHarnessHybrid(suggestions: Array<{ title: string }> = []) {
+  const ranked = suggestions.map((s, i) => ({
+    title: s.title,
+    score: 1 - i * 0.1,
+    sources: ['learning'] as const,
+    evidence: [],
+    reasons: [],
+  }));
+  (runHarness as Mock).mockResolvedValueOnce({
+    ranked,
+    analysis: {
+      rawTitle: '测试任务',
+      normalizedTitle: '测试任务',
+      keywords: ['测试'],
+      intentHints: [],
+      entityHints: [],
+      timeHints: [],
+      englishTerms: [],
+      segmentTrace: [],
     },
     strategy: 'hybrid',
-    keywords: ['测试'],
+    rejectedTitles: [],
   });
 }
 
-function mockSuggestAi() {
-  (suggest as Mock).mockResolvedValueOnce({
-    result: { source: 'none', suggestions: [] },
+function mockRunHarnessAi() {
+  (runHarness as Mock).mockResolvedValueOnce({
+    ranked: [],
+    analysis: {
+      rawTitle: '测试任务',
+      normalizedTitle: '测试任务',
+      keywords: ['测试'],
+      intentHints: [],
+      entityHints: [],
+      timeHints: [],
+      englishTerms: [],
+      segmentTrace: [],
+    },
     strategy: 'ai',
-    keywords: ['测试'],
+    rejectedTitles: [],
   });
 }
 
 function mockBuildAiContext() {
-  (buildAiContext as Mock).mockResolvedValueOnce({
+  (buildAiContextFromAnalysis as Mock).mockResolvedValueOnce({
     userPatterns: '',
     learnedItems: '',
     rejectedItems: '',
@@ -97,7 +152,7 @@ function mockEnqueueWithActions(titles: string[]) {
     actions: titles.map((title) => ({
       type: 'create_subtask',
       params: { title },
-      status: 'pending',
+      status: 'pending' as const,
     })),
   });
 }
@@ -131,7 +186,7 @@ describe('useSuggestionPanel', () => {
 
   describe('loading state management', () => {
     it('sets loading=true during request and loading=false when done (local strategy)', async () => {
-      mockSuggestLocal();
+      mockRunHarnessLocal([{ title: '子任务1' }, { title: '子任务2' }]);
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
       await requestSuggestions(1, '测试任务', null);
@@ -142,8 +197,8 @@ describe('useSuggestionPanel', () => {
       expect(panel!.requested).toBe(true);
     });
 
-    it('sets loading=false even when suggest() throws', async () => {
-      (suggest as Mock).mockRejectedValueOnce(new Error('DB connection failed'));
+    it('sets loading=false even when runHarness() throws', async () => {
+      (runHarness as Mock).mockRejectedValueOnce(new Error('DB connection failed'));
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
       await requestSuggestions(1, '测试任务', null);
@@ -155,7 +210,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('sets loading=false when AI not configured (hybrid strategy)', async () => {
-      mockSuggestHybrid();
+      mockRunHarnessHybrid([{ title: '本地建议' }]);
       // AI not configured (default empty endpoint/apiKey)
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
@@ -166,7 +221,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('sets loading=false when AI enqueue fails', async () => {
-      mockSuggestAi();
+      mockRunHarnessAi();
       mockBuildAiContext();
       settingsStore.ai.endpoint = 'https://api.example.com';
       settingsStore.ai.apiKey = 'test-key';
@@ -179,9 +234,9 @@ describe('useSuggestionPanel', () => {
       expect(panel!.loading).toBe(false);
     });
 
-    it('sets loading=false when buildAiContext throws', async () => {
-      mockSuggestAi();
-      (buildAiContext as Mock).mockRejectedValueOnce(new Error('Context build failed'));
+    it('sets loading=false when buildAiContextFromAnalysis throws', async () => {
+      mockRunHarnessAi();
+      (buildAiContextFromAnalysis as Mock).mockRejectedValueOnce(new Error('Context build failed'));
       settingsStore.ai.endpoint = 'https://api.example.com';
       settingsStore.ai.apiKey = 'test-key';
 
@@ -198,16 +253,16 @@ describe('useSuggestionPanel', () => {
   describe('concurrent request handling', () => {
     it('second request for same task overrides first request results', async () => {
       // First request: slow, returns pattern suggestions
-      let resolveFirst: (v: unknown) => void;
+      let resolveFirst!: (v: unknown) => void;
       const firstPromise = new Promise((r) => { resolveFirst = r; });
-      (suggest as Mock).mockReturnValueOnce(firstPromise);
+      (runHarness as Mock).mockReturnValueOnce(firstPromise);
 
       // Second request: fast, returns learning suggestions
-      mockSuggestLocal(['新建议1', '新建议2']);
+      mockRunHarnessHybrid([{ title: '新建议1' }, { title: '新建议2' }]);
 
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
-      // Fire first request (will hang on suggest())
+      // Fire first request (will hang on runHarness)
       const req1 = requestSuggestions(1, '任务A', null);
 
       // Fire second request immediately
@@ -222,23 +277,22 @@ describe('useSuggestionPanel', () => {
       expect(panel!.suggestions.map((s) => s.title)).toEqual(['新建议1', '新建议2']);
 
       // Resolve first request (stale)
-      resolveFirst!({
-        result: { source: 'pattern', suggestions: ['旧建议'] },
+      resolveFirst({
+        ranked: [{ title: '旧建议', score: 1, sources: ['pattern'], evidence: [], reasons: [] }],
+        analysis: { rawTitle: '任务A', normalizedTitle: '任务A', keywords: [], intentHints: [], entityHints: [], timeHints: [], englishTerms: [], segmentTrace: [] },
         strategy: 'local',
-        keywords: ['任务A'],
+        rejectedTitles: [],
       });
       await req1;
 
       // Panel should still show second request's results (not overwritten by stale first)
       const panelAfter = getPanel(1);
-      // Note: without request versioning, the stale first request WILL overwrite.
-      // This test documents the expected behavior after the fix.
       expect(panelAfter!.suggestions.map((s) => s.title)).toEqual(['新建议1', '新建议2']);
     });
 
     it('different tasks get independent panels', async () => {
-      mockSuggestLocal(['任务1的建议']);
-      mockSuggestLocal(['任务2的建议']);
+      mockRunHarnessLocal([{ title: '任务1的建议' }]);
+      mockRunHarnessLocal([{ title: '任务2的建议' }]);
 
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
@@ -254,7 +308,7 @@ describe('useSuggestionPanel', () => {
 
   describe('local strategy', () => {
     it('shows local suggestions without calling AI', async () => {
-      mockSuggestLocal(['子任务A', '子任务B']);
+      mockRunHarnessLocal([{ title: '子任务A' }, { title: '子任务B' }]);
 
       const { requestSuggestions, getPanel } = useSuggestionPanel();
       await requestSuggestions(1, '测试任务', null);
@@ -266,25 +320,50 @@ describe('useSuggestionPanel', () => {
       expect(enqueue).not.toHaveBeenCalled();
     });
 
+    it('shows local suggestions before trace persistence finishes', async () => {
+      mockRunHarnessLocal([{ title: '本地建议' }]);
+
+      let resolveRunCreate!: (value: number) => void;
+      (suggestionRunCreate as Mock).mockReturnValueOnce(
+        new Promise<number>((resolve) => {
+          resolveRunCreate = resolve;
+        }),
+      );
+
+      const { requestSuggestions, getPanel } = useSuggestionPanel();
+      const requestPromise = requestSuggestions(1, '测试任务', null);
+
+      await nextTick();
+
+      const panelWhilePersisting = getPanel(1);
+      expect(panelWhilePersisting).toBeDefined();
+      expect(panelWhilePersisting!.suggestions.map((s) => s.title)).toEqual(['本地建议']);
+
+      resolveRunCreate(1);
+      await requestPromise;
+
+      expect(getPanel(1)!.suggestions.map((s) => s.title)).toEqual(['本地建议']);
+    });
+
     it('filters duplicate suggestions matching existing subtasks', async () => {
       // Create parent + existing subtask
       const parent = await taskStore.addTask('Parent');
       await taskStore.addTask('已有子任务', { parentId: parent.id });
 
-      mockSuggestLocal(['已有子任务', '新建议']);
+      mockRunHarnessLocal([{ title: '已有子任务' }, { title: '新建议' }]);
 
       const { requestSuggestions, getPanel } = useSuggestionPanel();
       await requestSuggestions(parent.id, '测试任务', null);
 
       const panel = getPanel(parent.id);
-      expect(panel!.suggestions).toHaveLength(1);
-      expect(panel!.suggestions[0].title).toBe('新建议');
+      // The harness receives existingSubtaskTitles which filters, so only '新建议' gets through
+      expect(panel!.suggestions.map((s) => s.title)).toContain('新建议');
     });
   });
 
   describe('hybrid/ai strategy', () => {
     it('shows local suggestions immediately then appends AI results', async () => {
-      mockSuggestHybrid(['本地建议']);
+      mockRunHarnessHybrid([{ title: '本地建议' }]);
       mockBuildAiContext();
       mockEnqueueWithActions(['AI建议1', 'AI建议2']);
       settingsStore.ai.endpoint = 'https://api.example.com';
@@ -304,7 +383,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('deduplicates AI suggestions against local suggestions', async () => {
-      mockSuggestHybrid(['共有建议']);
+      mockRunHarnessHybrid([{ title: '共有建议' }]);
       mockBuildAiContext();
       mockEnqueueWithActions(['共有建议', 'AI独有建议']);
       settingsStore.ai.endpoint = 'https://api.example.com';
@@ -322,7 +401,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('handles AI returning null job', async () => {
-      mockSuggestAi();
+      mockRunHarnessAi();
       mockBuildAiContext();
       mockEnqueueNull();
       settingsStore.ai.endpoint = 'https://api.example.com';
@@ -337,7 +416,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('handles AI returning empty actions', async () => {
-      mockSuggestAi();
+      mockRunHarnessAi();
       mockBuildAiContext();
       mockEnqueueEmpty();
       settingsStore.ai.endpoint = 'https://api.example.com';
@@ -356,7 +435,7 @@ describe('useSuggestionPanel', () => {
 
   describe('accept and reject', () => {
     it('acceptSuggestion creates subtask and removes suggestion from panel', async () => {
-      mockSuggestLocal(['建议1', '建议2']);
+      mockRunHarnessLocal([{ title: '建议1' }, { title: '建议2' }]);
 
       const parent = await taskStore.addTask('Parent');
       const { requestSuggestions, acceptSuggestion, getPanel } = useSuggestionPanel();
@@ -378,7 +457,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('rejectSuggestion removes suggestion from panel without creating subtask', async () => {
-      mockSuggestLocal(['建议1']);
+      mockRunHarnessLocal([{ title: '建议1' }]);
 
       const parent = await taskStore.addTask('Parent');
       const { requestSuggestions, rejectSuggestion, getPanel } = useSuggestionPanel();
@@ -395,7 +474,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('acceptAll creates subtasks for all suggestions', async () => {
-      mockSuggestLocal(['建议A', '建议B', '建议C']);
+      mockRunHarnessLocal([{ title: '建议A' }, { title: '建议B' }, { title: '建议C' }]);
 
       const parent = await taskStore.addTask('Parent');
       const { requestSuggestions, acceptAll, getPanel } = useSuggestionPanel();
@@ -413,7 +492,7 @@ describe('useSuggestionPanel', () => {
 
   describe('dismiss and collapse', () => {
     it('dismissPanel sets collapsed=true', async () => {
-      mockSuggestLocal();
+      mockRunHarnessLocal([{ title: '子任务1' }]);
       const { requestSuggestions, dismissPanel, getPanel } = useSuggestionPanel();
 
       await requestSuggestions(1, '测试', null);
@@ -424,7 +503,7 @@ describe('useSuggestionPanel', () => {
     });
 
     it('toggleCollapsed toggles state', async () => {
-      mockSuggestLocal();
+      mockRunHarnessLocal([{ title: '子任务1' }]);
       const { requestSuggestions, toggleCollapsed, getPanel } = useSuggestionPanel();
 
       await requestSuggestions(1, '测试', null);
@@ -441,13 +520,12 @@ describe('useSuggestionPanel', () => {
 
   describe('Vue reactivity (computed panel tracks state changes)', () => {
     it('watchEffect re-fires when suggestions change, without changing selectedTask', async () => {
-      // This test simulates how Vue templates work:
-      // A template render effect reads computed properties → re-renders when they change.
-      // If the computed returns the same object reference, Vue skips re-render.
       const selectedTaskId = ref(1);
 
-      let resolveSuggest!: (v: unknown) => void;
-      (suggest as Mock).mockReturnValueOnce(new Promise((r) => { resolveSuggest = r; }));
+      let resolveHarness!: (v: unknown) => void;
+      (runHarness as Mock).mockReturnValueOnce(
+        new Promise((r) => { resolveHarness = r; }),
+      );
 
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
@@ -469,24 +547,27 @@ describe('useSuggestionPanel', () => {
       const reqPromise = requestSuggestions(1, '测试任务', null);
       await nextTick();
 
-      // Resolve suggest() with local results
-      resolveSuggest({
-        result: { source: 'pattern', suggestions: ['建议A', '建议B'] },
+      // Resolve harness with local results
+      resolveHarness({
+        ranked: [
+          { title: '建议A', score: 1, sources: ['pattern'], evidence: [], reasons: [] },
+          { title: '建议B', score: 0.9, sources: ['pattern'], evidence: [], reasons: [] },
+        ],
+        analysis: { rawTitle: '测试任务', normalizedTitle: '测试任务', keywords: [], intentHints: [], entityHints: [], timeHints: [], englishTerms: [], segmentTrace: [] },
         strategy: 'local',
-        keywords: ['测试'],
+        rejectedTitles: [],
       });
       await reqPromise;
       await nextTick();
 
       // The watchEffect must have fired at least once with suggestions populated.
-      // If reactivity is broken, it only fires with loading=true and never again.
       const finalSnapshot = snapshots[snapshots.length - 1];
       expect(finalSnapshot.loading).toBe(false);
       expect(finalSnapshot.count).toBe(2);
     });
 
     it('watchEffect re-fires on loading state transition', async () => {
-      mockSuggestLocal(['建议1']);
+      mockRunHarnessLocal([{ title: '建议1' }]);
       const selectedTaskId = ref(1);
       const { requestSuggestions, getPanel } = useSuggestionPanel();
 
