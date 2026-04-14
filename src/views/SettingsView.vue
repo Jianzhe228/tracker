@@ -10,7 +10,10 @@ import { testWebDavConnection, webdavUpload, webdavDownload, webdavSyncStatus } 
 import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { enable as enableAutoStart, disable as disableAutoStart, isEnabled as isAutoStartEnabled } from '@tauri-apps/plugin-autostart';
 import { patternList, patternCreate, patternUpdate, patternDelete } from '../services/commands/pattern';
+import { getAppVersion } from '../services/commands/health';
 import type { SubtaskPattern } from '../types/domain';
+
+const packageVersion = import.meta.env.PACKAGE_VERSION || '0.0.0';
 
 const settingsStore = useSettingsStore();
 const uiStore = useUiStore();
@@ -105,6 +108,13 @@ const clearStatus = ref<'idle' | 'clearing'>('idle');
 const editingSkillId = ref<number | null>(null);
 const editSkillSystemPrompt = ref('');
 const editSkillUserPromptTemplate = ref('');
+
+// ── Update checker ───────────────────────────────────────────────────
+const updateStatus = ref<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'none'>('idle');
+const updateError = ref('');
+const updateInfo = ref<{ version: string; notes: string; downloadUrl: string } | null>(null);
+const currentVersion = ref('');
+const downloadProgress = ref(0);
 
 // ── Pattern template management ────────────────────────────────────
 const patterns = ref<SubtaskPattern[]>([]);
@@ -446,8 +456,70 @@ onMounted(() => {
   loadPatterns();
   if (isTauri) {
     isAutoStartEnabled().then(v => { autoStart.value = v; }).catch(() => {});
+    getAppVersion().then(v => { currentVersion.value = v; }).catch(() => {});
   }
 });
+
+async function checkForUpdates(): Promise<void> {
+  if (!isTauri) {
+    uiStore.notify('更新功能仅在桌面端可用');
+    return;
+  }
+  updateStatus.value = 'checking';
+  updateError.value = '';
+  updateInfo.value = null;
+  try {
+    const response = await fetch('https://api.github.com/repos/Jianzhe228/tracker/releases/latest', {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+    const data = await response.json();
+    const latestVersion = data.tag_name?.replace(/^v/, '') || '';
+    const currentVer = currentVersion.value || packageVersion;
+    if (latestVersion && compareVersions(latestVersion, currentVer) > 0) {
+      const asset = data.assets?.find((a: any) =>
+        a.name?.endsWith('.exe') || a.name?.endsWith('.msi') ||
+        a.name?.endsWith('.AppImage') || a.name?.endsWith('.dmg')
+      );
+      updateInfo.value = {
+        version: latestVersion,
+        notes: data.body || '',
+        downloadUrl: asset?.browser_download_url || data.html_url || '',
+      };
+      updateStatus.value = 'available';
+    } else {
+      updateStatus.value = 'none';
+      uiStore.notify('已是最新版本');
+    }
+  } catch (e) {
+    updateStatus.value = 'error';
+    updateError.value = String(e);
+    uiStore.notify('检查更新失败：' + String(e));
+  }
+}
+
+function compareVersions(v1: string, v2: string): number {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const p1 = parts1[i] || 0;
+    const p2 = parts2[i] || 0;
+    if (p1 > p2) return 1;
+    if (p1 < p2) return -1;
+  }
+  return 0;
+}
+
+async function downloadAndInstall(): Promise<void> {
+  if (!updateInfo.value?.downloadUrl) return;
+  try {
+    await open(updateInfo.value.downloadUrl);
+  } catch (e) {
+    uiStore.notify('打开下载链接失败：' + String(e));
+  }
+}
 </script>
 
 <template>
@@ -685,6 +757,37 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 关于与更新 -->
+      <section>
+        <h2 class="mb-4 text-base font-semibold text-slate-800">关于与更新</h2>
+        <div class="space-y-3">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <span class="text-sm text-slate-700">当前版本</span>
+              <p class="text-xs text-slate-400">Smart Focus Tracker v{{ currentVersion || packageVersion }}</p>
+            </div>
+            <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="updateStatus === 'checking'" @click="checkForUpdates">
+              {{ updateStatus === 'checking' ? '检查中…' : '检查更新' }}
+            </button>
+          </div>
+          <div v-if="updateStatus === 'available'" class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="text-sm font-medium text-blue-700">发现新版本 v{{ updateInfo?.version }}</p>
+                <p v-if="updateInfo?.notes" class="mt-1 text-xs text-blue-600 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
+              </div>
+              <button class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="downloadAndInstall">下载更新</button>
+            </div>
+          </div>
+          <div v-else-if="updateStatus === 'none'" class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p class="text-sm text-slate-600">已是最新版本</p>
+          </div>
+          <div v-else-if="updateStatus === 'error'" class="rounded-lg border border-red-200 bg-red-50 p-4">
+            <p class="text-sm text-red-600">{{ updateError || '检查更新失败' }}</p>
           </div>
         </div>
       </section>
