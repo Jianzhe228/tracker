@@ -80,6 +80,7 @@ const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? 'å€
 
 // Circle progress
 const circumference = 2 * Math.PI * 140;
+const displayHasHours = computed(() => timerStore.display.includes(':') && timerStore.display.split(':').length > 2);
 const strokeDashoffset = computed(() => {
   return circumference - ((timerStore.progress ?? 0) / 100) * circumference;
 });
@@ -306,7 +307,7 @@ onUnmounted(() => {
           </svg>
         <!-- Timer Display -->
         <div class="absolute inset-0 flex flex-col items-center justify-center">
-          <span class="font-mono text-6xl font-light tabular-nums tracking-wider text-white">
+          <span class="font-mono tabular-nums tracking-wider text-white" :class="displayHasHours ? 'text-4xl' : 'text-6xl'" :style="{ fontWeight: displayHasHours ? 400 : 300 }">
             {{ timerStore.display }}
           </span>
           <span class="mt-2 text-sm text-white/60">{{ timerStore.mode === 'focus' ? timerKindLabel : timerStore.modeLabel }}</span>
