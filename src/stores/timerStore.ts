@@ -140,6 +140,7 @@ export const useTimerStore = defineStore('timer', () => {
 
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let lastPersistAt = 0;
+  let lastRAFAt = 0; // last timestamp from requestAnimationFrame
 
   const running = computed(() => status.value === 'running');
   const paused = computed(() => status.value === 'paused');
@@ -606,24 +607,30 @@ export const useTimerStore = defineStore('timer', () => {
       saveState();
       return;
     }
-
-    const deltaSeconds = Math.max(0, Math.floor((now - lastTickAt.value) / 1000));
     lastTickAt.value = now;
     syncDailyPomodoroCounter();
 
     if (running.value) {
       if (mode.value === 'focus') {
+        // Always derive elapsed from wall-clock (startedAt), never accumulate delta,
+        // so tab throttling/batching cannot cause drift or skip-ahead.
+        const rawElapsed = now - startedAt.value! - accumulatedPauseMs.value;
+        const elapsed = Math.max(0, Math.floor(rawElapsed / 1000));
         if (timerKind.value === 'countdown') {
-          remainingSeconds.value = Math.max(0, remainingSeconds.value - deltaSeconds);
+          remainingSeconds.value = Math.max(0, totalSeconds.value - elapsed);
           if (remainingSeconds.value <= 0) {
             finalizeFocusSession('completed', true);
             return;
           }
         } else {
-          elapsedSeconds.value += deltaSeconds;
+          // countup: cap at totalSeconds as progress baseline
+          elapsedSeconds.value = Math.min(elapsed, totalSeconds.value);
         }
       } else {
-        remainingSeconds.value = Math.max(0, remainingSeconds.value - deltaSeconds);
+        // break mode: derive remaining directly from startedAt
+        const rawElapsed = now - startedAt.value!;
+        const elapsed = Math.max(0, Math.floor(rawElapsed / 1000));
+        remainingSeconds.value = Math.max(0, totalSeconds.value - elapsed);
         if (remainingSeconds.value <= 0) {
           completeBreak();
           return;
