@@ -133,6 +133,7 @@ const statusLabel = computed(() => {
                 <svg class="relative z-10 h-full w-full -rotate-90 transform" viewBox="0 0 256 256">
                   <circle cx="128" cy="128" r="118" fill="none" stroke="#e2e8f0" stroke-width="10" />
                   <circle
+                    v-if="timerStore.timerKind === 'countdown'"
                     cx="128"
                     cy="128"
                     r="118"

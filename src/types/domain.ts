@@ -33,10 +33,14 @@ export interface ProjectItem {
   updatedAt: string;
 }
 
-export interface PomodoroSettings {
+export interface TimerSettings {
   focusMinutes: number;
   shortBreakMinutes: number;
   longBreakMinutes: number;
+  longBreakInterval: number;
+  autoStartBreak: boolean;
+  autoStartNext: boolean;
+  defaultTimerKind: 'countdown' | 'countup';
 }
 
 export interface RecurringRuleItem {

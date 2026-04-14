@@ -47,6 +47,11 @@ const autoStartNext = computed({
   set: (value: boolean) => settingsStore.updatePomodoro({ autoStartNext: value })
 });
 
+const defaultTimerKind = computed({
+  get: () => settingsStore.timer.defaultTimerKind,
+  set: (value: 'countdown' | 'countup') => settingsStore.updatePomodoro({ defaultTimerKind: value })
+});
+
 const notifyStart = computed({
   get: () => settingsStore.notification.notifyFocusStart,
   set: (value: boolean) => settingsStore.updateNotification({ notifyFocusStart: value })
@@ -494,6 +499,13 @@ onMounted(() => {
           <div class="flex items-center justify-between gap-4 py-3">
             <div><span class="text-sm text-slate-700">自动开始下一个番茄</span><p class="text-xs text-slate-400">休息结束后自动开始专注</p></div>
             <button role="switch" :aria-checked="autoStartNext" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStartNext ? 'bg-blue-600' : 'bg-slate-200'" @click="autoStartNext = !autoStartNext"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStartNext ? 'translate-x-4' : 'translate-x-0'" /></button>
+          </div>
+          <div class="flex items-center justify-between gap-4 py-3">
+            <div><span class="text-sm text-slate-700">默认计时模式</span><p class="text-xs text-slate-400">新建专注时的默认计时方式</p></div>
+            <div class="flex gap-1 rounded-full bg-slate-100 p-1">
+              <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countdown' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" @click="defaultTimerKind = 'countdown'">倒计时</button>
+              <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" @click="defaultTimerKind = 'countup'">正计时</button>
+            </div>
           </div>
         </div>
       </section>

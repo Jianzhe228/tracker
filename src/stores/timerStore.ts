@@ -115,7 +115,7 @@ export const useTimerStore = defineStore('timer', () => {
 
   const status = ref<TimerStatus>('idle');
   const mode = ref<TimerMode>('focus');
-  const timerKind = ref<TimerKind>('countdown');
+  const timerKind = ref<TimerKind>(settingsStore.timer.defaultTimerKind);
   const totalSeconds = ref<number>(0);
   const remainingSeconds = ref<number>(0);
   const elapsedSeconds = ref<number>(0);
@@ -179,13 +179,14 @@ export const useTimerStore = defineStore('timer', () => {
     return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   });
 
+  // null for countup — no progress bar needed
   const progress = computed(() => {
+    if (timerKind.value === 'countup') return null;
     if (timerKind.value === 'countdown') {
       if (totalSeconds.value <= 0) return 0;
       return Math.round(((totalSeconds.value - remainingSeconds.value) / totalSeconds.value) * 1000) / 10;
     }
-    const baseline = Math.max(60, totalSeconds.value);
-    return Math.round(Math.min(100, (elapsedSeconds.value / baseline) * 1000) / 10);
+    return 0;
   });
 
   const modeLabel = computed(() => {
@@ -446,7 +447,7 @@ export const useTimerStore = defineStore('timer', () => {
   function resetToIdleFocus(): void {
     status.value = 'idle';
     mode.value = 'focus';
-    timerKind.value = 'countdown';
+    timerKind.value = settingsStore.timer.defaultTimerKind;
     totalSeconds.value = getDefaultSeconds('focus');
     remainingSeconds.value = totalSeconds.value;
     elapsedSeconds.value = 0;
@@ -623,8 +624,8 @@ export const useTimerStore = defineStore('timer', () => {
             return;
           }
         } else {
-          // countup: cap at totalSeconds as progress baseline
-          elapsedSeconds.value = Math.min(elapsed, totalSeconds.value);
+          // countup: no cap — can run indefinitely
+          elapsedSeconds.value = elapsed;
         }
       } else {
         // break mode: derive remaining directly from startedAt

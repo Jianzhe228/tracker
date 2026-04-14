@@ -29,6 +29,7 @@ export const useSettingsStore = defineStore('settings', () => {
     longBreakInterval: 4,
     autoStartBreak: false,
     autoStartNext: false,
+    defaultTimerKind: 'countdown',
   });
 
   // Keep backward-compatible alias
@@ -78,6 +79,11 @@ export const useSettingsStore = defineStore('settings', () => {
           break;
         case 'autoStartNext':
           timer.value.autoStartNext = value === 'true';
+          break;
+        case 'defaultTimerKind':
+          if (value === 'countup' || value === 'countdown') {
+            timer.value.defaultTimerKind = value;
+          }
           break;
         case 'notifyFocusStart':
           notification.value.notifyFocusStart = value === 'true';
@@ -149,6 +155,9 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       if (next.autoStartNext !== undefined) {
         promises.push(setSetting('autoStartNext', String(next.autoStartNext)));
+      }
+      if (next.defaultTimerKind !== undefined) {
+        promises.push(setSetting('defaultTimerKind', next.defaultTimerKind));
       }
       await Promise.all(promises).catch(console.error);
     }

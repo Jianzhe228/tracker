@@ -291,6 +291,7 @@ onUnmounted(() => {
               stroke-width="4"
             />
             <circle
+              v-if="timerStore.timerKind === 'countdown'"
               cx="150"
               cy="150"
               r="140"
