@@ -117,23 +117,17 @@ jobs:
 
           # Find the installer
           if [ "${{ matrix.platform }}" == "windows-latest" ]; then
-            find src-tauri/target/release/bundle -name "*.exe" -o -name "*.msi" | head -1 > artifact_path.txt
+            find src-tauri/target/release/bundle \( -name "*.exe" -o -name "*.msi" \) | head -1 > artifact_path.txt
           elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
-            find src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" | head -1 > artifact_path.txt
+            find src-tauri/target/release/bundle \( -name "*.deb" -o -name "*.AppImage" \) | head -1 > artifact_path.txt
           else
             find src-tauri/target/release/bundle -name "*.dmg" | head -1 > artifact_path.txt
           fi
-          ARTIFACT_PATH=$(cat artifact_path.txt)
-          ARTIFACT_NAME=$(basename $ARTIFACT_PATH)
+          ARTIFACT_PATH=$(cat artifact_path.txt | tr -d '\n')
+          ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")
 
           # Calculate hash
-          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
-            HASH=$(openssl dgst -sha256 $ARTIFACT_PATH | awk '{print $2}')
-          elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
-            HASH=$(openssl dgst -sha256 $ARTIFACT_PATH | awk '{print $2}')
-          else
-            HASH=$(openssl dgst -sha256 $ARTIFACT_PATH | awk '{print $2}')
-          fi
+          HASH=$(openssl dgst -sha256 "$ARTIFACT_PATH" | awk '{print $2}')
 
           # Create update.json
           cat > update.json << EOF
