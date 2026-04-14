@@ -252,26 +252,27 @@ const focusButtonTone = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-slate-50">
+  <div class="flex h-screen bg-[#F9F9FB] text-slate-800 antialiased selection:bg-blue-200">
     <!-- Sidebar -->
     <aside
-      class="flex flex-col border-r border-slate-200 bg-white transition-[width] duration-200"
+      class="flex flex-col border-r border-slate-200/60 bg-[#F9F9FB] transition-[width] duration-200"
       :class="sidebarCollapsed ? 'w-16' : 'w-60'"
     >
       <!-- App Brand -->
-      <div class="flex items-center border-b border-slate-100 px-3 py-3" :class="sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'" data-tauri-drag-region>
+      <div class="flex h-14 shrink-0 items-center px-3" :class="sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'" data-tauri-drag-region>
         <button
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-sm"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b from-blue-500 to-indigo-600 text-white shadow-sm ring-1 ring-blue-600/20"
           aria-label="收起/展开侧边栏"
           @click="toggleSidebar"
         >
-          <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" v-if="sidebarCollapsed" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7M19 19l-7-7 7-7" v-else />
           </svg>
         </button>
-        <div v-if="!sidebarCollapsed">
-          <h1 class="text-sm font-semibold text-slate-800">{{ APP_NAME }}</h1>
-          <p class="text-xs text-slate-400">专注追踪</p>
+        <div v-if="!sidebarCollapsed" class="flex-1 overflow-hidden" data-tauri-drag-region>
+          <h1 class="truncate text-sm font-semibold tracking-tight text-slate-800">{{ APP_NAME }}</h1>
+          <p class="truncate text-[11px] font-medium text-slate-400">Focus & Flow</p>
         </div>
       </div>
 
@@ -284,7 +285,7 @@ const focusButtonTone = computed(() => {
           :class="[
             sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5',
             isActive('/')
-              ? 'bg-red-50 text-red-600'
+              ? 'bg-white shadow-sm ring-1 ring-slate-200/50 text-red-600'
               : 'text-slate-600 hover:bg-slate-50'
           ]"
           :title="sidebarCollapsed ? '仪表盘' : undefined"
@@ -307,7 +308,7 @@ const focusButtonTone = computed(() => {
             :class="[
               sidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-3 py-2',
               isActive(item.path)
-                ? 'bg-slate-100 text-slate-900'
+                ? 'bg-white shadow-sm ring-1 ring-slate-200/50 text-slate-900'
                 : 'text-slate-600 hover:bg-slate-50'
             ]"
             :title="sidebarCollapsed ? item.label : undefined"
@@ -359,7 +360,7 @@ const focusButtonTone = computed(() => {
             :class="[
               sidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-3 py-2',
               isActive(`/project/${project.id}`)
-                ? 'bg-slate-100 text-slate-900'
+                ? 'bg-white shadow-sm ring-1 ring-slate-200/50 text-slate-900'
                 : 'text-slate-600 hover:bg-slate-50'
             ]"
             :title="sidebarCollapsed ? project.title : undefined"
@@ -425,24 +426,24 @@ const focusButtonTone = computed(() => {
     </aside>
 
     <!-- Main Content -->
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="flex min-w-0 flex-1 flex-col bg-[#F9F9FB] pt-2 pr-2 pb-2">
       <!-- Custom Titlebar (drag region) -->
-      <div class="flex h-9 shrink-0 items-center justify-end" data-tauri-drag-region>
-        <div class="flex items-center">
-          <button class="flex h-9 w-11 items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600" title="最小化" @click="appWindow.minimize()">
+      <div class="flex h-12 shrink-0 items-center justify-end rounded-tr-xl bg-[#F9F9FB]" data-tauri-drag-region>
+        <div class="flex h-full items-center px-1">
+          <button class="flex h-7 w-10 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/60 hover:text-slate-700" title="最小化" @click="appWindow.minimize()">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M5 12h14" /></svg>
           </button>
-          <button class="flex h-9 w-11 items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600" :title="isMaximized ? '还原' : '最大化'" @click="appWindow.toggleMaximize()">
+          <button class="flex h-7 w-10 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/60 hover:text-slate-700" :title="isMaximized ? '还原' : '最大化'" @click="appWindow.toggleMaximize()">
             <svg v-if="isMaximized" class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M8 4h12a1 1 0 011 1v12M4 8h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" /></svg>
             <svg v-else class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" /></svg>
           </button>
-          <button class="flex h-9 w-11 items-center justify-center text-slate-400 transition-colors hover:bg-red-500 hover:text-white" title="关闭" @click="appWindow.close()">
+          <button class="flex h-7 w-10 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500 hover:text-white" title="关闭" @click="appWindow.close()">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M6 6l12 12M6 18L18 6" /></svg>
           </button>
         </div>
       </div>
       <!-- Router View -->
-      <main ref="mainRef" class="flex-1 overflow-auto" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
+      <main ref="mainRef" class="relative flex-1 overflow-auto rounded-xl border border-slate-200/60 bg-white shadow-sm ring-1 ring-black/[0.03]" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
         <RouterView />
       </main>
     </div>
