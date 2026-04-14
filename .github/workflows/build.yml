@@ -198,9 +198,16 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-assets
-          cp artifacts/windows-installer/* release-assets/ 2>/dev/null || true
-          cp artifacts/linux-installer/* release-assets/ 2>/dev/null || true
-          cp artifacts/macos-installer/* release-assets/ 2>/dev/null || true
+
+          # download-artifact keeps nested directories for multi-path uploads,
+          # so collect installer files recursively instead of copying only the top level.
+          find artifacts -type f \( \
+            -name "*.exe" -o \
+            -name "*.msi" -o \
+            -name "*.deb" -o \
+            -name "*.AppImage" -o \
+            -name "*.dmg" \
+          \) -exec cp {} release-assets/ \;
 
           # Aggregate all fragments into one platforms object
           TAG=${GITHUB_REF#refs/tags/}
