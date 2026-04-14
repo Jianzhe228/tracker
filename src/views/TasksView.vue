@@ -280,17 +280,31 @@ function isTimelineGroupOverdue(task: TaskItem): boolean {
   return dateKey < getDateKeyFromToday(0);
 }
 
-function getOverdueTaskIdsInGroup(task: TaskItem): number[] {
+function getTaskIdsInGroup(task: TaskItem): number[] {
   const dateKey = getTimelineDateKey(task);
   return displayTasks.value
-    .filter((t) => getTimelineDateKey(t) === dateKey && t.status !== 'done' && t.status !== 'cancelled' && !t.rescheduledTo)
+    .filter((t) => getTimelineDateKey(t) === dateKey && t.status !== 'cancelled')
     .map((t) => t.id);
 }
 
-async function rescheduleGroupToToday(task: TaskItem): Promise<void> {
-  const ids = getOverdueTaskIdsInGroup(task);
-  if (ids.length > 0) {
-    await taskStore.rescheduleOverdueToToday(ids);
+async function copyGroupToToday(task: TaskItem): Promise<void> {
+  try {
+    const ids = getTaskIdsInGroup(task);
+    if (ids.length > 0) {
+      await taskStore.copyTasksToToday(ids);
+    }
+  } catch (error) {
+    console.error('Failed to copy tasks to today:', error);
+    alert('复制任务失败，请稍后重试');
+  }
+}
+
+async function copySingleTaskToToday(taskId: number): Promise<void> {
+  try {
+    await taskStore.copyTaskToToday(taskId);
+  } catch (error) {
+    console.error('Failed to copy task to today:', error);
+    alert('复制任务失败，请稍后重试');
   }
 }
 
@@ -535,6 +549,16 @@ function formatReminder(reminderTime: string | null): string {
 function isTaskOverdue(task: TaskItem): boolean {
   if (!task.dueAt) return false;
   if (task.status === 'done' || task.status === 'cancelled') return false;
+  return task.dueAt < getDateKeyFromToday(0);
+}
+
+/**
+ * Check if a task can be copied to today.
+ * Returns true for any past task (including completed ones).
+ */
+function canCopyTaskToToday(task: TaskItem): boolean {
+  if (!task.dueAt) return false;
+  if (task.status === 'cancelled') return false;
   return task.dueAt < getDateKeyFromToday(0);
 }
 
@@ -1667,9 +1691,9 @@ onMounted(() => {
                   <button
                     v-if="isTimelineGroupOverdue(task)"
                     class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100"
-                    @click.stop="rescheduleGroupToToday(task)"
+                    @click.stop="copyGroupToToday(task)"
                   >
-                    全部→今天
+                    全部复制到今天
                   </button>
                   <div class="h-px flex-1 bg-slate-200" />
                 </div>
@@ -1777,14 +1801,14 @@ onMounted(() => {
                       <span v-else-if="isTaskOverdue(task)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
                     </span>
 
-                    <!-- Reschedule to today -->
+                    <!-- Copy to today -->
                     <button
-                      v-if="isTaskOverdue(task)"
+                      v-if="canCopyTaskToToday(task)"
                       class="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 opacity-0 ring-1 ring-amber-200 transition-all group-hover:opacity-100 hover:bg-amber-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
-                      aria-label="移至今天"
-                      @click.stop="taskStore.rescheduleToToday(task.id)"
+                      aria-label="复制到今天"
+                      @click.stop="copySingleTaskToToday(task.id)"
                     >
-                      →今天
+                      复制到今天
                     </button>
 
                     <!-- Quick Focus -->

@@ -745,6 +745,48 @@ export const useTaskStore = defineStore('task', () => {
     deadlineWatcherInterval = null;
   }
 
+  /**
+   * Copy a task to today without changing the original task status.
+   * Used for both completed and incomplete tasks in "All" view.
+   */
+  async function copyTaskToToday(id: number): Promise<void> {
+    const original = tasks.value.find((task) => task.id === id);
+    if (!original) return;
+    const today = new Date();
+    const todayKey = toDateKey(today);
+
+    // Clone the parent task to today
+    const cloned = await addTask(original.title, {
+      projectId: original.projectId,
+      priority: original.priority,
+      dueAt: todayKey,
+      notes: original.notes,
+      pomodoroCount: original.pomodoroCount,
+      pomodoroDuration: original.pomodoroDuration,
+      recurringRuleId: original.recurringRuleId,
+      skipHistoryAutofill: true,
+    });
+
+    // Clone all subtasks (including completed ones)
+    const subtasks = tasks.value.filter((task) => task.parentId === id);
+    for (const sub of subtasks) {
+      await addTask(sub.title, {
+        parentId: cloned.id,
+        projectId: sub.projectId,
+        priority: sub.priority,
+        dueAt: todayKey,
+        pomodoroCount: sub.pomodoroCount,
+        pomodoroDuration: sub.pomodoroDuration,
+        skipHistoryAutofill: true,
+      });
+    }
+  }
+
+  /**
+   * Reschedule an incomplete task to today.
+   * The original task will be marked as cancelled.
+   * Used only for incomplete overdue tasks.
+   */
   async function rescheduleToToday(id: number): Promise<void> {
     const original = tasks.value.find((task) => task.id === id);
     if (!original) return;
@@ -787,6 +829,10 @@ export const useTaskStore = defineStore('task', () => {
     await Promise.all(ids.map((id) => rescheduleToToday(id)));
   }
 
+  async function copyTasksToToday(ids: number[]): Promise<void> {
+    await Promise.all(ids.map((id) => copyTaskToToday(id)));
+  }
+
   return {
     tasks,
     projects,
@@ -814,5 +860,7 @@ export const useTaskStore = defineStore('task', () => {
     stopDeadlineWatcher,
     rescheduleToToday,
     rescheduleOverdueToToday,
+    copyTaskToToday,
+    copyTasksToToday,
   };
 });
