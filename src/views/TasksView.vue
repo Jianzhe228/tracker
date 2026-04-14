@@ -1335,6 +1335,7 @@ async function saveTaskDetail(): Promise<void> {
           pomodoroCount: normalized.pomodoroCount,
           pomodoroDuration: taskPomodoroDuration || settingsStore.timer.focusMinutes,
         });
+      }
     }
 
     if (timerStore.currentTaskId === editingTaskId) {
