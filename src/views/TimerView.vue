@@ -77,7 +77,7 @@ async function handleStop(): Promise<void> {
 
 const circumference = 2 * Math.PI * 120;
 const strokeDashoffset = computed(() => {
-  return circumference - (timerStore.progress / 100) * circumference;
+  return circumference - ((timerStore.progress ?? 0) / 100) * circumference;
 });
 
 const isBreakMode = computed(() => timerStore.mode !== 'focus');

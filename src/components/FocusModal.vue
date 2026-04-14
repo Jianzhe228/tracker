@@ -81,7 +81,7 @@ const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? 'å€
 // Circle progress
 const circumference = 2 * Math.PI * 140;
 const strokeDashoffset = computed(() => {
-  return circumference - (timerStore.progress / 100) * circumference;
+  return circumference - ((timerStore.progress ?? 0) / 100) * circumference;
 });
 
 function selectTask(taskId: number, taskTitle: string) {

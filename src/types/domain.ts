@@ -103,12 +103,6 @@ export interface NotificationLogItem {
   createdAt: string;
 }
 
-export interface TimerSettings extends PomodoroSettings {
-  longBreakInterval: number;
-  autoStartBreak: boolean;
-  autoStartNext: boolean;
-}
-
 export interface HourlyBucket {
   hour: number;
   totalSeconds: number;

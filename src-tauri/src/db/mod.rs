@@ -4,7 +4,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 pub struct AppState {
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
     db: OnceLock<Mutex<Connection>>,
 }
 
@@ -13,7 +13,7 @@ impl AppState {
         let conn =
             init_db(&app_handle).map_err(|e| format!("failed to initialize database: {}", e))?;
         let db = OnceLock::from(Mutex::new(conn));
-        Ok(Self { app_handle, db })
+        Ok(Self { _app_handle: app_handle, db })
     }
 
     pub fn db(&self) -> &Mutex<Connection> {

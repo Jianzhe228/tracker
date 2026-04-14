@@ -22,7 +22,7 @@ jobs:
             updater_target: windows
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            updater_target: ubuntu
+            updater_target: linux
           - platform: macos-latest
             target: aarch64-apple-darwin
             updater_target: macos
@@ -116,19 +116,27 @@ jobs:
           echo "$UPDATER_KEY" > private.pem
           openssl rsa -in private.pem -pubout -out public.pem 2>/dev/null
 
-          # Find the installer
+          # Find the installer (Tauri v2 paths)
+          BUNDLE_DIR="src-tauri/target/release/bundle"
           if [ "${{ matrix.platform }}" == "windows-latest" ]; then
-            find src-tauri/target/release/bundle \( -name "*.exe" -o -name "*.msi" \) | head -1 > artifact_path.txt
+            ARTIFACT_PATH=$(find "$BUNDLE_DIR" -type f \( -name "*.exe" -o -name "*.msi" \) | head -1)
           elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
-            find src-tauri/target/release/bundle \( -name "*.deb" -o -name "*.AppImage" \) | head -1 > artifact_path.txt
+            ARTIFACT_PATH=$(find "$BUNDLE_DIR" -type f \( -name "*.deb" -o -name "*.AppImage" \) | head -1)
           else
-            find src-tauri/target/release/bundle -name "*.dmg" | head -1 > artifact_path.txt
+            ARTIFACT_PATH=$(find "$BUNDLE_DIR" -type f -name "*.dmg" | head -1)
           fi
-          ARTIFACT_PATH=$(cat artifact_path.txt | tr -d '\n')
-          ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")
 
-          # Calculate hash
-          HASH=$(openssl dgst -sha256 "$ARTIFACT_PATH" | awk '{print $2}')
+          if [ -z "$ARTIFACT_PATH" ]; then
+            echo "Error: Could not find artifact in $BUNDLE_DIR"
+            ls -R "$BUNDLE_DIR"
+            exit 1
+          fi
+
+          ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")
+          echo "Processing artifact: $ARTIFACT_NAME"
+
+          # Calculate hash (use -r for consistent format: <hash> <file>)
+          HASH=$(openssl dgst -sha256 -r "$ARTIFACT_PATH" | awk '{print $1}')
 
           # Create update.json
           cat > update.json << EOF
@@ -148,9 +156,10 @@ jobs:
           rm private.pem
 
           # Base64 encode for artifact
-          base64 -i update.json -o update.json.b64
-          base64 -i update.json.sig -o update.json.sig.b64
+          base64 < update.json > update.json.b64
+          base64 < update.json.sig > update.json.sig.b64
 
+          echo "artifact_path=$ARTIFACT_PATH" > artifact_path.txt
           echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -174,13 +183,11 @@ jobs:
         with:
           pattern: '*-installer'
           path: artifacts
-          merge-multiple: true
 
       - name: Download update artifacts
         uses: actions/download-artifact@v4
         with:
           path: updates
-          merge-multiple: true
 
       - name: Prepare release files
         shell: bash
@@ -191,15 +198,13 @@ jobs:
           cp artifacts/macos-installer/* release-assets/ 2>/dev/null || true
 
           # Copy update.json files for each platform
-          if [ -f "updates/update.json.b64" ]; then
-            for target in windows linux macos; do
-              if [ -f "updates/update-${target}/update.json.b64" ]; then
-                mkdir -p "release-assets/${target}"
-                base64 -D -i "updates/update-${target}/update.json.b64" -o "release-assets/${target}/update.json"
-                base64 -D -i "updates/update-${target}/update.json.sig.b64" -o "release-assets/${target}/update.json.sig"
-              fi
-            done
-          fi
+          for target in windows linux macos; do
+            if [ -f "updates/update-${target}/update.json.b64" ]; then
+              mkdir -p "release-assets/${target}"
+              base64 -d < "updates/update-${target}/update.json.b64" > "release-assets/${target}/update.json"
+              base64 -d < "updates/update-${target}/update.json.sig.b64" > "release-assets/${target}/update.json.sig"
+            fi
+          done
 
           ls -la release-assets/
 
