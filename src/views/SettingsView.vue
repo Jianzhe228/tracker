@@ -11,6 +11,8 @@ import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialo
 import { enable as enableAutoStart, disable as disableAutoStart, isEnabled as isAutoStartEnabled } from '@tauri-apps/plugin-autostart';
 import { patternList, patternCreate, patternUpdate, patternDelete } from '../services/commands/pattern';
 import { getAppVersion } from '../services/commands/health';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import type { SubtaskPattern } from '../types/domain';
 
 const packageVersion = import.meta.env.PACKAGE_VERSION || '0.0.0';
@@ -112,7 +114,7 @@ const editSkillUserPromptTemplate = ref('');
 // ── Update checker ───────────────────────────────────────────────────
 const updateStatus = ref<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'none'>('idle');
 const updateError = ref('');
-const updateInfo = ref<{ version: string; notes: string; downloadUrl: string } | null>(null);
+const updateInfo = ref<{ version: string; notes: string } | null>(null);
 const currentVersion = ref('');
 const downloadProgress = ref(0);
 
@@ -469,24 +471,11 @@ async function checkForUpdates(): Promise<void> {
   updateError.value = '';
   updateInfo.value = null;
   try {
-    const response = await fetch('https://api.github.com/repos/Jianzhe228/tracker/releases/latest', {
-      headers: { 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status}`);
-    }
-    const data = await response.json();
-    const latestVersion = data.tag_name?.replace(/^v/, '') || '';
-    const currentVer = currentVersion.value || packageVersion;
-    if (latestVersion && compareVersions(latestVersion, currentVer) > 0) {
-      const asset = data.assets?.find((a: any) =>
-        a.name?.endsWith('.exe') || a.name?.endsWith('.msi') ||
-        a.name?.endsWith('.AppImage') || a.name?.endsWith('.dmg')
-      );
+    const update = await check();
+    if (update) {
       updateInfo.value = {
-        version: latestVersion,
-        notes: data.body || '',
-        downloadUrl: asset?.browser_download_url || data.html_url || '',
+        version: update.version,
+        notes: update.body || '',
       };
       updateStatus.value = 'available';
     } else {
@@ -500,24 +489,23 @@ async function checkForUpdates(): Promise<void> {
   }
 }
 
-function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
-  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-    const p1 = parts1[i] || 0;
-    const p2 = parts2[i] || 0;
-    if (p1 > p2) return 1;
-    if (p1 < p2) return -1;
-  }
-  return 0;
-}
-
 async function downloadAndInstall(): Promise<void> {
-  if (!updateInfo.value?.downloadUrl) return;
+  if (!isTauri) return;
+  updateStatus.value = 'downloading';
   try {
-    await open(updateInfo.value.downloadUrl);
+    const update = await check();
+    if (update) {
+      await update.downloadAndInstall();
+      updateStatus.value = 'ready';
+      await relaunch();
+    } else {
+      updateStatus.value = 'none';
+      uiStore.notify('已是最新版本');
+    }
   } catch (e) {
-    uiStore.notify('打开下载链接失败：' + String(e));
+    updateStatus.value = 'error';
+    updateError.value = String(e);
+    uiStore.notify('下载更新失败：' + String(e));
   }
 }
 </script>
@@ -780,7 +768,9 @@ async function downloadAndInstall(): Promise<void> {
                 <p class="text-sm font-medium text-blue-700">发现新版本 v{{ updateInfo?.version }}</p>
                 <p v-if="updateInfo?.notes" class="mt-1 text-xs text-blue-600 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
               </div>
-              <button class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="downloadAndInstall">下载更新</button>
+              <button class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="downloadAndInstall">
+                下载并安装
+              </button>
             </div>
           </div>
           <div v-else-if="updateStatus === 'none'" class="rounded-lg border border-slate-200 bg-slate-50 p-4">

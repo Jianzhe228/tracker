@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  UPDATER_KEY: ${{ secrets.UPDATER_SIGNING_PRIVATE_KEY }}
+
 jobs:
   build:
     strategy:
@@ -16,10 +19,13 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
+            updater_target: windows
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            updater_target: ubuntu
           - platform: macos-latest
             target: aarch64-apple-darwin
+            updater_target: macos
 
     runs-on: ${{ matrix.platform }}
 
@@ -66,8 +72,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATER_KEY: ${{ secrets.UPDATER_SIGNING_PRIVATE_KEY }}
         with:
           tauriScript: npx tauri
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'windows-latest'
@@ -94,3 +105,119 @@ jobs:
           name: macos-installer
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
+
+      - name: Generate updater signature
+        if: env.UPDATER_KEY != ''
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          # Generate signing key from secret
+          echo "$UPDATER_KEY" > private.pem
+          openssl rsa -in private.pem -pubout -out public.pem 2>/dev/null
+
+          # Find the installer
+          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
+            find src-tauri/target/release/bundle -name "*.exe" -o -name "*.msi" | head -1 > artifact_path.txt
+          elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
+            find src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" | head -1 > artifact_path.txt
+          else
+            find src-tauri/target/release/bundle -name "*.dmg" | head -1 > artifact_path.txt
+          fi
+          ARTIFACT_PATH=$(cat artifact_path.txt)
+          ARTIFACT_NAME=$(basename $ARTIFACT_PATH)
+
+          # Calculate hash
+          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
+            HASH=$(openssl dgst -sha256 $ARTIFACT_PATH | awk '{print $2}')
+          elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
+            HASH=$(openssl dgst -sha256 $ARTIFACT_PATH | awk '{print $2}')
+          else
+            HASH=$(openssl dgst -sha256 $ARTIFACT_PATH | awk '{print $2}')
+          fi
+
+          # Create update.json
+          cat > update.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "New release",
+            "path": "$ARTIFACT_NAME",
+            "sha256": "$HASH",
+            "windows": { "installer": "$ARTIFACT_NAME" },
+            "linux": { "installer": "$ARTIFACT_NAME" },
+            "macOS": { "installer": "$ARTIFACT_NAME" }
+          }
+          EOF
+
+          # Sign update.json
+          openssl dgst -sha256 -sign private.pem -out update.json.sig update.json
+          rm private.pem
+
+          # Base64 encode for artifact
+          base64 -w0 update.json > update.json.b64
+          base64 -w0 update.json.sig > update.json.sig.b64
+
+          echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload update artifacts
+        if: env.UPDATER_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-${{ matrix.updater_target }}
+          path: |
+            update.json.b64
+            update.json.sig.b64
+            artifact_path.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-installer'
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download update artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: updates
+          merge-multiple: true
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-assets
+          cp artifacts/windows-installer/* release-assets/ 2>/dev/null || true
+          cp artifacts/linux-installer/* release-assets/ 2>/dev/null || true
+          cp artifacts/macos-installer/* release-assets/ 2>/dev/null || true
+
+          # Copy update.json files for each platform
+          if [ -f "updates/update.json.b64" ]; then
+            for target in windows linux macos; do
+              if [ -f "updates/update-${target}/update.json.b64" ]; then
+                mkdir -p "release-assets/${target}"
+                base64 -d "updates/update-${target}/update.json.b64" > "release-assets/${target}/update.json"
+                base64 -d "updates/update-${target}/update.json.sig.b64" > "release-assets/${target}/update.json.sig"
+              fi
+            done
+          fi
+
+          ls -la release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-assets/**/*.exe
+            release-assets/**/*.msi
+            release-assets/**/*.deb
+            release-assets/**/*.AppImage
+            release-assets/**/*.dmg
+            release-assets/**/update.json
+            release-assets/**/update.json.sig

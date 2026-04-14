@@ -34,5 +34,13 @@
       "icons/128x128.png",
       "icons/32x32.png"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Jianzhe228/tracker/releases/download/{{target}}/{{arch}}/{{current_version}}/update.json"
+      ],
+      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArThfnsnft2lXpDY1LIow4Jngv9vrYvnVNtbL1a026sy3Dt2ZfsXRxWy177f0v++a/Ud5A+ir2OqDmur8im+j0jvQ1EWpumt57vilkfrDEFsKeJxBpiKBS1qbMxwAgD5CBwbu//85LoGDLXEc2zVru+aGK7+pl6x+ANiLZEPM0Olf8R1G+3MVeNAeCWjM47CNxlZ66p9xJN/fuqWwWDazb+f3/9lCXmXCrPvY68t2KBAJEaoaRnCOs3o5DJKBkPV8SngGPrNFVuTvNgThnevCvYLLx4l+tLnTcFuyderInJxGMmtuheF98ZqBsdWjty9FcekPB9KOhoq5lIDF2cEr+wIDAQAB"
+    }
   }
 }
