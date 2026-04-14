@@ -144,40 +144,38 @@ jobs:
           # Calculate hash (use -r for consistent format: <hash> <file>)
           HASH=$(openssl dgst -sha256 -r "$ARTIFACT_PATH" | awk '{print $1}')
 
-          # Create update.json
-          cat > update.json << EOF
-          {
-            "version": "$VERSION",
-            "notes": "New release",
-            "path": "$ARTIFACT_NAME",
-            "sha256": "$HASH",
-            "windows": { "installer": "$ARTIFACT_NAME" },
-            "linux": { "installer": "$ARTIFACT_NAME" },
-            "macOS": { "installer": "$ARTIFACT_NAME" }
-          }
-          EOF
-
-          # Sign update.json
-          openssl dgst -sha256 -sign private.pem -out update.json.sig update.json
+          # Sign artifact (We only need the signature of the artifact for Tauri v2)
+          openssl dgst -sha256 -sign private.pem -out artifact.sig "$ARTIFACT_PATH"
           rm private.pem
 
-          # Base64 encode for artifact
-          base64 < update.json > update.json.b64
-          base64 < update.json.sig > update.json.sig.b64
+          # Create a platform-specific update fragment for Tauri v2
+          # Mapping matrix targets to Tauri v2 platform keys
+          if [ "${{ matrix.target }}" == "aarch64-apple-darwin" ]; then PLATFORM="darwin-aarch64";
+          elif [ "${{ matrix.target }}" == "x86_64-apple-darwin" ]; then PLATFORM="darwin-x86_64";
+          elif [ "${{ matrix.target }}" == "x86_64-pc-windows-msvc" ]; then PLATFORM="windows-x86_64";
+          elif [ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]; then PLATFORM="linux-x86_64";
+          else PLATFORM="${{ matrix.target }}"; fi
+
+          SIG=$(base64 < artifact.sig | tr -d '\n')
+          cat > fragment.json << EOF
+          {
+            "$PLATFORM": {
+              "signature": "$SIG",
+              "url": "https://github.com/Jianzhe228/tracker/releases/download/v$VERSION/$ARTIFACT_NAME"
+            }
+          }
+          EOF
 
           echo "artifact_path=$ARTIFACT_PATH" > artifact_path.txt
           echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Upload update artifacts
+      - name: Upload update fragments
         if: env.UPDATER_KEY != ''
         uses: actions/upload-artifact@v4
         with:
-          name: update-${{ matrix.updater_target }}
-          path: |
-            update.json.b64
-            update.json.sig.b64
-            artifact_path.txt
+          name: fragment-${{ matrix.updater_target }}
+          path: fragment.json
 
   release:
     needs: build
@@ -190,10 +188,11 @@ jobs:
           pattern: '*-installer'
           path: artifacts
 
-      - name: Download update artifacts
+      - name: Download update fragments
         uses: actions/download-artifact@v4
         with:
-          path: updates
+          path: fragments
+          pattern: 'fragment-*'
 
       - name: Prepare release files
         shell: bash
@@ -203,14 +202,33 @@ jobs:
           cp artifacts/linux-installer/* release-assets/ 2>/dev/null || true
           cp artifacts/macos-installer/* release-assets/ 2>/dev/null || true
 
-          # Copy update.json files for each platform
-          for target in windows linux macos; do
-            if [ -f "updates/update-${target}/update.json.b64" ]; then
-              mkdir -p "release-assets/${target}"
-              base64 -d < "updates/update-${target}/update.json.b64" > "release-assets/${target}/update.json"
-              base64 -d < "updates/update-${target}/update.json.sig.b64" > "release-assets/${target}/update.json.sig"
+          # Aggregate all fragments into one platforms object
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "Building update.json for version $VERSION"
+          
+          # Initialize combined platforms object
+          PLATFORMS_OBJ="{}"
+          for f in fragments/fragment-*/fragment.json; do
+            if [ -f "$f" ]; then
+              echo "Merging $f"
+              # Use python to safely merge json if jq is not guaranteed, but ubuntu-latest has jq
+              PLATFORMS_OBJ=$(jq -s '.[0] * .[1]' <(echo "$PLATFORMS_OBJ") "$f")
             fi
           done
+
+          # Create final update.json
+          cat > release-assets/latest.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "Release $TAG",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": $PLATFORMS_OBJ
+          }
+          EOF
+
+          # Support legacy update.json name if needed, but latest.json is better for v2
+          cp release-assets/latest.json release-assets/update.json
 
           ls -la release-assets/
 
