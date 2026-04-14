@@ -459,6 +459,43 @@ describe('useSuggestionPanel', () => {
       expect(subtasks[0].title).toBe('建议1');
     });
 
+    it('acceptSuggestion removes AI suggestion immediately while subtask creation is pending', async () => {
+      mockRunHarnessAi();
+      mockBuildAiContext();
+      mockEnqueueWithActions(['AI建议1']);
+      settingsStore.ai.endpoint = 'https://api.example.com';
+      settingsStore.ai.apiKey = 'test-key';
+
+      const parent = await taskStore.addTask('Parent');
+      const realAddTask = taskStore.addTask.bind(taskStore);
+      const addTaskSpy = vi.spyOn(taskStore, 'addTask');
+      let resolveAddTask!: (value: Awaited<ReturnType<typeof taskStore.addTask>>) => void;
+      addTaskSpy.mockImplementationOnce(() => new Promise((resolve) => {
+        resolveAddTask = resolve;
+      }));
+
+      const { requestSuggestions, acceptSuggestion, getPanel } = useSuggestionPanel();
+      await requestSuggestions(parent.id, 'Parent', null);
+      const suggestion = getPanel(parent.id)!.suggestions[0];
+
+      const acceptPromise = acceptSuggestion(parent.id, suggestion);
+      await nextTick();
+
+      try {
+        expect(getPanel(parent.id)!.suggestions).toHaveLength(0);
+      } finally {
+        resolveAddTask(await realAddTask(suggestion.title, {
+          parentId: parent.id,
+          projectId: parent.projectId,
+          dueAt: parent.dueAt,
+        }));
+        await acceptPromise;
+      }
+
+      const subtasks = taskStore.tasks.filter((t) => t.parentId === parent.id);
+      expect(subtasks.map((t) => t.title)).toContain('AI建议1');
+    });
+
     it('acceptSuggestion creates nested subtasks for a history suggestion', async () => {
       let localId = 1_000;
       const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => localId++);

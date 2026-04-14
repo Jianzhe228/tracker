@@ -13,7 +13,7 @@ import { recordFeedback } from '../services/suggestion/learningEngine';
 import { enqueue } from '../services/ai/queue';
 import { feedbackRecord } from '../services/commands/learning';
 import { updateAiJob } from '../services/commands/ai';
-import { isSemanticDuplicateTitle } from '../services/ai/subtaskDedup';
+import { isSemanticDuplicateTitle, normalizeSubtaskTitle } from '../services/ai/subtaskDedup';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { useTaskStore } from '../stores/taskStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -198,10 +198,14 @@ export function useSuggestionPanel() {
               const currentSubtaskTitles = new Set(
                 taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
               );
-              const existingTitles = new Set([
-                ...currentSubtaskTitles,
-                ...state.suggestions.map((s) => s.title),
-              ]);
+              // Build existing titles map with normalized keys for better dedup
+              const existingByNormalized = new Map<string, string>();
+              [...currentSubtaskTitles, ...state.suggestions.map((s) => s.title)].forEach((title) => {
+                const normalized = normalizeSubtaskTitle(title);
+                if (normalized && !existingByNormalized.has(normalized)) {
+                  existingByNormalized.set(normalized, title);
+                }
+              });
 
               for (const action of job.actions) {
                 if (
@@ -209,10 +213,13 @@ export function useSuggestionPanel() {
                   action.params.title
                 ) {
                   const title = String(action.params.title);
-                  // Skip if exact match already exists
-                  if (existingTitles.has(title)) continue;
-                  // Skip if semantically duplicate
-                  const isDup = [...existingTitles].some(
+                  const normalized = normalizeSubtaskTitle(title);
+                  
+                  // Skip if normalized title already exists (covers exact and near-exact matches)
+                  if (normalized && existingByNormalized.has(normalized)) continue;
+                  
+                  // Skip if semantically duplicate (more lenient check)
+                  const isDup = [...existingByNormalized.values()].some(
                     (existing) => isSemanticDuplicateTitle(existing, title)
                   );
                   if (!isDup) {
@@ -220,7 +227,9 @@ export function useSuggestionPanel() {
                       title,
                       source: 'ai',
                     });
-                    existingTitles.add(title);
+                    if (normalized) {
+                      existingByNormalized.set(normalized, title);
+                    }
                   }
                 }
                 action.status = 'executed';
@@ -255,6 +264,12 @@ export function useSuggestionPanel() {
 
     const panel = panels.value.get(taskId);
     if (!panel) return;
+
+    const removedIndex = panel.suggestions.findIndex((item) => item.title === suggestion.title);
+    if (removedIndex !== -1) {
+      panel.suggestions = panel.suggestions.filter((item) => item.title !== suggestion.title);
+      notify();
+    }
 
     try {
       const created = await taskStore.addTask(suggestion.title, {
@@ -320,9 +335,18 @@ export function useSuggestionPanel() {
           console.warn('[suggestion-panel] failed to refresh keywords', e);
         });
       }
-
-      removeSuggestion(taskId, suggestion.title);
     } catch (e) {
+      if (removedIndex !== -1) {
+        const alreadyRestored = panel.suggestions.some((item) => item.title === suggestion.title);
+        if (!alreadyRestored) {
+          panel.suggestions = [
+            ...panel.suggestions.slice(0, removedIndex),
+            suggestion,
+            ...panel.suggestions.slice(removedIndex),
+          ];
+          notify();
+        }
+      }
       console.error('[suggestion-panel] accept failed', e);
     }
   }
