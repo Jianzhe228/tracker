@@ -783,7 +783,7 @@ export const useTimerStore = defineStore('timer', () => {
     completedPomodoros.value = pomodoroDateKey.value === getTodayKey() ? restored.completedPomodoros : 0;
     focusSecondsToday.value = pomodoroDateKey.value === getTodayKey() ? (restored.focusSecondsToday || 0) : 0;
     mode.value = restored.mode || 'focus';
-    timerKind.value = restored.timerKind || 'countdown';
+    timerKind.value = restored.timerKind || settingsStore.timer.defaultTimerKind || 'countdown';
     totalSeconds.value = restored.totalSeconds || getDefaultSeconds(mode.value);
     remainingSeconds.value = restored.remainingSeconds || totalSeconds.value;
     elapsedSeconds.value = restored.elapsedSeconds || 0;
@@ -806,6 +806,14 @@ export const useTimerStore = defineStore('timer', () => {
       countedInToday: s.countedInToday ?? false,
     }));
     segmentSwitchCount.value = restored.segmentSwitchCount || 0;
+
+    // If idle, prioritize the current default setting over persisted stale state
+    if (restored.status === 'idle' && mode.value === 'focus') {
+      timerKind.value = settingsStore.timer.defaultTimerKind;
+      totalSeconds.value = getDefaultSeconds('focus');
+      remainingSeconds.value = totalSeconds.value;
+      elapsedSeconds.value = 0;
+    }
 
     if (restored.status === 'running') {
       const elapsed = restored.lastTickAt ? Math.max(0, Math.floor((Date.now() - restored.lastTickAt) / 1000)) : 0;
@@ -870,6 +878,18 @@ export const useTimerStore = defineStore('timer', () => {
     }
     recoveryTargetStatus.value = null;
   }
+
+  // Synchronize timerKind with default setting in real-time when idle and in focus mode
+  watch(() => settingsStore.timer.defaultTimerKind, (newKind) => {
+    if (idle.value && mode.value === 'focus') {
+      timerKind.value = newKind;
+      // Also reset time values to match the new mode
+      totalSeconds.value = getDefaultSeconds('focus');
+      remainingSeconds.value = totalSeconds.value;
+      elapsedSeconds.value = 0;
+      saveState(true);
+    }
+  });
 
   watch(status, (newStatus) => {
     if (newStatus === 'idle') {

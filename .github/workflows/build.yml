@@ -2,7 +2,7 @@ name: Build & Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['*']
   workflow_dispatch:
 
 permissions:
@@ -74,11 +74,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATER_KEY: ${{ secrets.UPDATER_SIGNING_PRIVATE_KEY }}
         with:
-          tauriScript: npx tauri
+          tauriScript: npm run tauri
+          args: --target ${{ matrix.target }}
 
       - name: Get version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'windows-latest'
