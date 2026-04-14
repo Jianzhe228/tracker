@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUiStore } from '../stores/uiStore';
-import { useAiStore } from '../stores/aiStore';
 import { sendNotification, ensureNotificationPermission } from '../services/notification';
 import { dataExportJson, dataExportToFile, dataImportFromFile, dataClearAll } from '../services/commands/data';
 import { testWebDavConnection, webdavUpload, webdavDownload, webdavSyncStatus } from '../services/commands/sync';
@@ -19,7 +18,6 @@ const packageVersion = import.meta.env.PACKAGE_VERSION || '0.0.0';
 
 const settingsStore = useSettingsStore();
 const uiStore = useUiStore();
-const aiStore = useAiStore();
 const isTauri = '__TAURI_INTERNALS__' in window;
 
 const focus = computed({
@@ -107,11 +105,7 @@ const showDownloadConfirm = ref(false);
 const exportStatus = ref<'idle' | 'exporting' | 'done'>('idle');
 const exportPath = ref('');
 const clearStatus = ref<'idle' | 'clearing'>('idle');
-const editingSkillId = ref<number | null>(null);
-const editSkillSystemPrompt = ref('');
-const editSkillUserPromptTemplate = ref('');
 
-// ── Update checker ───────────────────────────────────────────────────
 const updateStatus = ref<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'none'>('idle');
 const updateError = ref('');
 const updateInfo = ref<{ version: string; notes: string } | null>(null);
@@ -434,25 +428,6 @@ async function handleClearAll(): Promise<void> {
   }
 }
 
-function startEditSkill(id: number): void {
-  const skill = aiStore.skills.find((s) => s.id === id);
-  if (!skill) return;
-  editingSkillId.value = id;
-  editSkillSystemPrompt.value = skill.systemPrompt;
-  editSkillUserPromptTemplate.value = skill.userPromptTemplate;
-}
-
-function cancelEditSkill(): void {
-  editingSkillId.value = null;
-}
-
-async function saveEditSkill(): Promise<void> {
-  if (editingSkillId.value == null) return;
-  await aiStore.saveSkillPrompts(editingSkillId.value, editSkillSystemPrompt.value, editSkillUserPromptTemplate.value);
-  editingSkillId.value = null;
-  uiStore.notify('Skill prompt 已保存');
-}
-
 onMounted(() => {
   loadSyncStatus();
   loadPatterns();
@@ -707,44 +682,6 @@ async function downloadAndInstall(): Promise<void> {
           </label>
           <div class="pt-2">
             <button class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="saveAiSettings">保存</button>
-          </div>
-        </div>
-
-        <div class="mt-6">
-          <h3 class="mb-3 text-sm font-medium text-slate-700">AI 技能</h3>
-          <div v-if="aiStore.skills.length === 0" class="text-sm text-slate-400">暂无已注册的 AI 技能。</div>
-          <div v-else class="divide-y divide-slate-100">
-            <div v-for="skill in aiStore.skills" :key="skill.id" class="py-4">
-              <div class="flex items-start justify-between gap-4">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium text-slate-700">{{ skill.name }}</span>
-                    <span v-if="skill.isBuiltin" class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">内置</span>
-                    <span class="rounded bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-400">{{ skill.triggerType }}</span>
-                  </div>
-                  <p v-if="skill.description" class="mt-0.5 text-xs text-slate-400">{{ skill.description }}</p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <button class="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-50" @click="startEditSkill(skill.id)">编辑</button>
-                  <button role="switch" :aria-checked="skill.enabled" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="skill.enabled ? 'bg-blue-600' : 'bg-slate-200'" @click="aiStore.toggleSkill(skill.id, !skill.enabled)"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="skill.enabled ? 'translate-x-4' : 'translate-x-0'" /></button>
-                </div>
-              </div>
-              <div v-if="editingSkillId === skill.id" class="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <label class="block space-y-1">
-                  <span class="text-xs font-medium text-slate-600">System Prompt</span>
-                  <textarea v-model="editSkillSystemPrompt" rows="4" class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                </label>
-                <label class="block space-y-1">
-                  <span class="text-xs font-medium text-slate-600">User Prompt 模板</span>
-                  <textarea v-model="editSkillUserPromptTemplate" rows="3" class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  <p class="text-[10px] text-slate-400">支持 {<!-- -->{variable}} 变量替换</p>
-                </label>
-                <div class="flex gap-2">
-                  <button class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700" @click="saveEditSkill">保存</button>
-                  <button class="rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50" @click="cancelEditSkill">取消</button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
