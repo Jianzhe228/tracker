@@ -36,11 +36,14 @@ fn expand_keywords_cluster(db: &rusqlite::Connection, keywords: &[String]) -> Ve
                 Err(_) => continue,
             };
         // Escape SQL LIKE wildcards in keyword to prevent accidental matches
-        let escaped: String = kw.chars().map(|c| match c {
-            '%' => "%".to_string(),
-            '_' => "_".to_string(),
-            _ => c.to_string(),
-        }).collect();
+        let escaped: String = kw
+            .chars()
+            .map(|c| match c {
+                '%' => "%".to_string(),
+                '_' => "_".to_string(),
+                _ => c.to_string(),
+            })
+            .collect();
         let pattern = format!("%\"{}%", escaped);
         let rows = match stmt.query_map(rusqlite::params![pattern], |row| row.get::<_, String>(0)) {
             Ok(r) => r,
@@ -670,8 +673,7 @@ fn history_titles_for_root(
         params.push(Box::new(format!("%{}%", kw)));
     }
     params.push(Box::new(project_id));
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let json_str: Option<String> = db
         .query_row(&sql, param_refs.as_slice(), |row| row.get(0))

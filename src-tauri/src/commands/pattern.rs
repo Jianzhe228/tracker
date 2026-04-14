@@ -243,10 +243,7 @@ pub fn pattern_match(
 /// suggestion is accepted by the user. Separated from pattern_match to
 /// keep matching side-effect-free (Phase 1 harness design).
 #[tauri::command]
-pub fn pattern_increment_usage(
-    state: State<'_, AppState>,
-    id: i64,
-) -> Result<(), String> {
+pub fn pattern_increment_usage(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
     db.execute(
         "UPDATE subtask_patterns SET usage_count = usage_count + 1 WHERE id = ?1",

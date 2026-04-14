@@ -1147,7 +1147,10 @@ mod tests {
         let export_data: serde_json::Value =
             serde_json::from_str(&export_json).expect("parse export");
 
-        assert_eq!(export_data["tasks"][0]["rescheduledTo"].as_str(), Some("2026-03-22"));
+        assert_eq!(
+            export_data["tasks"][0]["rescheduledTo"].as_str(),
+            Some("2026-03-22")
+        );
 
         let mut target = setup_db();
         import_json_data_to_db(&mut target, &export_data).expect("import data");

@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { useFocusModal } from '../composables/useFocusModal';
 import { validateTaskTitle } from '../utils/validation';
 import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } from '../services/commands/recurring';
@@ -20,6 +21,7 @@ const props = defineProps<{
 const route = useRoute();
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
+const settingsStore = useSettingsStore();
 const focusModal = useFocusModal();
 
 const isTauri = '__TAURI_INTERNALS__' in window;
@@ -176,7 +178,7 @@ const estimatedTime = computed(() => {
   const totalPomodoros = filteredTasks.value
     .filter(t => t.status === 'todo')
     .reduce((sum, task) => sum + task.pomodoroCount, 0);
-  return formatDuration(totalPomodoros * 25);
+  return formatDuration(totalPomodoros * settingsStore.timer.focusMinutes);
 });
 
 const tasksToComplete = computed(() => {
@@ -1309,7 +1311,7 @@ async function saveTaskDetail(): Promise<void> {
           reminderTime: reminderIso,
           notes: normalized.notes || null,
           pomodoroCount: normalized.pomodoroCount,
-          pomodoroDuration: taskPomodoroDuration || 25,
+          pomodoroDuration: taskPomodoroDuration || settingsStore.timer.focusMinutes,
         });
         taskStore.upsertRecurringRule(rule);
         await taskStore.updateTask(editingTaskId, { recurringRuleId: rule.id });
@@ -1331,9 +1333,8 @@ async function saveTaskDetail(): Promise<void> {
           reminderTime: reminderIso,
           notes: normalized.notes || null,
           pomodoroCount: normalized.pomodoroCount,
-          pomodoroDuration: taskPomodoroDuration || 25,
+          pomodoroDuration: taskPomodoroDuration || settingsStore.timer.focusMinutes,
         });
-      }
     }
 
     if (timerStore.currentTaskId === editingTaskId) {
@@ -1922,7 +1923,7 @@ onMounted(() => {
                       +
                     </button>
                   </div>
-                  <div class="text-sm tabular-nums text-slate-500">≈ {{ taskDraft.pomodoroCount * 25 }} 分钟</div>
+                  <div class="text-sm tabular-nums text-slate-500">≈ {{ taskDraft.pomodoroCount * settingsStore.timer.focusMinutes }} 分钟</div>
                 </div>
               </div>
 

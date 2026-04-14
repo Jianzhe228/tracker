@@ -76,7 +76,10 @@ export const useTaskStore = defineStore('task', () => {
       deletedAt: null,
       notes: options.notes ?? null,
       pomodoroCount: options.pomodoroCount ?? 1,
-      pomodoroDuration: options.pomodoroDuration ?? 25,
+      pomodoroDuration: options.pomodoroDuration ?? (() => {
+        const s = useSettingsStore();
+        return s.timer.focusMinutes;
+      })(),
       sortOrder: options.sortOrder ?? 0,
       recurringRuleId: options.recurringRuleId ?? null,
       rescheduledTo: options.rescheduledTo ?? null,

@@ -13,7 +13,10 @@ impl AppState {
         let conn =
             init_db(&app_handle).map_err(|e| format!("failed to initialize database: {}", e))?;
         let db = OnceLock::from(Mutex::new(conn));
-        Ok(Self { _app_handle: app_handle, db })
+        Ok(Self {
+            _app_handle: app_handle,
+            db,
+        })
     }
 
     pub fn db(&self) -> &Mutex<Connection> {
