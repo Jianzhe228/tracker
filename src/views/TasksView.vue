@@ -557,9 +557,10 @@ function isTaskOverdue(task: TaskItem): boolean {
  * Returns true for any past task (including completed ones).
  */
 function canCopyTaskToToday(task: TaskItem): boolean {
-  if (!task.dueAt) return false;
   if (task.status === 'cancelled') return false;
-  return task.dueAt < getDateKeyFromToday(0);
+  const dateKey = getTimelineDateKey(task);
+  if (dateKey === NO_DATE_GROUP_KEY) return false;
+  return dateKey < getDateKeyFromToday(0);
 }
 
 function formatDueAt(dueAt: string | null): string {
@@ -1690,10 +1691,13 @@ onMounted(() => {
                   <span class="text-xs text-slate-400">{{ getTimelineHeaderCount(task) }} 项</span>
                   <button
                     v-if="isTimelineGroupOverdue(task)"
-                    class="shrink-0 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100"
+                    class="flex items-center gap-1 shrink-0 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                     @click.stop="copyGroupToToday(task)"
                   >
-                    全部复制到今天
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                    </svg>
+                    复制到今天
                   </button>
                   <div class="h-[1px] flex-1 bg-gradient-to-r from-slate-200/80 to-transparent" />
                 </div>
@@ -1804,22 +1808,26 @@ onMounted(() => {
                     <!-- Copy to today -->
                     <button
                       v-if="canCopyTaskToToday(task)"
-                      class="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 opacity-0 ring-1 ring-amber-200 transition-all group-hover:opacity-100 hover:bg-amber-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40"
+                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40"
                       aria-label="复制到今天"
                       @click.stop="copySingleTaskToToday(task.id)"
                     >
-                      复制到今天
+                      <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                      </svg>
+                      复制
                     </button>
 
                     <!-- Quick Focus -->
                     <button
-                      class="rounded p-1 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                       aria-label="设为当前专注任务"
                       @click.stop="startFocusOnTask(task.id, task.title)"
                     >
-                      <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M8 5v14l11-7z" />
                       </svg>
+                      专注
                     </button>
                   </div>
                 </div>
