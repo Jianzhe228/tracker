@@ -7,12 +7,14 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use serde_json::json;
 
-pub const ALGORITHM_VERSION: &str = "local-v1";
+pub const ALGORITHM_VERSION: &str = "local-v2";
 pub const MIN_HISTORY_FOR_PREDICTION: usize = 7;
 
 const LOOKBACK_DAYS: i64 = 90;
 const SUPPRESS_RECENT_DAYS: i64 = 2;
 const MAX_PREDICTIONS: usize = 3;
+const RECENT_FEEDBACK_DAYS: i64 = 7;
+const FEEDBACK_DECAY_DAYS: f64 = 14.0;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GeneratedPrediction {
@@ -36,10 +38,10 @@ struct HistoryEntry {
 
 #[derive(Debug, Default)]
 struct FeedbackStats {
-    accepted: usize,
-    rejected: usize,
-    notified: usize,
-    expired: usize,
+    accepted: f64,
+    rejected: f64,
+    notified: f64,
+    expired: f64,
 }
 
 #[derive(Debug)]
@@ -90,14 +92,28 @@ pub fn derive_time_fields(created_at: &str) -> (Option<String>, Option<i32>, Opt
 
 pub fn normalize_title_key(title: &str) -> String {
     let mut normalized = title.trim().to_lowercase();
+    // Strip common leading verb/action prefixes. Order matters: longer first.
     for prefix in [
         "创建任务",
-        "创建",
         "添加任务",
-        "添加",
         "新增任务",
+        "创建",
+        "添加",
         "新增",
         "安排",
+        "准备",
+        "完成",
+        "整理",
+        "处理",
+        "复习",
+        "学习",
+        "撰写",
+        "编写",
+        "写",
+        "做",
+        "搞",
+        "看",
+        "读",
     ] {
         if let Some(rest) = normalized.strip_prefix(prefix) {
             normalized = rest.trim_start().to_string();
@@ -152,8 +168,9 @@ pub fn refresh_predictions(
     }
 
     let active_keys = load_active_task_keys(conn)?;
-    let feedback = load_feedback(conn)?;
-    let predictions = score_candidates(&history, &active_keys, &feedback, now);
+    let feedback = load_feedback(conn, now)?;
+    let recent_actioned = load_recent_actioned_keys(conn, now, RECENT_FEEDBACK_DAYS)?;
+    let predictions = score_candidates(&history, &active_keys, &feedback, &recent_actioned, now);
     if predictions.is_empty() {
         return Ok(Vec::new());
     }
@@ -298,10 +315,11 @@ fn load_active_task_keys(conn: &Connection) -> Result<HashSet<String>, String> {
 
 fn load_feedback(
     conn: &Connection,
+    now: DateTime<Local>,
 ) -> Result<HashMap<(String, Option<i64>), FeedbackStats>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT COALESCE(title_key, ''), project_id, status
+            "SELECT COALESCE(title_key, ''), project_id, status, created_at
              FROM pending_predictions
              WHERE status IN ('accepted', 'rejected', 'notified', 'expired')",
         )
@@ -313,22 +331,32 @@ fn load_feedback(
                 row.get::<_, String>(0)?,
                 row.get::<_, Option<i64>>(1)?,
                 row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
             ))
         })
         .map_err(|e| e.to_string())?;
 
     let mut feedback: HashMap<(String, Option<i64>), FeedbackStats> = HashMap::new();
     for row in rows {
-        let (title_key, project_id, status) = row.map_err(|e| e.to_string())?;
+        let (title_key, project_id, status, created_at) = row.map_err(|e| e.to_string())?;
         if title_key.is_empty() {
             continue;
         }
+        // exp(-days_ago / 14): fresh feedback counts fully, ~30d-old ≈ 0.12.
+        let weight = created_at
+            .as_deref()
+            .and_then(parse_timestamp)
+            .map(|ts| {
+                let days = now.signed_duration_since(ts).num_days().max(0) as f64;
+                (-days / FEEDBACK_DECAY_DAYS).exp()
+            })
+            .unwrap_or(0.5);
         let entry = feedback.entry((title_key, project_id)).or_default();
         match status.as_str() {
-            "accepted" => entry.accepted += 1,
-            "rejected" => entry.rejected += 1,
-            "notified" => entry.notified += 1,
-            "expired" => entry.expired += 1,
+            "accepted" => entry.accepted += weight,
+            "rejected" => entry.rejected += weight,
+            "notified" => entry.notified += weight,
+            "expired" => entry.expired += weight,
             _ => {}
         }
     }
@@ -336,10 +364,46 @@ fn load_feedback(
     Ok(feedback)
 }
 
+/// title_key+project_id pairs that the user explicitly accepted or rejected
+/// within the recent window — suppress as candidates this round.
+fn load_recent_actioned_keys(
+    conn: &Connection,
+    now: DateTime<Local>,
+    days: i64,
+) -> Result<HashSet<(String, Option<i64>)>, String> {
+    let cutoff = (now - Duration::days(days))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let mut stmt = conn
+        .prepare(
+            "SELECT COALESCE(title_key, ''), project_id
+             FROM pending_predictions
+             WHERE status IN ('accepted', 'rejected')
+               AND created_at >= ?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![cutoff], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut set = HashSet::new();
+    for row in rows {
+        let (title_key, project_id) = row.map_err(|e| e.to_string())?;
+        if title_key.is_empty() {
+            continue;
+        }
+        set.insert((title_key, project_id));
+    }
+    Ok(set)
+}
+
 fn score_candidates(
     history: &[HistoryEntry],
     active_keys: &HashSet<String>,
     feedback: &HashMap<(String, Option<i64>), FeedbackStats>,
+    recent_actioned: &HashSet<(String, Option<i64>)>,
     now: DateTime<Local>,
 ) -> Vec<GeneratedPrediction> {
     let Some(last_entry) = history.last() else {
@@ -402,6 +466,11 @@ fn score_candidates(
             if active_keys.contains(&candidate.title_key) {
                 return None;
             }
+            if recent_actioned
+                .contains(&(candidate.title_key.clone(), candidate.project_id))
+            {
+                return None;
+            }
 
             candidate.days_since_last = now
                 .signed_duration_since(candidate.last_occurrence)
@@ -413,10 +482,10 @@ fn score_candidates(
 
             if let Some(stats) = feedback.get(&(candidate.title_key.clone(), candidate.project_id))
             {
-                candidate.feedback_score = stats.accepted as f64 * 1.5
-                    - stats.rejected as f64 * 2.5
-                    - stats.notified as f64 * 0.35
-                    - stats.expired as f64 * 0.75;
+                candidate.feedback_score = stats.accepted * 1.5
+                    - stats.rejected * 2.5
+                    - stats.notified * 0.35
+                    - stats.expired * 0.75;
             }
 
             let score = candidate.frequency as f64 * 1.3
@@ -600,5 +669,51 @@ mod tests {
         assert!(predictions
             .iter()
             .all(|prediction| prediction.title != "本周计划"));
+    }
+
+    #[test]
+    fn suppresses_candidates_with_recent_feedback() {
+        let conn = setup_db();
+        let now = Local
+            .with_ymd_and_hms(2026, 3, 30, 9, 0, 0)
+            .single()
+            .expect("valid timestamp");
+
+        for day in [2, 9, 16, 23] {
+            conn.execute(
+                "INSERT INTO task_creation_history (task_title, project_id, created_at, dow, hour, day_of_month, is_recurring_instance)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+                rusqlite::params![
+                    "本周计划",
+                    1_i64,
+                    format!("2026-03-{day:02}T09:00:00Z"),
+                    "周一",
+                    9_i64,
+                    day,
+                ],
+            )
+            .expect("insert history");
+        }
+
+        // User rejected this title 3 days ago → should be suppressed this round.
+        conn.execute(
+            "INSERT INTO pending_predictions
+               (title, predicted_for_date, created_at, status, project_id, title_key, algorithm_version)
+             VALUES ('本周计划', '2026-03-27', '2026-03-27 09:00:00', 'rejected', 1, '本周计划', 'local-v2')",
+            [],
+        )
+        .expect("insert rejection feedback");
+
+        let predictions = refresh_predictions(&conn, now, true).expect("refresh predictions");
+        assert!(predictions
+            .iter()
+            .all(|prediction| prediction.title_key != "本周计划"));
+    }
+
+    #[test]
+    fn normalizes_verb_prefixes() {
+        assert_eq!(normalize_title_key("写周报"), "周报");
+        assert_eq!(normalize_title_key("完成 代码审查"), "代码审查");
+        assert_eq!(normalize_title_key("整理收集箱"), "收集箱");
     }
 }

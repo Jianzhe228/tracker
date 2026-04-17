@@ -739,9 +739,6 @@ onMounted(() => {
               {{ formatDuration(overview?.week.focusSeconds ?? 0) }}
               <span v-if="!overview?.week.focusSeconds || overview.week.focusSeconds < 3600" class="text-xs font-normal text-slate-400">分钟</span>
             </p>
-            <p class="text-[11px] tabular-nums text-slate-400">
-              {{ formatPomodoros(overview?.week.pomodoros ?? 0) }} 番茄 · {{ overview?.week.tasksCompleted ?? 0 }} 任务
-            </p>
           </div>
         </div>
       </article>

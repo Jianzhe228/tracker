@@ -8,6 +8,7 @@ import {
   getPendingPredictions,
   updatePredictionStatus,
   getPredictionStats,
+  getRecentNotificationKeys,
   type PendingPredictionRow,
   type PredictionStats,
 } from '../services/commands/prediction';
@@ -53,11 +54,24 @@ export const usePredictionStore = defineStore('prediction', () => {
   async function notifyFreshPredictions(createdCount: number): Promise<void> {
     if (createdCount <= 0) return;
 
+    // 24h cooldown: don't re-notify the same title_key if we already pushed
+    // it to the OS in the last day. Prevents "every hourly tick re-pings me
+    // about 写周报".
+    const recentKeys = new Set(await getRecentNotificationKeys(24).catch(() => [] as string[]));
+
     const freshPredictions = pendingPredictions.value
       .filter((prediction) => prediction.status === 'pending')
       .slice(0, createdCount);
 
     for (const prediction of freshPredictions) {
+      const key = prediction.titleKey;
+      if (key && recentKeys.has(key)) {
+        await updatePredictionStatus(prediction.id, 'notified');
+        prediction.status = 'notified';
+        prediction.notifiedAt = new Date().toISOString();
+        continue;
+      }
+
       sendNotification({
         type: 'prediction',
         title: '今日任务预测',
@@ -68,6 +82,7 @@ export const usePredictionStore = defineStore('prediction', () => {
       await updatePredictionStatus(prediction.id, 'notified');
       prediction.status = 'notified';
       prediction.notifiedAt = new Date().toISOString();
+      if (key) recentKeys.add(key);
     }
   }
 

@@ -108,3 +108,7 @@ export function getPredictionStats(): Promise<PredictionStats> {
 export function cleanupExpiredPredictions(days?: number): Promise<number> {
   return invokeCommand<number>('cleanup_expired_predictions', { days });
 }
+
+export function getRecentNotificationKeys(hours = 24): Promise<string[]> {
+  return invokeCommand<string[]>('get_recent_notification_keys', { hours });
+}

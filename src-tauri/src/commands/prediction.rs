@@ -420,6 +420,40 @@ pub struct PredictionStats {
 }
 
 #[tauri::command]
+pub fn get_recent_notification_keys(
+    state: State<'_, AppState>,
+    hours: Option<i64>,
+) -> Result<Vec<String>, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    let hours_val = hours.unwrap_or(24);
+    let cutoff = chrono::Local::now()
+        .checked_sub_signed(chrono::Duration::hours(hours_val))
+        .ok_or("invalid date calculation")?
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    let mut stmt = db
+        .prepare(
+            "SELECT DISTINCT title_key
+             FROM pending_predictions
+             WHERE title_key IS NOT NULL
+               AND notified_at IS NOT NULL
+               AND notified_at >= ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![cutoff], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+
+    let mut keys = Vec::new();
+    for row in rows {
+        keys.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(keys)
+}
+
+#[tauri::command]
 pub fn cleanup_expired_predictions(
     state: State<'_, AppState>,
     days: Option<i32>,

@@ -211,6 +211,7 @@ pub fn run() {
             commands::prediction::update_prediction_status,
             commands::prediction::get_prediction_stats,
             commands::prediction::cleanup_expired_predictions,
+            commands::prediction::get_recent_notification_keys,
             commands::suggestion_trace::suggestion_run_create,
             commands::suggestion_trace::suggestion_candidate_insert,
             commands::suggestion_trace::suggestion_candidate_mark_selected,
