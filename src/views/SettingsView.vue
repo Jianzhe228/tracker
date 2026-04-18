@@ -581,7 +581,7 @@ async function downloadAndInstall(): Promise<void> {
               <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50" @click="showDownloadConfirm = false">取消</button>
             </template>
           </div>
-          <p v-if="syncMessage" class="text-xs" :class="syncStatus === 'success' ? 'text-green-600' : syncStatus === 'error' ? 'text-red-500' : 'text-slate-500'">{{ syncMessage }}</p>
+          <p v-if="syncMessage" class="text-xs" :class="syncStatus === 'success' ? 'text-emerald-600' : syncStatus === 'error' ? 'text-red-500' : 'text-slate-500'">{{ syncMessage }}</p>
           <p class="text-xs text-slate-400">最后同步：{{ formatSyncTime(lastSyncAt) }}</p>
         </div>
       </section>
@@ -727,7 +727,7 @@ async function downloadAndInstall(): Promise<void> {
           <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportJson">导出到应用目录</button>
           <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="importStatus === 'importing'" @click="handleImportFromFile">{{ importStatus === 'importing' ? '导入中…' : '从文件导入' }}</button>
         </div>
-        <p v-if="exportStatus === 'done'" class="mt-2 text-xs text-green-600">已导出至：{{ exportPath }}</p>
+        <p v-if="exportStatus === 'done'" class="mt-2 text-xs text-emerald-600">已导出至：{{ exportPath }}</p>
 
         <div class="mt-6">
           <template v-if="!showClearConfirm">

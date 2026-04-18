@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useTimerStore } from '../stores/timerStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
@@ -27,6 +27,33 @@ const todayParentTasks = computed(() => {
     t.dueAt === today
   );
 });
+
+// 今日已完成的父任务（completedAt 是今天）
+const todayDoneParentTasks = computed(() => {
+  const today = getTodayKey();
+  return taskStore.tasks.filter(t =>
+    t.status === 'done' &&
+    t.parentId === null &&
+    t.completedAt !== null &&
+    t.completedAt.slice(0, 10) === today
+  );
+});
+
+// 获取某个父任务今日完成的子任务统计
+function getTodaySubtaskStats(parentId: number): { done: number; total: number; doneTitles: string[] } {
+  const today = getTodayKey();
+  const subtasks = taskStore.tasks.filter(t => t.parentId === parentId);
+  const doneToday = subtasks.filter(t =>
+    t.status === 'done' &&
+    t.completedAt !== null &&
+    t.completedAt.slice(0, 10) === today
+  );
+  return {
+    done: doneToday.length,
+    total: subtasks.length,
+    doneTitles: doneToday.map(t => t.title),
+  };
+}
 
 // 当前选中父任务的子任务
 const currentSubtasks = computed(() => {
@@ -81,6 +108,14 @@ const timerKindLabel = computed(() => timerStore.timerKind === 'countdown' ? '�
 // Circle progress
 const circumference = 2 * Math.PI * 140;
 const displayHasHours = computed(() => timerStore.display.includes(':') && timerStore.display.split(':').length > 2);
+const displayFontClass = computed(() => {
+  const len = timerStore.display.length;
+  if (len <= 5) return 'text-6xl';     // MM:SS
+  if (len <= 7) return 'text-5xl';     // H:MM:SS
+  if (len <= 8) return 'text-4xl';     // HH:MM:SS
+  if (len <= 9) return 'text-3xl';     // HHH:MM:SS
+  return 'text-2xl';                    // 溢出保护
+});
 const strokeDashoffset = computed(() => {
   return circumference - ((timerStore.progress ?? 0) / 100) * circumference;
 });
@@ -170,16 +205,55 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+// Focus trap — keep Tab focus cycling inside the modal
+const modalRoot = ref<HTMLDivElement | null>(null);
+let previousActive: HTMLElement | null = null;
+
+function getFocusables(): HTMLElement[] {
+  if (!modalRoot.value) return [];
+  return Array.from(
+    modalRoot.value.querySelectorAll<HTMLElement>(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )
+  ).filter((el) => el.offsetParent !== null);
+}
+
+function handleTab(e: KeyboardEvent) {
+  if (e.key !== 'Tab') return;
+  const focusables = getFocusables();
+  if (focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+  if (e.shiftKey && (active === first || !modalRoot.value?.contains(active))) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 watch(visible, (show) => {
   if (show) {
+    previousActive = document.activeElement as HTMLElement | null;
     document.addEventListener('keydown', handleKeydown);
+    document.addEventListener('keydown', handleTab);
+    nextTick(() => {
+      const focusables = getFocusables();
+      focusables[0]?.focus();
+    });
   } else {
     document.removeEventListener('keydown', handleKeydown);
+    document.removeEventListener('keydown', handleTab);
+    previousActive?.focus?.();
+    previousActive = null;
   }
 });
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown);
+  document.removeEventListener('keydown', handleTab);
 });
 </script>
 
@@ -188,6 +262,7 @@ onUnmounted(() => {
     <Transition name="focus-modal">
     <div
       v-if="visible"
+      ref="modalRoot"
       role="dialog"
       aria-modal="true"
       aria-label="专注模式"
@@ -238,7 +313,7 @@ onUnmounted(() => {
             <!-- 任务状态圆圈 -->
             <span
               v-if="timerStore.currentTaskId && isCurrentTaskDone"
-              class="flex h-5 w-5 items-center justify-center rounded-full bg-green-500"
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500"
               aria-hidden="true"
             >
               <svg class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -306,8 +381,8 @@ onUnmounted(() => {
             />
           </svg>
         <!-- Timer Display -->
-        <div class="absolute inset-0 flex flex-col items-center justify-center">
-          <span class="font-mono tabular-nums tracking-wider text-white" :class="displayHasHours ? 'text-4xl' : 'text-6xl'" :style="{ fontWeight: displayHasHours ? 400 : 300 }">
+        <div class="absolute inset-0 flex flex-col items-center justify-center px-8">
+          <span class="max-w-full truncate text-center font-mono tabular-nums tracking-wider text-white" :class="displayFontClass" :style="{ fontWeight: displayHasHours ? 400 : 300 }">
             {{ timerStore.display }}
           </span>
           <span class="mt-2 text-sm text-white/60">{{ timerStore.mode === 'focus' ? timerKindLabel : timerStore.modeLabel }}</span>
@@ -352,7 +427,7 @@ onUnmounted(() => {
           <template v-else-if="timerStore.paused">
             <div class="flex gap-4">
               <button
-                class="flex items-center gap-2 rounded-full bg-green-500/20 px-6 py-3 text-green-400 backdrop-blur transition-colors hover:bg-green-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40"
+                class="flex items-center gap-2 rounded-full bg-emerald-500/20 px-6 py-3 text-emerald-400 backdrop-blur transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
                 @click="handleResume"
               >
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -395,68 +470,66 @@ onUnmounted(() => {
       </div>
 
       <!-- Right Sidebar -->
-      <div class="flex w-80 flex-col bg-slate-800">
+      <div class="flex w-80 flex-col bg-slate-900/95 border-l border-white/5">
         <!-- Focus Time Today -->
-        <div class="border-b border-slate-700 p-4">
-          <div class="flex items-center gap-2 text-sm text-emerald-400">
-            <span class="h-1 w-1 rounded-full bg-emerald-400" aria-hidden="true" />
+        <section class="px-5 py-6 border-b border-white/5">
+          <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
+            <span class="h-3 w-0.5 rounded-full bg-emerald-400/80" aria-hidden="true" />
             今日专注时间
           </div>
-          <div class="mt-2 text-3xl font-light tabular-nums text-white">
-            <span class="text-4xl">{{ focusMinutesToday }}</span>
-            <span class="ml-1 text-lg text-white/60">分钟</span>
+          <div class="mt-3 flex items-baseline gap-2 tabular-nums text-white">
+            <span class="text-4xl font-extralight">{{ focusMinutesToday }}</span>
+            <span class="text-sm text-white/50">分钟</span>
           </div>
-        </div>
+        </section>
 
         <!-- Today Tasks -->
         <div class="flex-1 overflow-auto">
-          <div class="border-b border-slate-700 p-4">
+          <section class="px-5 py-5 border-b border-white/5">
             <!-- 父任务视图 -->
             <template v-if="selectedParentId === null">
-              <div class="flex items-center gap-2 text-sm text-amber-400">
-                <span class="h-1 w-1 rounded-full bg-amber-400" aria-hidden="true" />
+              <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
+                <span class="h-3 w-0.5 rounded-full bg-amber-400/80" aria-hidden="true" />
                 今日任务
               </div>
-              <ul class="mt-3 space-y-2 max-h-64 overflow-y-auto">
+              <ul class="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
                 <li
                   v-for="task in todayParentTasks"
                   :key="task.id"
                 >
                   <div
-                    class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-slate-700/50 cursor-pointer"
-                    :class="timerStore.currentTaskId === task.id ? 'bg-slate-700 ring-1 ring-emerald-500/50' : ''"
+                    class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+                    :class="timerStore.currentTaskId === task.id ? 'bg-white/10 ring-1 ring-emerald-400/40' : 'hover:bg-white/5'"
                     @click="selectTask(task.id, task.title)"
                   >
-                    <!-- Checkbox: 点击完成任务 -->
                     <button
                       role="checkbox"
                       :aria-checked="task.status === 'done'"
                       :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                      class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       :class="task.status === 'done'
-                        ? 'border-green-500 bg-green-500'
-                        : priorityCheckboxClass(task.priority) + ' hover:border-red-400'"
+                        ? 'border-emerald-500 bg-emerald-500'
+                        : 'border-white/30 hover:border-white/60'"
                       @click.stop="toggleTask($event, task.id)"
                     >
-                      <svg v-if="task.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg v-if="task.status === 'done'" class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                       </svg>
                     </button>
-                    <span class="min-w-0 flex-1 truncate text-sm text-white">{{ task.title }}</span>
-                    <!-- 展开子任务箭头 -->
+                    <span class="min-w-0 flex-1 truncate text-sm text-white/90">{{ task.title }}</span>
                     <button
                       v-if="hasSubtasks(task.id)"
-                      class="flex h-6 w-6 items-center justify-center rounded text-white/40 hover:text-white"
+                      class="flex h-5 w-5 items-center justify-center rounded text-white/30 hover:text-white/70"
                       :aria-label="`查看 ${task.title} 的子任务`"
                       @click.stop="enterSubtasks(task.id)"
                     >
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
                   </div>
                 </li>
-                <li v-if="todayParentTasks.length === 0" class="py-4 text-center text-sm text-slate-500">
+                <li v-if="todayParentTasks.length === 0" class="py-4 text-center text-xs text-white/30">
                   今日暂无待办任务
                 </li>
               </ul>
@@ -464,68 +537,111 @@ onUnmounted(() => {
 
             <!-- 子任务视图 -->
             <template v-else>
-              <div class="flex items-center justify-between">
-                <button
-                  class="flex items-center gap-1 text-sm text-white/60 hover:text-white"
-                  @click="goBack"
-                >
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                  </svg>
-                  返回
-                </button>
+              <button
+                class="flex items-center gap-1 text-xs text-white/50 hover:text-white/90 transition-colors"
+                @click="goBack"
+              >
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                返回
+              </button>
+              <div class="mt-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
+                <span class="h-3 w-0.5 rounded-full bg-amber-400/80" aria-hidden="true" />
+                <span class="truncate normal-case tracking-normal text-sm text-white/80">{{ selectedParent?.title }}</span>
               </div>
-              <div class="mt-2 flex items-center gap-2 text-sm text-amber-400">
-                <span class="h-1 w-1 rounded-full bg-amber-400" aria-hidden="true" />
-                {{ selectedParent?.title }}
-              </div>
-              <ul class="mt-3 space-y-2 max-h-64 overflow-y-auto">
+              <ul class="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
                 <li
                   v-for="subtask in currentSubtasks"
                   :key="subtask.id"
                 >
                   <div
-                    class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-slate-700/50"
-                    :class="timerStore.currentTaskId === subtask.id ? 'bg-slate-700 ring-1 ring-emerald-500/50' : ''"
+                    class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+                    :class="timerStore.currentTaskId === subtask.id ? 'bg-white/10 ring-1 ring-emerald-400/40' : 'hover:bg-white/5'"
                     @click="selectTask(subtask.id, subtask.title)"
                   >
-                    <!-- Checkbox: 点击完成子任务 -->
                     <button
                       role="checkbox"
                       :aria-checked="subtask.status === 'done'"
                       :aria-label="subtask.status === 'done' ? '标记为未完成' : '标记为已完成'"
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                      class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       :class="subtask.status === 'done'
-                        ? 'border-green-500 bg-green-500'
-                        : priorityCheckboxClass(subtask.priority) + ' hover:border-red-400'"
+                        ? 'border-emerald-500 bg-emerald-500'
+                        : 'border-white/30 hover:border-white/60'"
                       @click.stop="toggleTask($event, subtask.id)"
                     >
-                      <svg v-if="subtask.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg v-if="subtask.status === 'done'" class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                       </svg>
                     </button>
-                    <span class="min-w-0 flex-1 truncate text-sm" :class="subtask.status === 'done' ? 'text-slate-500 line-through' : 'text-white'">
+                    <span class="min-w-0 flex-1 truncate text-sm" :class="subtask.status === 'done' ? 'text-white/35 line-through' : 'text-white/90'">
                       {{ subtask.title }}
                     </span>
                   </div>
                 </li>
-                <li v-if="currentSubtasks.length === 0" class="py-4 text-center text-sm text-slate-500">
+                <li v-if="currentSubtasks.length === 0" class="py-4 text-center text-xs text-white/30">
                   暂无子任务
                 </li>
               </ul>
             </template>
-          </div>
+          </section>
 
-          <!-- Today's Focus Records -->
-          <div class="p-4">
-            <div class="flex items-center gap-2 text-sm text-blue-400">
-              <span class="h-1 w-1 rounded-full bg-blue-400" aria-hidden="true" />
-              今日专注记录
+          <!-- Today's Progress (completed tasks) -->
+          <section v-if="selectedParentId === null" class="px-5 py-5">
+            <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
+              <span class="h-3 w-0.5 rounded-full bg-blue-400/80" aria-hidden="true" />
+              今日进展
             </div>
-            <div class="mt-3 text-center text-sm text-slate-500">
-              {{ timerStore.completedPomodoros > 0 ? `已完成 ${timerStore.completedPomodoros.toFixed(1)} 个番茄` : '开始你的第一个番茄吧' }}
+            <ul v-if="todayDoneParentTasks.length > 0" class="mt-3 space-y-1.5">
+              <li
+                v-for="task in todayDoneParentTasks"
+                :key="task.id"
+              >
+                <div
+                  class="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors"
+                  :class="hasSubtasks(task.id) ? 'cursor-pointer hover:bg-white/5' : ''"
+                  @click="hasSubtasks(task.id) && enterSubtasks(task.id)"
+                >
+                  <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500" aria-hidden="true">
+                    <svg class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate text-sm text-white/90">{{ task.title }}</span>
+                      <svg
+                        v-if="hasSubtasks(task.id)"
+                        class="h-3 w-3 shrink-0 text-white/25 transition-colors group-hover:text-white/60"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                    <div class="mt-1 text-[11px] text-white/45">
+                      <span>任务已完成</span>
+                      <template v-if="hasSubtasks(task.id)">
+                        <span class="mx-1 text-white/25">·</span>
+                        <span>今日完成 {{ getTodaySubtaskStats(task.id).done }}/{{ getTodaySubtaskStats(task.id).total }} 个子任务</span>
+                      </template>
+                    </div>
+                    <div
+                      v-if="getTodaySubtaskStats(task.id).doneTitles.length > 0"
+                      class="mt-0.5 truncate text-[11px] text-white/30"
+                    >
+                      已完成：{{ getTodaySubtaskStats(task.id).doneTitles.join('、') }}
+                    </div>
+                  </div>
+                </div>
+              </li>
+            </ul>
+            <div v-else class="mt-3 py-2 text-center text-xs text-white/30">
+              {{ timerStore.completedPomodoros > 0 ? `已完成 ${timerStore.completedPomodoros.toFixed(1)} 个番茄` : '今日还没有已完成的任务' }}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>

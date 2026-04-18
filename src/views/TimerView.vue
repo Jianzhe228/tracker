@@ -77,6 +77,14 @@ async function handleStop(): Promise<void> {
 
 const circumference = 2 * Math.PI * 120;
 const displayHasHours = computed(() => timerStore.display.includes(':') && timerStore.display.split(':').length > 2);
+const displayFontClass = computed(() => {
+  const len = timerStore.display.length;
+  if (len <= 5) return 'text-6xl';
+  if (len <= 7) return 'text-5xl';
+  if (len <= 8) return 'text-4xl';
+  if (len <= 9) return 'text-3xl';
+  return 'text-2xl';
+});
 const strokeDashoffset = computed(() => {
   return circumference - ((timerStore.progress ?? 0) / 100) * circumference;
 });
@@ -147,8 +155,8 @@ const statusLabel = computed(() => {
                     class="transition-all duration-1000 ease-linear"
                   />
                 </svg>
-                <div class="absolute inset-0 z-20 flex flex-col items-center justify-center text-center">
-                  <span class="font-mono tabular-nums text-slate-900" :class="displayHasHours ? 'text-4xl' : 'text-6xl'" :style="{ fontWeight: 600 }">{{ timerStore.display }}</span>
+                <div class="absolute inset-0 z-20 flex flex-col items-center justify-center px-6 text-center">
+                  <span class="max-w-full truncate font-mono tabular-nums text-slate-900" :class="displayFontClass" :style="{ fontWeight: 600 }">{{ timerStore.display }}</span>
                   <span :class="`mt-2 text-xs font-semibold uppercase tracking-[0.2em] ${accent.text}`">
                     {{ timerStore.mode === 'focus' ? timerKindLabel : timerStore.modeLabel }}
                   </span>

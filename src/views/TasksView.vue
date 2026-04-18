@@ -1552,7 +1552,7 @@ onMounted(() => {
             <div class="text-xs text-slate-500">已用时间</div>
           </div>
           <div class="text-center">
-            <div class="text-xl font-semibold tabular-nums text-green-500">{{ completedTasks }}</div>
+            <div class="text-xl font-semibold tabular-nums text-emerald-500">{{ completedTasks }}</div>
             <div class="text-xs text-slate-500">已完成任务</div>
           </div>
         </div>
@@ -1713,7 +1713,7 @@ onMounted(() => {
                       ? (draggingTaskId === task.id && isTaskDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing')
                       : '',
                     draggingTaskId === task.id && isTaskDragging ? 'task-drag-origin pointer-events-none opacity-35' : '',
-                    task.status === 'done' ? 'border-green-200' : '',
+                    task.status === 'done' ? 'border-emerald-200' : '',
                     isTaskOverdue(task) ? 'border-red-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]' : '',
                     task.rescheduledTo ? 'opacity-50' : ''
                   ]"
@@ -1734,7 +1734,7 @@ onMounted(() => {
                       :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
                       class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                       :class="task.status === 'done'
-                        ? 'border-green-500 bg-green-500'
+                        ? 'border-emerald-500 bg-emerald-500'
                         : priorityCheckboxClass(task.priority) + ' hover:border-red-400'"
                       @click.stop="handleToggleTask(task.id)"
                     >
@@ -1791,17 +1791,17 @@ onMounted(() => {
                           :key="dotIndex"
                           class="h-2 w-2 rounded-full"
                           :class="dotIndex <= (task.pomodoroCount || 1)
-                            ? (task.status === 'done' ? 'bg-green-400' : 'bg-red-400')
-                            : (task.status === 'done' ? 'bg-green-200' : 'bg-red-200')"
+                            ? (task.status === 'done' ? 'bg-emerald-400' : 'bg-red-400')
+                            : (task.status === 'done' ? 'bg-emerald-200' : 'bg-red-200')"
                         />
                       </div>
                       <span v-if="(task.pomodoroCount || 1) > 5">+{{ (task.pomodoroCount || 1) - 5 }}</span>
                     </div>
 
                     <!-- Due Date -->
-                    <span class="text-xs" :class="task.status === 'done' ? 'font-medium text-green-600' : isTaskOverdue(task) ? 'font-medium text-red-600' : task.dueAt ? 'text-rose-500' : 'text-slate-400'">
+                    <span class="text-xs" :class="task.status === 'done' ? 'font-medium text-emerald-600' : isTaskOverdue(task) ? 'font-medium text-red-600' : task.dueAt ? 'text-rose-500' : 'text-slate-400'">
                       {{ formatDueAt(task.dueAt) }}
-                      <span v-if="task.status === 'done'" class="ml-0.5 rounded bg-green-50 px-1 py-0.5 text-[10px] text-green-600 ring-1 ring-green-200">已完成</span>
+                      <span v-if="task.status === 'done'" class="ml-0.5 rounded bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-600 ring-1 ring-emerald-200">已完成</span>
                       <span v-else-if="isTaskOverdue(task)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
                     </span>
 
@@ -1877,7 +1877,7 @@ onMounted(() => {
               :aria-checked="selectedTask.status === 'done'"
               :aria-label="selectedTask.status === 'done' ? '标记为未完成' : '标记为已完成'"
               class="flex h-5 w-5 items-center justify-center rounded-full border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-              :class="selectedTask.status === 'done' ? 'border-green-500 bg-green-500' : 'border-slate-300'"
+              :class="selectedTask.status === 'done' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'"
               @click="handleToggleTask(selectedTask.id)"
             >
               <svg v-if="selectedTask.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -2327,7 +2327,7 @@ onMounted(() => {
                       :aria-checked="subtask.status === 'done'"
                       :aria-label="subtask.status === 'done' ? '标记为未完成' : '标记为已完成'"
                       class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      :class="subtask.status === 'done' ? 'border-green-500 bg-green-500' : 'border-slate-300'"
+                      :class="subtask.status === 'done' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'"
                       @click="handleToggleTask(subtask.id)"
                     >
                       <svg v-if="subtask.status === 'done'" class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
