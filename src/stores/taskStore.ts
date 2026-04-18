@@ -22,8 +22,18 @@ import { recordTaskCreation } from '../services/commands/prediction';
 import { extractKeywords } from '../services/suggestion/keywordExtractor';
 import { useSettingsStore } from './settingsStore';
 import { toDateKey } from '../utils/date';
+import { INBOX_PROJECT_ID } from '../utils/constants';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
+
+// Monotonic ID generator. Guarantees unique, strictly increasing ids even when
+// multiple tasks are created within the same millisecond (e.g. batch copy).
+let lastAssignedTaskId = 0;
+export function nextLocalTaskId(): number {
+  const now = Date.now();
+  lastAssignedTaskId = now > lastAssignedTaskId ? now : lastAssignedTaskId + 1;
+  return lastAssignedTaskId;
+}
 
 type PendingUndoDeletion = {
   taskId: number;
@@ -46,7 +56,7 @@ export const useTaskStore = defineStore('task', () => {
   const projects = ref<ProjectItem[]>([]);
   const recurringRules = ref<Map<number, RecurringRuleItem>>(new Map());
   const pendingUndoDeletion = ref<PendingUndoDeletion | null>(null);
-  const togglingTaskId = ref<number | null>(null);
+  const togglingTaskIds = ref<Set<number>>(new Set());
 
   let undoClearTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -63,7 +73,7 @@ export const useTaskStore = defineStore('task', () => {
   function buildTask(title: string, options: TaskCreateOptions = {}): TaskItem {
     const now = new Date().toISOString();
     return {
-      id: Date.now(),
+      id: nextLocalTaskId(),
       title,
       status: 'todo',
       priority: options.priority ?? 0,
@@ -260,35 +270,12 @@ export const useTaskStore = defineStore('task', () => {
     return subtasks.every((task) => task.status === 'done' || task.status === 'cancelled');
   }
 
-  function completeOverdueRecurringSiblings(ruleId: number, excludeId: number): void {
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const now = new Date().toISOString();
-    const siblings = tasks.value.filter(
-      (t) => t.recurringRuleId === ruleId
-        && t.id !== excludeId
-        && t.status === 'todo'
-        && t.dueAt != null
-        && t.dueAt < todayKey
-    );
-    for (const sibling of siblings) {
-      sibling.status = 'done';
-      sibling.completedAt = now;
-      sibling.updatedAt = now;
-    }
-    if (isTauri && siblings.length > 0) {
-      // Fire-and-forget backend sync
-      Promise.all(
-        siblings.map((s) => updateTaskCmd({ id: s.id, status: 'done', completedAt: now, updatedAt: now }))
-      ).catch((err) => console.error('Failed to cascade-complete recurring siblings:', err));
-    }
-  }
-
   async function toggleTask(id: number): Promise<ToggleTaskResult> {
-    if (togglingTaskId.value !== null) {
+    if (togglingTaskIds.value.has(id)) {
       return { ok: false, reason: 'sync_failed', taskId: id };
     }
-    togglingTaskId.value = id;
-    const cleanup = () => { togglingTaskId.value = null; };
+    togglingTaskIds.value.add(id);
+    const cleanup = () => { togglingTaskIds.value.delete(id); };
     const target = tasks.value.find((task) => task.id === id);
     if (!target) {
       cleanup();
@@ -337,11 +324,6 @@ export const useTaskStore = defineStore('task', () => {
     const shouldPromptCompleteParent = target.parentId != null
       && nextStatus === 'done'
       && areAllDirectSubtasksDone(target.parentId);
-
-    // Cascade-complete overdue siblings of the same recurring rule
-    if (nextStatus === 'done' && target.recurringRuleId != null) {
-      completeOverdueRecurringSiblings(target.recurringRuleId, id);
-    }
 
     if (!isTauri) {
       cleanup();
@@ -406,6 +388,21 @@ export const useTaskStore = defineStore('task', () => {
     const now = new Date().toISOString();
     Object.assign(target, payload, { updatedAt: now });
 
+    // cancel 级联：把整棵子树中仍为 todo 的子孙也标记 cancelled
+    const cascadeCancelIds: number[] = [];
+    if (payload.status === 'cancelled') {
+      const subtreeIds = collectTaskTreeIds(id);
+      for (const sid of subtreeIds) {
+        if (sid === id) continue;
+        const sub = tasks.value.find((t) => t.id === sid);
+        if (sub && sub.status === 'todo') {
+          sub.status = 'cancelled';
+          sub.updatedAt = now;
+          cascadeCancelIds.push(sid);
+        }
+      }
+    }
+
     if (payload.status && payload.status !== 'done' && target.parentId != null) {
       let currentId: number | null = target.parentId;
       while (currentId != null) {
@@ -426,6 +423,13 @@ export const useTaskStore = defineStore('task', () => {
         dbPayload[key] = value;
       }
       await updateTaskCmd(dbPayload);
+      if (cascadeCancelIds.length > 0) {
+        await Promise.all(
+          cascadeCancelIds.map((cid) =>
+            updateTaskCmd({ id: cid, status: 'cancelled', updatedAt: now })
+          )
+        );
+      }
     } catch (error) {
       console.error(error);
       tasks.value = snapshot;
@@ -638,9 +642,9 @@ export const useTaskStore = defineStore('task', () => {
 
   async function removeProject(id: number): Promise<void> {
     projects.value = projects.value.filter((p) => p.id !== id);
-    // Move tasks from deleted project to inbox (id=1) - use map to trigger reactivity
+    // Move tasks from deleted project to inbox - use map to trigger reactivity
     tasks.value = tasks.value.map((task) =>
-      task.projectId === id ? { ...task, projectId: 1 } : task
+      task.projectId === id ? { ...task, projectId: INBOX_PROJECT_ID } : task
     );
     if (isTauri) {
       await deleteProjectCmd(id).catch(console.error);
@@ -735,7 +739,9 @@ export const useTaskStore = defineStore('task', () => {
 
   function startDeadlineWatcher(): void {
     if (deadlineWatcherInterval) return;
-    checkDeadlines();
+    // Delay the first check 5s so that freshly opened app doesn't flood with
+    // notifications before UI/settings have fully hydrated.
+    setTimeout(() => { if (deadlineWatcherInterval) checkDeadlines(); }, 5000);
     deadlineWatcherInterval = setInterval(checkDeadlines, 60_000);
   }
 
@@ -767,8 +773,10 @@ export const useTaskStore = defineStore('task', () => {
       skipHistoryAutofill: true,
     });
 
-    // Clone all subtasks (including completed ones)
-    const subtasks = tasks.value.filter((task) => task.parentId === id);
+    // Clone only incomplete subtasks — 已完成/已取消子任务属于历史，不复制
+    const subtasks = tasks.value.filter(
+      (task) => task.parentId === id && task.status !== 'done' && task.status !== 'cancelled'
+    );
     for (const sub of subtasks) {
       await addTask(sub.title, {
         parentId: cloned.id,

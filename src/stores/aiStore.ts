@@ -9,6 +9,7 @@ import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { feedbackRecord } from '../services/commands/learning';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { partitionPendingJobs, rejectPendingActions } from './aiPendingJobs';
+import { useUiStore } from './uiStore';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -80,12 +81,15 @@ export const useAiStore = defineStore('ai', () => {
     if (!job || !job.actions) return;
 
     const context = job.inputContext;
+    let failures = 0;
     for (const action of job.actions) {
       if (action.status === 'pending') {
         try {
           await executeAction(action, context);
           action.status = 'executed';
         } catch (e) {
+          action.status = 'failed';
+          failures++;
           console.error('[ai-store] failed to execute action', e);
         }
       }
@@ -97,7 +101,18 @@ export const useAiStore = defineStore('ai', () => {
       // Non-fatal
     }
 
-    pendingJobs.value = pendingJobs.value.filter((j) => j.id !== jobId);
+    const hasPending = job.actions.some((a: AiAction) => a.status === 'pending');
+    if (!hasPending) {
+      pendingJobs.value = pendingJobs.value.filter((j) => j.id !== jobId);
+    }
+
+    if (failures > 0) {
+      try {
+        useUiStore().notify(`${failures} 个 AI 动作执行失败`);
+      } catch {
+        // uiStore may not be available in tests
+      }
+    }
   }
 
   async function rejectJob(jobId: number): Promise<void> {

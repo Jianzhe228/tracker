@@ -196,6 +196,24 @@ describe('timerStore', () => {
       expect(timerStore.segments[0].durationMs).toBeGreaterThanOrEqual(7900);
       expect(timerStore.segments[0].durationMs).toBeLessThanOrEqual(9000);
     });
+
+    it('break mode excludes paused time from remaining countdown', () => {
+      timerStore.setMode('shortBreak');
+      // totalSeconds is now shortBreak default (settings default = 5min)
+      const total = timerStore.totalSeconds;
+      timerStore.start();
+
+      vi.advanceTimersByTime(30_000);
+      timerStore.pause();
+      vi.advanceTimersByTime(20_000);
+      timerStore.resume();
+      vi.advanceTimersByTime(10_000);
+
+      // Only 30s + 10s = 40s should be consumed, not 60s
+      const consumed = total - timerStore.remainingSeconds;
+      expect(consumed).toBeGreaterThanOrEqual(38);
+      expect(consumed).toBeLessThanOrEqual(42);
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════════════

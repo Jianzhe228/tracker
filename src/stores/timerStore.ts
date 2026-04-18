@@ -556,7 +556,7 @@ export const useTimerStore = defineStore('timer', () => {
     closeCurrentSegment();
     countClosedSegmentsInToday();
 
-    const focusSeconds = Math.max(60, totalSeconds.value);
+    const focusSeconds = Math.max(getDefaultSeconds('focus'), totalSeconds.value);
     const allSegmentsDurationMs = segments.value.reduce((sum, seg) => sum + seg.durationMs, 0);
 
     const spentSeconds = allSegmentsDurationMs > 0
@@ -628,8 +628,9 @@ export const useTimerStore = defineStore('timer', () => {
           elapsedSeconds.value = elapsed;
         }
       } else {
-        // break mode: derive remaining directly from startedAt
-        const rawElapsed = now - startedAt.value!;
+        // break mode: mirror focus — subtract accumulated pause so resume不缩短休息
+        const ongoingPauseMs = pauseStartedAt.value ? now - pauseStartedAt.value : 0;
+        const rawElapsed = now - startedAt.value! - accumulatedPauseMs.value - ongoingPauseMs;
         const elapsed = Math.max(0, Math.floor(rawElapsed / 1000));
         remainingSeconds.value = Math.max(0, totalSeconds.value - elapsed);
         if (remainingSeconds.value <= 0) {
@@ -816,22 +817,11 @@ export const useTimerStore = defineStore('timer', () => {
     }
 
     if (restored.status === 'running') {
-      const elapsed = restored.lastTickAt ? Math.max(0, Math.floor((Date.now() - restored.lastTickAt) / 1000)) : 0;
-      if (mode.value === 'focus' && timerKind.value === 'countdown') {
-        remainingSeconds.value = Math.max(0, remainingSeconds.value - elapsed);
-        if (remainingSeconds.value <= 0) {
-          finalizeFocusSession('completed', true);
-          return;
-        }
-      } else if (mode.value === 'focus' && timerKind.value === 'countup') {
-        elapsedSeconds.value += elapsed;
-      } else {
-        remainingSeconds.value = Math.max(0, remainingSeconds.value - elapsed);
-        if (remainingSeconds.value <= 0) {
-          completeBreak();
-          return;
-        }
-      }
+      // Treat offline span as pause (not focus/break consumption) so stats stay clean.
+      // The user will decide via promptRecovery whether to continue or discard.
+      const offlineMs = restored.lastTickAt ? Math.max(0, Date.now() - restored.lastTickAt) : 0;
+      accumulatedPauseMs.value += offlineMs;
+
       status.value = 'paused';
       pauseStartedAt.value = Date.now();
       awaitingRecovery.value = true;

@@ -154,7 +154,7 @@ describe('taskStore - copyTaskToToday', () => {
       expect(taskCommands.updateTask).not.toHaveBeenCalled();
     });
 
-    it('copies a task with all its subtasks', async () => {
+    it('copies a task with only its incomplete subtasks (B8)', async () => {
       const parentTask: TaskItem = {
         id: 10,
         title: 'Parent task',
@@ -213,10 +213,9 @@ describe('taskStore - copyTaskToToday', () => {
 
       await taskStore.copyTaskToToday(10);
 
-      // Verify: createTask called 3 times (parent + 2 subtasks)
-      expect(taskCommands.createTask).toHaveBeenCalledTimes(3);
+      // Parent + only the incomplete subtask (done subtask skipped)
+      expect(taskCommands.createTask).toHaveBeenCalledTimes(2);
 
-      // Parent task call
       expect(taskCommands.createTask).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining({
@@ -225,7 +224,6 @@ describe('taskStore - copyTaskToToday', () => {
         })
       );
 
-      // Subtask 1 call
       expect(taskCommands.createTask).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
@@ -234,14 +232,10 @@ describe('taskStore - copyTaskToToday', () => {
         })
       );
 
-      // Subtask 2 call (completed subtask is also copied)
-      expect(taskCommands.createTask).toHaveBeenNthCalledWith(
-        3,
-        expect.objectContaining({
-          title: 'Subtask 2 (completed)',
-          dueAt: '2026-04-15',
-        })
+      const titles = vi.mocked(taskCommands.createTask).mock.calls.map(
+        ([t]) => (t as TaskItem).title
       );
+      expect(titles).not.toContain('Subtask 2 (completed)');
     });
 
     it('does nothing if task not found', async () => {
@@ -581,6 +575,181 @@ describe('taskStore - copyTaskToToday', () => {
           rescheduledTo: '2026-04-15',
         })
       );
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TEST: monotonic id generator — prevents PK collision in batch copy
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('nextLocalTaskId', () => {
+    it('returns unique ids when called repeatedly within the same millisecond', async () => {
+      const { nextLocalTaskId } = await import('../taskStore');
+      // Fake timers frozen: Date.now() returns same value for all calls
+      const ids = new Set<number>();
+      for (let i = 0; i < 50; i++) ids.add(nextLocalTaskId());
+      expect(ids.size).toBe(50);
+    });
+
+    it('produces strictly increasing ids', async () => {
+      const { nextLocalTaskId } = await import('../taskStore');
+      const ids = Array.from({ length: 20 }, () => nextLocalTaskId());
+      for (let i = 1; i < ids.length; i++) {
+        expect(ids[i]).toBeGreaterThan(ids[i - 1]);
+      }
+    });
+  });
+
+  describe('copyTasksToToday — id collision regression', () => {
+    it('assigns unique ids to parent + all subtasks when created in the same ms', async () => {
+      // Echo-back mock: backend returns exactly what frontend sent (exposes PK collisions)
+      vi.mocked(taskCommands.createTask).mockImplementation((task) => Promise.resolve(task));
+
+      const parent: TaskItem = {
+        id: 100,
+        title: 'Parent',
+        status: 'todo',
+        dueAt: '2026-04-10',
+        priority: 'medium',
+        notes: null,
+        pomodoroCount: 1,
+        pomodoroDuration: 25,
+        sortOrder: 0,
+        projectId: null,
+        parentId: null,
+        recurringRuleId: null,
+        rescheduledTo: null,
+        createdAt: '2026-04-10T00:00:00Z',
+        updatedAt: '2026-04-10T00:00:00Z',
+      };
+      const makeSub = (id: number, title: string): TaskItem => ({
+        ...parent,
+        id,
+        title,
+        parentId: 100,
+      });
+      taskStore.loadFromData([
+        parent,
+        makeSub(101, 'sub-1'),
+        makeSub(102, 'sub-2'),
+        makeSub(103, 'sub-3'),
+      ]);
+
+      await taskStore.copyTaskToToday(100);
+
+      // 1 parent + 3 subtasks = 4 createTask calls
+      expect(taskCommands.createTask).toHaveBeenCalledTimes(4);
+      const createdIds = vi.mocked(taskCommands.createTask).mock.calls.map(
+        ([t]) => (t as TaskItem).id
+      );
+      expect(new Set(createdIds).size).toBe(4); // all unique
+    });
+
+    it('assigns unique ids when batch-copying multiple parents concurrently', async () => {
+      vi.mocked(taskCommands.createTask).mockImplementation((task) => Promise.resolve(task));
+
+      const makeTask = (id: number): TaskItem => ({
+        id,
+        title: `task-${id}`,
+        status: 'todo',
+        dueAt: '2026-04-10',
+        priority: 'medium',
+        notes: null,
+        pomodoroCount: 1,
+        pomodoroDuration: 25,
+        sortOrder: 0,
+        projectId: null,
+        parentId: null,
+        recurringRuleId: null,
+        rescheduledTo: null,
+        createdAt: '2026-04-10T00:00:00Z',
+        updatedAt: '2026-04-10T00:00:00Z',
+      });
+      const originals = [1, 2, 3, 4, 5].map(makeTask);
+      taskStore.loadFromData(originals);
+
+      await taskStore.copyTasksToToday(originals.map((t) => t.id));
+
+      expect(taskCommands.createTask).toHaveBeenCalledTimes(5);
+      const createdIds = vi.mocked(taskCommands.createTask).mock.calls.map(
+        ([t]) => (t as TaskItem).id
+      );
+      expect(new Set(createdIds).size).toBe(5);
+    });
+  });
+
+  describe('toggleTask — concurrent toggles across different tasks', () => {
+    it('allows toggling two different tasks in parallel without sync_failed', async () => {
+      const makeTask = (id: number): TaskItem => ({
+        id,
+        title: `task-${id}`,
+        status: 'todo',
+        dueAt: '2026-04-15',
+        priority: 'medium',
+        notes: null,
+        pomodoroCount: 1,
+        pomodoroDuration: 25,
+        sortOrder: 0,
+        projectId: null,
+        parentId: null,
+        recurringRuleId: null,
+        rescheduledTo: null,
+        createdAt: '2026-04-15T00:00:00Z',
+        updatedAt: '2026-04-15T00:00:00Z',
+      });
+      taskStore.loadFromData([makeTask(101), makeTask(102)]);
+
+      // Simulate backend delay so both toggles are in-flight concurrently
+      let resolveA!: () => void;
+      let resolveB!: () => void;
+      vi.mocked(taskCommands.updateTask)
+        .mockImplementationOnce(() => new Promise<void>((r) => { resolveA = r; }))
+        .mockImplementationOnce(() => new Promise<void>((r) => { resolveB = r; }));
+
+      const pA = taskStore.toggleTask(101);
+      const pB = taskStore.toggleTask(102);
+
+      resolveA();
+      resolveB();
+      const [resA, resB] = await Promise.all([pA, pB]);
+
+      expect(resA.ok).toBe(true);
+      expect(resB.ok).toBe(true);
+    });
+
+    it('rejects duplicate in-flight toggle of the same task', async () => {
+      const makeTask = (id: number): TaskItem => ({
+        id,
+        title: `task-${id}`,
+        status: 'todo',
+        dueAt: '2026-04-15',
+        priority: 'medium',
+        notes: null,
+        pomodoroCount: 1,
+        pomodoroDuration: 25,
+        sortOrder: 0,
+        projectId: null,
+        parentId: null,
+        recurringRuleId: null,
+        rescheduledTo: null,
+        createdAt: '2026-04-15T00:00:00Z',
+        updatedAt: '2026-04-15T00:00:00Z',
+      });
+      taskStore.loadFromData([makeTask(201)]);
+
+      let resolveOnce!: () => void;
+      vi.mocked(taskCommands.updateTask)
+        .mockImplementationOnce(() => new Promise<void>((r) => { resolveOnce = r; }));
+
+      const pFirst = taskStore.toggleTask(201);
+      const second = await taskStore.toggleTask(201);
+
+      expect(second.ok).toBe(false);
+      expect(second.reason).toBe('sync_failed');
+
+      resolveOnce();
+      const first = await pFirst;
+      expect(first.ok).toBe(true);
     });
   });
 });

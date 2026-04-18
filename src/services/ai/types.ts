@@ -18,7 +18,7 @@ export interface AiSkill {
 export interface AiAction {
   type: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'executed';
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
 }
 
 export interface AiJob {

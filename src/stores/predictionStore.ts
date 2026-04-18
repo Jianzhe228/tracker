@@ -113,6 +113,7 @@ export const usePredictionStore = defineStore('prediction', () => {
     await taskStore.addTask(prediction.title, {
       projectId: prediction.projectId,
       dueAt: prediction.predictedForDate ?? toDateKey(new Date()),
+      skipPredictionRecord: true,
     });
 
     await updatePredictionStatus(id, 'accepted');
@@ -167,9 +168,14 @@ export const usePredictionStore = defineStore('prediction', () => {
     }
   }
 
-  void loadPendingPredictions();
-  void loadStats();
-  void startListening();
+  let initialized = false;
+  async function init(): Promise<void> {
+    if (initialized) return;
+    initialized = true;
+    await loadPendingPredictions();
+    await loadStats();
+    await startListening();
+  }
 
   return {
     pendingPredictions,
@@ -178,6 +184,7 @@ export const usePredictionStore = defineStore('prediction', () => {
     lastAnalysisAt,
     hasPending,
     pendingCount,
+    init,
     loadPendingPredictions,
     loadStats,
     refreshPredictions,

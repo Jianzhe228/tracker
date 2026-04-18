@@ -234,6 +234,37 @@ describe('predictionStore', () => {
         })
       );
     });
+
+    it('skips prediction record to avoid self-reinforcing loop', async () => {
+      setActivePinia(createPinia());
+      const store = usePredictionStore();
+
+      store.pendingPredictions = [
+        {
+          id: 8,
+          title: '写周报',
+          reason: null,
+          predictedForDate: '2026-03-29',
+          createdAt: '2026-03-29 10:00:00',
+          notifiedAt: null,
+          status: 'pending',
+          aiContext: null,
+          sourceJobId: null,
+          projectId: 1,
+          titleKey: '写周报',
+          score: 7.5,
+          scoreBreakdown: null,
+          algorithmVersion: 'local-v1',
+        },
+      ];
+
+      await store.acceptPrediction(8);
+
+      expect(taskStoreMock.addTask).toHaveBeenCalledWith(
+        '写周报',
+        expect.objectContaining({ skipPredictionRecord: true }),
+      );
+    });
   });
 
   describe('stopListening', () => {

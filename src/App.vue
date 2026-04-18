@@ -9,6 +9,7 @@ import { useTaskStore } from './stores/taskStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useUiStore } from './stores/uiStore';
 import { useAiStore } from './stores/aiStore';
+import { usePredictionStore } from './stores/predictionStore';
 import { appInit, taskListInit } from './services/commands/init';
 import { useFocusModal } from './composables/useFocusModal';
 import FocusModal from './components/FocusModal.vue';
@@ -42,6 +43,7 @@ const taskStore = useTaskStore();
 const settingsStore = useSettingsStore();
 const uiStore = useUiStore();
 const aiStore = useAiStore();
+const predictionStore = usePredictionStore();
 
 onMounted(async () => {
   console.timeEnd('[app] script setup → mounted');
@@ -57,6 +59,7 @@ onMounted(async () => {
   taskStore.startDeadlineWatcher();
   ensureNotificationPermission().catch(console.error);
   aiStore.init().catch(console.error);
+  predictionStore.init().catch(console.error);
 });
 
 // Modal states
