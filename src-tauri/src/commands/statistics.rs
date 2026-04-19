@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use chrono::{Duration, NaiveDateTime, Timelike};
 use serde::Serialize;
 use tauri::State;
 
@@ -218,39 +221,105 @@ pub fn stats_day_hour_distribution(
     let day_count = days.unwrap_or(14).clamp(7, 31);
     let start_modifier = format!("-{} days", day_count - 1);
 
+    // Fetch raw session rows (local start time, duration, pomodoro). Splitting
+    // across hour boundaries is done in Rust so a session like 15:30 + 2h
+    // correctly contributes 30min to 15:00, 60min to 16:00, 30min to 17:00.
     let mut stmt = db
         .prepare(
-            "SELECT date(start_time, 'localtime') as d,
-              CAST(strftime('%H', start_time, 'localtime') AS INTEGER) as hour,
-              COALESCE(SUM(duration_seconds), 0),
-              COUNT(*),
-              COALESCE(SUM(pomodoro_count), 0.0)
-       FROM focus_sessions
-       WHERE type = 'focus'
-         AND status IN ('completed', 'stopped')
-         AND date(start_time, 'localtime') >= date('now', 'localtime', ?1)
-         AND date(start_time, 'localtime') <= date('now', 'localtime')
-       GROUP BY d, hour
-       ORDER BY d DESC, hour ASC",
+            "SELECT datetime(start_time, 'localtime') AS start_local,
+                    COALESCE(duration_seconds, 0) AS duration,
+                    COALESCE(pomodoro_count, 0.0) AS pomodoro
+             FROM focus_sessions
+             WHERE type = 'focus'
+               AND status IN ('completed', 'stopped')
+               AND date(start_time, 'localtime') >= date('now', 'localtime', ?1)
+               AND date(start_time, 'localtime') <= date('now', 'localtime')",
         )
         .map_err(|e| e.to_string())?;
 
-    let rows = stmt
+    struct Raw {
+        start_local: String,
+        duration: i64,
+        pomodoro: f64,
+    }
+
+    let raw_rows = stmt
         .query_map(rusqlite::params![start_modifier], |row| {
-            Ok(DayHourDistributionEntry {
-                date: row.get(0)?,
-                hour: row.get(1)?,
-                total_seconds: row.get(2)?,
-                session_count: row.get(3)?,
-                pomodoro_count: row.get(4)?,
+            Ok(Raw {
+                start_local: row.get(0)?,
+                duration: row.get(1)?,
+                pomodoro: row.get(2)?,
             })
         })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
 
-    let mut results = Vec::new();
-    for row in rows {
-        results.push(row.map_err(|e| e.to_string())?);
+    // Accumulator: (date_key, hour) -> (total_seconds, session_count, pomodoro_count)
+    let mut buckets: HashMap<(String, i64), (i64, i64, f64)> = HashMap::new();
+
+    for row in raw_rows {
+        if row.duration <= 0 {
+            continue;
+        }
+        // SQLite's datetime(..., 'localtime') returns 'YYYY-MM-DD HH:MM:SS'
+        let Ok(start) = NaiveDateTime::parse_from_str(&row.start_local, "%Y-%m-%d %H:%M:%S")
+        else {
+            continue;
+        };
+        let end = start + Duration::seconds(row.duration);
+        let total_duration_secs = row.duration.max(1) as f64;
+
+        let mut cursor = start;
+        while cursor < end {
+            let Some(hour_top) = cursor.date().and_hms_opt(cursor.hour(), 0, 0) else {
+                break;
+            };
+            let next_hour_top = hour_top + Duration::hours(1);
+            let slice_end = if next_hour_top < end {
+                next_hour_top
+            } else {
+                end
+            };
+            let slice_secs = (slice_end - cursor).num_seconds().max(0);
+            if slice_secs == 0 {
+                break;
+            }
+
+            let key = (
+                cursor.format("%Y-%m-%d").to_string(),
+                cursor.hour() as i64,
+            );
+            let entry = buckets.entry(key).or_insert((0, 0, 0.0));
+            entry.0 += slice_secs;
+            // Count this session once per hour cell it touches, so "活跃次数"
+            // reflects actual activity in that hour rather than only the
+            // starting hour.
+            entry.1 += 1;
+            // Split pomodoro credit proportionally to duration share.
+            entry.2 += row.pomodoro * (slice_secs as f64 / total_duration_secs);
+
+            cursor = slice_end;
+        }
     }
+
+    let mut results: Vec<DayHourDistributionEntry> = buckets
+        .into_iter()
+        .map(
+            |((date, hour), (total_seconds, session_count, pomodoro_count))| {
+                DayHourDistributionEntry {
+                    date,
+                    hour,
+                    total_seconds,
+                    session_count,
+                    pomodoro_count,
+                }
+            },
+        )
+        .collect();
+
+    // Match the previous ordering the frontend relied on.
+    results.sort_by(|a, b| b.date.cmp(&a.date).then_with(|| a.hour.cmp(&b.hour)));
     Ok(results)
 }
 

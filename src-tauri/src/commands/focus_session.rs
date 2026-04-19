@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use chrono::{Duration, NaiveDateTime, Timelike};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -221,45 +224,70 @@ pub fn focus_session_stats(
         )
         .map_err(|e| e.to_string())?;
 
-    // Hourly distribution (24 buckets)
-    let mut hourly_stmt = db
+    // Hourly distribution (24 buckets). Sessions spanning multiple hours are
+    // split across hour boundaries so each cell reflects the minutes that
+    // actually occurred in that hour — e.g. a 15:30 + 2h session contributes
+    // 30min to 15, 60min to 16, 30min to 17 (instead of 150min dumped into 15).
+    let mut raw_stmt = db
         .prepare(
-            "SELECT CAST(strftime('%H', start_time, 'localtime') AS INTEGER) AS hour,
-              COALESCE(SUM(duration_seconds), 0),
-              COUNT(*)
-       FROM focus_sessions
-       WHERE type = 'focus'
-         AND status IN ('completed', 'stopped')
-         AND date(start_time, 'localtime') >= date(?1)
-         AND date(start_time, 'localtime') <= date(?2)
-       GROUP BY hour
-       ORDER BY hour",
+            "SELECT datetime(start_time, 'localtime') AS start_local,
+                    COALESCE(duration_seconds, 0) AS duration
+             FROM focus_sessions
+             WHERE type = 'focus'
+               AND status IN ('completed', 'stopped')
+               AND date(start_time, 'localtime') >= date(?1)
+               AND date(start_time, 'localtime') <= date(?2)",
         )
         .map_err(|e| e.to_string())?;
 
-    let hourly_rows = hourly_stmt
+    let raw_rows = raw_stmt
         .query_map(rusqlite::params![from_date, to_date], |row| {
-            Ok(HourlyBucket {
-                hour: row.get(0)?,
-                total_seconds: row.get(1)?,
-                session_count: row.get(2)?,
-            })
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
         })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
 
-    let mut hourly_map = std::collections::HashMap::new();
-    for row in hourly_rows {
-        let bucket = row.map_err(|e| e.to_string())?;
-        hourly_map.insert(bucket.hour, bucket);
+    // hour -> (seconds, session_count)
+    let mut hourly_map: HashMap<i64, (i64, i64)> = HashMap::new();
+    for (start_local, duration) in raw_rows {
+        if duration <= 0 {
+            continue;
+        }
+        let Ok(start) = NaiveDateTime::parse_from_str(&start_local, "%Y-%m-%d %H:%M:%S") else {
+            continue;
+        };
+        let end = start + Duration::seconds(duration);
+        let mut cursor = start;
+        while cursor < end {
+            let Some(hour_top) = cursor.date().and_hms_opt(cursor.hour(), 0, 0) else {
+                break;
+            };
+            let next_hour_top = hour_top + Duration::hours(1);
+            let slice_end = if next_hour_top < end {
+                next_hour_top
+            } else {
+                end
+            };
+            let slice_secs = (slice_end - cursor).num_seconds().max(0);
+            if slice_secs == 0 {
+                break;
+            }
+            let entry = hourly_map.entry(cursor.hour() as i64).or_insert((0, 0));
+            entry.0 += slice_secs;
+            entry.1 += 1;
+            cursor = slice_end;
+        }
     }
 
     let hourly_distribution: Vec<HourlyBucket> = (0..24)
         .map(|h| {
-            hourly_map.remove(&h).unwrap_or(HourlyBucket {
+            let (total_seconds, session_count) = hourly_map.remove(&h).unwrap_or((0, 0));
+            HourlyBucket {
                 hour: h,
-                total_seconds: 0,
-                session_count: 0,
-            })
+                total_seconds,
+                session_count,
+            }
         })
         .collect();
 
