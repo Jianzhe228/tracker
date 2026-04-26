@@ -669,7 +669,6 @@ onMounted(() => {
   <div class="h-full overflow-y-auto p-6">
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-[#1C1C1A]">仪表盘</h1>
-      <p class="mt-1 text-sm text-[#6F6F6B]">数据统计与分析</p>
     </div>
 
     <!-- ── Metric Cards ─────────────────────────────────────────── -->

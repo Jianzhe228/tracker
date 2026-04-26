@@ -1533,8 +1533,6 @@ onMounted(() => {
       <div class="border-b border-surface-border bg-white px-6 py-4">
         <div class="flex items-end justify-between">
           <h1 class="text-xl font-semibold tracking-tight text-[#1C1C1A]">{{ pageTitle }}</h1>
-          <span v-if="canDragSort" class="text-xs text-[#9E9E9A]">拖拽任务卡片可排序</span>
-          <span v-else-if="activeTaskFilter === 'all'" class="text-xs text-[#9E9E9A]">按时间树查看全部任务</span>
         </div>
 
         <!-- Stats Bar -->
