@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { VChart } from '../../composables/useECharts';
 import type { HourlyBucket } from '../../types/domain';
-import { formatMinutes } from '../../utils/date';
+import { formatAxisMinutes, formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   data: HourlyBucket[];
@@ -40,9 +40,13 @@ const option = computed(() => ({
   },
   yAxis: {
     type: 'value',
-    name: props.compact ? '' : '分钟',
+    name: props.compact ? '' : '',
     nameTextStyle: { color: '#94a3b8', fontSize: 11 },
-    axisLabel: { fontSize: 11, color: '#94a3b8' },
+    axisLabel: {
+      fontSize: 11,
+      color: '#94a3b8',
+      formatter: (value: number) => formatAxisMinutes(value),
+    },
     splitLine: { lineStyle: { color: '#f1f5f9' } },
   },
   series: [{

@@ -779,7 +779,7 @@ onMounted(() => {
             番茄 {{ formatPomodoros(selectedHeatmapCell?.pomodoroCount || 0) }}
           </span>
           <span v-if="selectedHeatmapCell?.count" class="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700">
-            活跃强度 {{ selectedHeatmapCell.count }}
+            活跃强度 {{ selectedHeatmapCell.count.toFixed(1) }}
           </span>
         </div>
 

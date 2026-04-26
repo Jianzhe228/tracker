@@ -6,6 +6,12 @@ export function formatMinutes(totalMinutes: number): string {
   return `${m}分钟`;
 }
 
+/** Format minutes for chart axis labels: use hours if >= 60m, otherwise minutes. */
+export function formatAxisMinutes(minutes: number): string {
+  if (minutes >= 60) return `${(minutes / 60).toFixed(1)}h`;
+  return `${minutes}m`;
+}
+
 /** Format a Date as YYYY-MM-DD (local timezone). */
 export function toDateKey(date: Date): string {
   const year = date.getFullYear();
