@@ -46,15 +46,15 @@ const option = computed(() => ({
     smooth: true,
     symbol: 'circle',
     symbolSize: 6,
-    lineStyle: { width: 2, color: '#3b82f6' },
-    itemStyle: { color: '#3b82f6' },
+    lineStyle: { width: 2, color: '#5C69D8' },
+    itemStyle: { color: '#5C69D8' },
     areaStyle: {
       color: {
         type: 'linear',
         x: 0, y: 0, x2: 0, y2: 1,
         colorStops: [
-          { offset: 0, color: 'rgba(59,130,246,0.2)' },
-          { offset: 1, color: 'rgba(59,130,246,0.01)' },
+          { offset: 0, color: 'rgba(92,105,216,0.18)' },
+          { offset: 1, color: 'rgba(92,105,216,0.01)' },
         ],
       },
     },

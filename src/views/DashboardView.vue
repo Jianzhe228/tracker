@@ -303,10 +303,10 @@ function levelByCount(count: number): number {
 
 const heatmapColorMap: Record<number, string> = {
   0: '#F0F0EC',
-  1: '#E7E5FF',
-  2: '#CFCBFF',
-  3: '#B0A9FF',
-  4: '#6E63FF'
+  1: '#E2E6FA',
+  2: '#C4CBF5',
+  3: '#9EA8EC',
+  4: '#5C69D8'
 };
 
 const heatmapColorMapDimmed: Record<number, string> = {
@@ -749,7 +749,6 @@ onMounted(() => {
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 class="font-semibold text-[#1C1C1A]">年度活跃热力图</h3>
-            <p class="mt-1 text-xs text-[#6F6F6B]">{{ heatmapData.activeDays }} 天活跃（{{ selectedYear }} 年）</p>
           </div>
           <label class="inline-flex items-center gap-2 text-xs text-[#6F6F6B]">
             <span>年份</span>
@@ -850,7 +849,6 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">近期专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">{{ displayedDailyTotals.length }} 天趋势</p>
           <FocusTrendChart
             v-if="renderPhase >= 1 && displayedDailyTotals.length"
             :data="displayedDailyTotals"
@@ -863,7 +861,6 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">高产时段分布</h3>
-          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">按小时分布</p>
           <HourlyDistributionChart
             v-if="renderPhase >= 1 && displayedHourlyDistribution.length"
             :data="displayedHourlyDistribution"
@@ -880,7 +877,6 @@ onMounted(() => {
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 class="font-semibold text-[#1C1C1A]">每日时段消耗分布</h3>
-            <p class="mt-0.5 text-xs text-[#6F6F6B]">{{ statisticsStore.dayHourWindowDays }} 天分布</p>
           </div>
         </div>
         <DayHourDistributionChart
@@ -897,7 +893,6 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">项目时间分布</h3>
-          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">时间占比</p>
           <ProjectDistributionChart
             v-if="renderPhase >= 3 && displayedProjectDistribution.length"
             :data="displayedProjectDistribution"
@@ -909,7 +904,6 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">估算准确度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">按偏差排序</p>
           <EstVsActualChart
             v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
             :data="statisticsStore.estVsActual"
@@ -924,7 +918,6 @@ onMounted(() => {
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">12 周趋势</p>
           <WeeklyFocusTrendChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
             :data="statisticsStore.weeklyFocus"
@@ -936,7 +929,6 @@ onMounted(() => {
 
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">任务完成速度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">12 周趋势</p>
           <TaskVelocityChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
             :data="statisticsStore.weeklyTaskVelocity"

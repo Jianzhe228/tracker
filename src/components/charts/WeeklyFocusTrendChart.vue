@@ -48,10 +48,10 @@ const option = computed(() => {
       data: hours,
       barMaxWidth: 28,
       itemStyle: {
-        color: '#3b82f6',
+        color: '#5C69D8',
         borderRadius: [4, 4, 0, 0],
       },
-      emphasis: { itemStyle: { color: '#2563eb' } },
+      emphasis: { itemStyle: { color: '#4B55C4' } },
     }],
   };
 });

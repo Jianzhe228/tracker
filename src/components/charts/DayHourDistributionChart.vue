@@ -149,7 +149,7 @@ const option = computed(() => ({
     max: visualMaxMinutes.value,
     calculable: false,
     inRange: {
-      color: ['#f8fafc', '#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#2563eb'],
+      color: ['#FAFAF8', '#E2E6FA', '#C4CBF5', '#9EA8EC', '#7A86E3', '#5C69D8'],
     },
   },
   series: [

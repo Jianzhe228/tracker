@@ -10,7 +10,7 @@ export const chartPalette = {
   successAlt: '#3EA97B',
   warning: '#C0860A',
   danger: '#C12838',
-  violet: '#8282E8',
+  cyan: '#06B6D4',
   axisLabel: '#9E9E9A',
   axisLine: '#ECECE8',
   splitLine: '#F5F5F2',
@@ -25,7 +25,7 @@ export const chartSeriesPalette = [
   chartPalette.primary,
   chartPalette.success,
   chartPalette.warning,
-  chartPalette.violet,
+  chartPalette.cyan,
   chartPalette.danger,
-  '#06B6D4',
+  '#0D9488',
 ] as const;

@@ -53,7 +53,7 @@ const option = computed(() => ({
     type: 'bar',
     data: fullData.value.map(d => Math.round(d.totalSeconds / 60)),
     itemStyle: {
-      color: '#8b5cf6',
+      color: '#5C69D8',
       borderRadius: [4, 4, 0, 0],
     },
     barMaxWidth: 20,
