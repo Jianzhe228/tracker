@@ -487,59 +487,59 @@ async function downloadAndInstall(): Promise<void> {
 
 <template>
   <div class="h-full px-6 py-6">
-    <h1 class="mb-8 text-2xl font-bold text-slate-800">设置</h1>
+    <h1 class="mb-8 text-2xl font-bold text-[#1C1C1A]">设置</h1>
 
     <div class="space-y-10">
       <!-- 通用 -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">通用</h2>
-        <div class="divide-y divide-slate-100">
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通用</h2>
+        <div class="divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">关闭时最小化到托盘</span><p class="text-xs text-slate-400">开启后，点击关闭按钮将最小化到系统托盘而非退出程序</p></div>
-            <button role="switch" :aria-checked="closeToTray" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="closeToTray ? 'bg-blue-600' : 'bg-slate-200'" @click="closeToTray = !closeToTray"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="closeToTray ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">关闭时最小化到托盘</span><p class="text-xs text-[#9E9E9A]">开启后，点击关闭按钮将最小化到系统托盘而非退出程序</p></div>
+            <button role="switch" :aria-checked="closeToTray" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="closeToTray ? 'bg-primary-600' : 'bg-surface-border'" @click="closeToTray = !closeToTray"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="closeToTray ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">开机自动启动</span><p class="text-xs text-slate-400">系统启动时自动运行本程序</p></div>
-            <button role="switch" :aria-checked="autoStart" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStart ? 'bg-blue-600' : 'bg-slate-200'" @click="toggleAutoStart"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStart ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">开机自动启动</span><p class="text-xs text-[#9E9E9A]">系统启动时自动运行本程序</p></div>
+            <button role="switch" :aria-checked="autoStart" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStart ? 'bg-primary-600' : 'bg-surface-border'" @click="toggleAutoStart"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStart ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
         </div>
       </section>
 
       <!-- 番茄钟 -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">番茄钟</h2>
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">番茄钟</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label class="space-y-1.5">
-            <span class="text-sm text-slate-500">专注（分钟）</span>
-            <input v-model.number="focus" type="number" min="1" max="120" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <span class="text-sm text-[#6F6F6B]">专注（分钟）</span>
+            <input v-model.number="focus" type="number" min="1" max="120" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           </label>
           <label class="space-y-1.5">
-            <span class="text-sm text-slate-500">短休息（分钟）</span>
-            <input v-model.number="shortBreak" type="number" min="1" max="30" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <span class="text-sm text-[#6F6F6B]">短休息（分钟）</span>
+            <input v-model.number="shortBreak" type="number" min="1" max="30" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           </label>
           <label class="space-y-1.5">
-            <span class="text-sm text-slate-500">长休息（分钟）</span>
-            <input v-model.number="longBreak" type="number" min="1" max="60" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <span class="text-sm text-[#6F6F6B]">长休息（分钟）</span>
+            <input v-model.number="longBreak" type="number" min="1" max="60" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           </label>
           <label class="space-y-1.5">
-            <span class="text-sm text-slate-500">长休息间隔</span>
-            <input v-model.number="longBreakInterval" type="number" min="1" max="10" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <span class="text-sm text-[#6F6F6B]">长休息间隔</span>
+            <input v-model.number="longBreakInterval" type="number" min="1" max="10" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           </label>
         </div>
-        <div class="mt-5 divide-y divide-slate-100">
+        <div class="mt-5 divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">自动开始休息</span><p class="text-xs text-slate-400">专注结束后自动进入休息</p></div>
-            <button role="switch" :aria-checked="autoStartBreak" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStartBreak ? 'bg-blue-600' : 'bg-slate-200'" @click="autoStartBreak = !autoStartBreak"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStartBreak ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">自动开始休息</span><p class="text-xs text-[#9E9E9A]">专注结束后自动进入休息</p></div>
+            <button role="switch" :aria-checked="autoStartBreak" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStartBreak ? 'bg-primary-600' : 'bg-surface-border'" @click="autoStartBreak = !autoStartBreak"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStartBreak ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">自动开始下一个番茄</span><p class="text-xs text-slate-400">休息结束后自动开始专注</p></div>
-            <button role="switch" :aria-checked="autoStartNext" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStartNext ? 'bg-blue-600' : 'bg-slate-200'" @click="autoStartNext = !autoStartNext"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStartNext ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">自动开始下一个番茄</span><p class="text-xs text-[#9E9E9A]">休息结束后自动开始专注</p></div>
+            <button role="switch" :aria-checked="autoStartNext" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="autoStartNext ? 'bg-primary-600' : 'bg-surface-border'" @click="autoStartNext = !autoStartNext"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="autoStartNext ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">默认计时模式</span><p class="text-xs text-slate-400">新建专注时的默认计时方式</p></div>
-            <div class="flex gap-1 rounded-full bg-slate-100 p-1">
-              <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countdown' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" @click="defaultTimerKind = 'countdown'">倒计时</button>
-              <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'" @click="defaultTimerKind = 'countup'">正计时</button>
+            <div><span class="text-sm text-[#1C1C1A]">默认计时模式</span><p class="text-xs text-[#9E9E9A]">新建专注时的默认计时方式</p></div>
+            <div class="flex gap-1 rounded-full bg-surface-hover p-1">
+              <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countdown' ? 'bg-white text-[#1C1C1A] shadow-sm' : 'text-[#6F6F6B]'" @click="defaultTimerKind = 'countdown'">倒计时</button>
+              <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countup' ? 'bg-white text-[#1C1C1A] shadow-sm' : 'text-[#6F6F6B]'" @click="defaultTimerKind = 'countup'">正计时</button>
             </div>
           </div>
         </div>
@@ -547,117 +547,117 @@ async function downloadAndInstall(): Promise<void> {
 
       <!-- 云同步 -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">云同步</h2>
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">云同步</h2>
         <div class="space-y-4">
           <label class="block">
-            <span class="mb-1 block text-sm text-slate-500">服务器地址</span>
-            <input v-model="settingsStore.webdav.url" type="url" placeholder="https://dav.example.com/webdav/" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <span class="mb-1 block text-sm text-[#6F6F6B]">服务器地址</span>
+            <input v-model="settingsStore.webdav.url" type="url" placeholder="https://dav.example.com/webdav/" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           </label>
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="block">
-              <span class="mb-1 block text-sm text-slate-500">用户名</span>
-              <input v-model="settingsStore.webdav.username" type="text" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <span class="mb-1 block text-sm text-[#6F6F6B]">用户名</span>
+              <input v-model="settingsStore.webdav.username" type="text" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
             </label>
             <label class="block">
-              <span class="mb-1 block text-sm text-slate-500">密码</span>
-              <input v-model="settingsStore.webdav.password" type="password" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <span class="mb-1 block text-sm text-[#6F6F6B]">密码</span>
+              <input v-model="settingsStore.webdav.password" type="password" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
             </label>
           </div>
           <label class="block">
-            <span class="mb-1 block text-sm text-slate-500">同步路径</span>
-            <input v-model="settingsStore.webdav.path" type="text" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <span class="mb-1 block text-sm text-[#6F6F6B]">同步路径</span>
+            <input v-model="settingsStore.webdav.path" type="text" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500" />
           </label>
           <div class="flex flex-wrap items-center gap-3 pt-2">
-            <button class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" :disabled="syncLoading" @click="saveWebDavSettings">保存</button>
-            <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="syncStatus === 'testing' || syncLoading" @click="testConnection">{{ syncStatus === 'testing' ? '测试中…' : '测试连接' }}</button>
-            <span class="text-xs text-slate-400">|</span>
-            <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="syncLoading" @click="syncNow">{{ syncLoading ? '同步中…' : '立即同步' }}</button>
-            <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="syncLoading" @click="handleUpload">上传到云端</button>
+            <button class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50" :disabled="syncLoading" @click="saveWebDavSettings">保存</button>
+            <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncStatus === 'testing' || syncLoading" @click="testConnection">{{ syncStatus === 'testing' ? '测试中…' : '测试连接' }}</button>
+            <span class="text-xs text-[#9E9E9A]">|</span>
+            <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncLoading" @click="syncNow">{{ syncLoading ? '同步中…' : '立即同步' }}</button>
+            <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncLoading" @click="handleUpload">上传到云端</button>
             <template v-if="!showDownloadConfirm">
-              <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="syncLoading" @click="showDownloadConfirm = true">从云端下载</button>
+              <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncLoading" @click="showDownloadConfirm = true">从云端下载</button>
             </template>
             <template v-else>
-              <button class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50" :disabled="syncLoading" @click="handleDownload">确认下载（覆盖本地）</button>
-              <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50" @click="showDownloadConfirm = false">取消</button>
+              <button class="rounded-lg bg-danger-600 px-4 py-2 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50" :disabled="syncLoading" @click="handleDownload">确认下载（覆盖本地）</button>
+              <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover" @click="showDownloadConfirm = false">取消</button>
             </template>
           </div>
-          <p v-if="syncMessage" class="text-xs" :class="syncStatus === 'success' ? 'text-emerald-600' : syncStatus === 'error' ? 'text-red-500' : 'text-slate-500'">{{ syncMessage }}</p>
-          <p class="text-xs text-slate-400">最后同步：{{ formatSyncTime(lastSyncAt) }}</p>
+          <p v-if="syncMessage" class="text-xs" :class="syncStatus === 'success' ? 'text-success-500' : syncStatus === 'error' ? 'text-danger-400' : 'text-[#6F6F6B]'">{{ syncMessage }}</p>
+          <p class="text-xs text-[#9E9E9A]">最后同步：{{ formatSyncTime(lastSyncAt) }}</p>
         </div>
       </section>
 
       <!-- 通知 -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">通知</h2>
-        <div class="divide-y divide-slate-100">
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通知</h2>
+        <div class="divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">番茄钟开始</span><p class="text-xs text-slate-400">开始专注时通知</p></div>
-            <button role="switch" :aria-checked="notifyStart" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyStart ? 'bg-blue-600' : 'bg-slate-200'" @click="notifyStart = !notifyStart"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyStart ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">番茄钟开始</span><p class="text-xs text-[#9E9E9A]">开始专注时通知</p></div>
+            <button role="switch" :aria-checked="notifyStart" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyStart ? 'bg-primary-600' : 'bg-surface-border'" @click="notifyStart = !notifyStart"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyStart ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">番茄钟结束</span><p class="text-xs text-slate-400">专注结束时通知</p></div>
-            <button role="switch" :aria-checked="notifyEnd" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyEnd ? 'bg-blue-600' : 'bg-slate-200'" @click="notifyEnd = !notifyEnd"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyEnd ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">番茄钟结束</span><p class="text-xs text-[#9E9E9A]">专注结束时通知</p></div>
+            <button role="switch" :aria-checked="notifyEnd" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyEnd ? 'bg-primary-600' : 'bg-surface-border'" @click="notifyEnd = !notifyEnd"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyEnd ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">休息结束</span><p class="text-xs text-slate-400">休息结束时通知</p></div>
-            <button role="switch" :aria-checked="notifyBreakEnd" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyBreakEnd ? 'bg-blue-600' : 'bg-slate-200'" @click="notifyBreakEnd = !notifyBreakEnd"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyBreakEnd ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">休息结束</span><p class="text-xs text-[#9E9E9A]">休息结束时通知</p></div>
+            <button role="switch" :aria-checked="notifyBreakEnd" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyBreakEnd ? 'bg-primary-600' : 'bg-surface-border'" @click="notifyBreakEnd = !notifyBreakEnd"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyBreakEnd ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
           <div class="flex items-center justify-between gap-4 py-3">
-            <div><span class="text-sm text-slate-700">任务截止提醒</span><p class="text-xs text-slate-400">临近截止时通知</p></div>
-            <button role="switch" :aria-checked="notifyDeadline" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyDeadline ? 'bg-blue-600' : 'bg-slate-200'" @click="notifyDeadline = !notifyDeadline"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyDeadline ? 'translate-x-4' : 'translate-x-0'" /></button>
+            <div><span class="text-sm text-[#1C1C1A]">任务截止提醒</span><p class="text-xs text-[#9E9E9A]">临近截止时通知</p></div>
+            <button role="switch" :aria-checked="notifyDeadline" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyDeadline ? 'bg-primary-600' : 'bg-surface-border'" @click="notifyDeadline = !notifyDeadline"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyDeadline ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
         </div>
         <div class="mt-3">
-          <button class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50" @click="testNotification">发送测试通知</button>
+          <button class="rounded-lg border border-surface-border px-3 py-1.5 text-xs text-[#6F6F6B] hover:bg-surface-hover" @click="testNotification">发送测试通知</button>
         </div>
       </section>
 
       <!-- 子任务模板 -->
       <section>
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="text-base font-semibold text-slate-800">子任务模板</h2>
-          <button class="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700" @click="openNewPatternForm">新增模板</button>
+          <h2 class="text-base font-semibold text-[#1C1C1A]">子任务模板</h2>
+          <button class="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700" @click="openNewPatternForm">新增模板</button>
         </div>
 
-        <div v-if="showPatternForm" class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+        <div v-if="showPatternForm" class="mb-4 rounded-lg border border-surface-border bg-surface-hover p-4 space-y-3">
           <label class="block space-y-1">
-            <span class="text-xs font-medium text-slate-600">模板名称</span>
-            <input v-model.trim="patternFormName" type="text" placeholder="如：健身运动" class="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <span class="text-xs font-medium text-[#6F6F6B]">模板名称</span>
+            <input v-model.trim="patternFormName" type="text" placeholder="如：健身运动" class="h-9 w-full rounded-lg border border-surface-border px-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <label class="block space-y-1">
-            <span class="text-xs font-medium text-slate-600">匹配关键词</span>
-            <input v-model.trim="patternFormKeywords" type="text" placeholder="健身、锻炼、运动（顿号或逗号分隔）" class="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <span class="text-xs font-medium text-[#6F6F6B]">匹配关键词</span>
+            <input v-model.trim="patternFormKeywords" type="text" placeholder="健身、锻炼、运动（顿号或逗号分隔）" class="h-9 w-full rounded-lg border border-surface-border px-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <label class="block space-y-1">
-            <span class="text-xs font-medium text-slate-600">子任务清单</span>
-            <input v-model.trim="patternFormSubtasks" type="text" placeholder="水杯、运动鞋、毛巾（顿号或逗号分隔）" class="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <span class="text-xs font-medium text-[#6F6F6B]">子任务清单</span>
+            <input v-model.trim="patternFormSubtasks" type="text" placeholder="水杯、运动鞋、毛巾（顿号或逗号分隔）" class="h-9 w-full rounded-lg border border-surface-border px-3 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <div class="flex gap-2 pt-1">
-            <button class="rounded-md bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700" @click="savePattern">{{ editingPatternId ? '更新' : '创建' }}</button>
-            <button class="rounded-md border border-slate-200 px-3.5 py-1.5 text-xs text-slate-500 hover:bg-slate-50" @click="cancelPatternForm">取消</button>
+            <button class="rounded-md bg-primary-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700" @click="savePattern">{{ editingPatternId ? '更新' : '创建' }}</button>
+            <button class="rounded-md border border-surface-border px-3.5 py-1.5 text-xs text-[#6F6F6B] hover:bg-surface-hover" @click="cancelPatternForm">取消</button>
           </div>
         </div>
 
-        <div v-if="patterns.length === 0 && !showPatternForm" class="text-sm text-slate-400">暂无模板，点击右上方新增。</div>
-        <div v-else class="divide-y divide-slate-100">
+        <div v-if="patterns.length === 0 && !showPatternForm" class="text-sm text-[#9E9E9A]">暂无模板，点击右上方新增。</div>
+        <div v-else class="divide-y divide-surface-border">
           <div v-for="p in patterns" :key="p.id" class="py-4">
             <div class="flex items-start justify-between gap-4">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm font-medium text-slate-700">{{ p.name }}</span>
-                  <span v-if="p.isBuiltin" class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">内置</span>
-                  <span v-if="p.usageCount > 0" class="text-[10px] text-slate-400">已用 {{ p.usageCount }} 次</span>
+                  <span class="text-sm font-medium text-[#1C1C1A]">{{ p.name }}</span>
+                  <span v-if="p.isBuiltin" class="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] text-[#6F6F6B]">内置</span>
+                  <span v-if="p.usageCount > 0" class="text-[10px] text-[#9E9E9A]">已用 {{ p.usageCount }} 次</span>
                 </div>
                 <div class="mt-1.5 flex flex-wrap gap-1">
-                  <span v-for="kw in p.keywords" :key="kw" class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-600">{{ kw }}</span>
+                  <span v-for="kw in p.keywords" :key="kw" class="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-500">{{ kw }}</span>
                 </div>
                 <div class="mt-1.5 flex flex-wrap gap-1.5">
-                  <span v-for="st in p.subtasks" :key="st" class="rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-600">{{ st }}</span>
+                  <span v-for="st in p.subtasks" :key="st" class="rounded-md border border-surface-border px-2 py-0.5 text-xs text-[#6F6F6B]">{{ st }}</span>
                 </div>
               </div>
               <div class="flex items-center gap-1.5">
-                <button class="rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-50" @click="openEditPatternForm(p)">编辑</button>
-                <button class="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-500 hover:bg-red-50" @click="removePattern(p.id)">删除</button>
+                <button class="rounded-md border border-surface-border px-2.5 py-1 text-xs text-[#6F6F6B] hover:bg-surface-hover" @click="openEditPatternForm(p)">编辑</button>
+                <button class="rounded-md border border-danger-200 px-2.5 py-1 text-xs text-danger-400 hover:bg-danger-50" @click="removePattern(p.id)">删除</button>
               </div>
             </div>
           </div>
@@ -666,78 +666,78 @@ async function downloadAndInstall(): Promise<void> {
 
       <!-- AI -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">AI</h2>
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">AI</h2>
         <div class="space-y-4">
           <label class="block space-y-1.5">
-            <span class="text-sm text-slate-500">API Endpoint</span>
-            <input v-model.trim="settingsStore.ai.endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <span class="text-sm text-[#6F6F6B]">API Endpoint</span>
+            <input v-model.trim="settingsStore.ai.endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <label class="block space-y-1.5">
-            <span class="text-sm text-slate-500">API Key</span>
-            <input v-model.trim="settingsStore.ai.apiKey" type="password" placeholder="输入你的 API Key" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <span class="text-sm text-[#6F6F6B]">API Key</span>
+            <input v-model.trim="settingsStore.ai.apiKey" type="password" placeholder="输入你的 API Key" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <label class="block space-y-1.5">
-            <span class="text-sm text-slate-500">Model</span>
-            <input v-model.trim="settingsStore.ai.model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <span class="text-sm text-[#6F6F6B]">Model</span>
+            <input v-model.trim="settingsStore.ai.model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <div class="pt-2">
-            <button class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="saveAiSettings">保存</button>
+            <button class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="saveAiSettings">保存</button>
           </div>
         </div>
       </section>
 
       <!-- 关于与更新 -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">关于与更新</h2>
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">关于与更新</h2>
         <div class="space-y-3">
           <div class="flex items-center justify-between gap-4">
             <div>
-              <span class="text-sm text-slate-700">当前版本</span>
-              <p class="text-xs text-slate-400">Smart Focus Tracker v{{ currentVersion || packageVersion }}</p>
+              <span class="text-sm text-[#1C1C1A]">当前版本</span>
+              <p class="text-xs text-[#9E9E9A]">Smart Focus Tracker v{{ currentVersion || packageVersion }}</p>
             </div>
-            <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="updateStatus === 'checking'" @click="checkForUpdates">
+            <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="updateStatus === 'checking'" @click="checkForUpdates">
               {{ updateStatus === 'checking' ? '检查中…' : '检查更新' }}
             </button>
           </div>
-          <div v-if="updateStatus === 'available'" class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div v-if="updateStatus === 'available'" class="rounded-lg border border-primary-200 bg-primary-50 p-4">
             <div class="flex items-start justify-between gap-4">
               <div>
-                <p class="text-sm font-medium text-blue-700">发现新版本 v{{ updateInfo?.version }}</p>
-                <p v-if="updateInfo?.notes" class="mt-1 text-xs text-blue-600 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
+                <p class="text-sm font-medium text-primary-700">发现新版本 v{{ updateInfo?.version }}</p>
+                <p v-if="updateInfo?.notes" class="mt-1 text-xs text-primary-500 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
               </div>
-              <button class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="downloadAndInstall">
+              <button class="shrink-0 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="downloadAndInstall">
                 下载并安装
               </button>
             </div>
           </div>
-          <div v-else-if="updateStatus === 'none'" class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p class="text-sm text-slate-600">已是最新版本</p>
+          <div v-else-if="updateStatus === 'none'" class="rounded-lg border border-surface-border bg-surface-hover p-4">
+            <p class="text-sm text-[#6F6F6B]">已是最新版本</p>
           </div>
-          <div v-else-if="updateStatus === 'error'" class="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p class="text-sm text-red-600">{{ updateError || '检查更新失败' }}</p>
+          <div v-else-if="updateStatus === 'error'" class="rounded-lg border border-danger-200 bg-danger-50 p-4">
+            <p class="text-sm text-danger-500">{{ updateError || '检查更新失败' }}</p>
           </div>
         </div>
       </section>
 
       <!-- 数据管理 -->
       <section>
-        <h2 class="mb-4 text-base font-semibold text-slate-800">数据管理</h2>
+        <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">数据管理</h2>
         <div class="flex flex-wrap items-center gap-3">
-          <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportToFile">{{ exportStatus === 'exporting' ? '导出中…' : '导出到文件' }}</button>
-          <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportJson">导出到应用目录</button>
-          <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50" :disabled="importStatus === 'importing'" @click="handleImportFromFile">{{ importStatus === 'importing' ? '导入中…' : '从文件导入' }}</button>
+          <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportToFile">{{ exportStatus === 'exporting' ? '导出中…' : '导出到文件' }}</button>
+          <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportJson">导出到应用目录</button>
+          <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="importStatus === 'importing'" @click="handleImportFromFile">{{ importStatus === 'importing' ? '导入中…' : '从文件导入' }}</button>
         </div>
-        <p v-if="exportStatus === 'done'" class="mt-2 text-xs text-emerald-600">已导出至：{{ exportPath }}</p>
+        <p v-if="exportStatus === 'done'" class="mt-2 text-xs text-success-500">已导出至：{{ exportPath }}</p>
 
         <div class="mt-6">
           <template v-if="!showClearConfirm">
-            <button class="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50" @click="showClearConfirm = true">清空所有数据</button>
+            <button class="rounded-lg border border-danger-200 px-4 py-2 text-sm text-danger-500 hover:bg-danger-50" @click="showClearConfirm = true">清空所有数据</button>
           </template>
           <template v-else>
-            <p class="mb-3 text-sm text-red-600">确定清空所有数据？此操作不可撤销。</p>
+            <p class="mb-3 text-sm text-danger-500">确定清空所有数据？此操作不可撤销。</p>
             <div class="flex gap-3">
-              <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50" @click="showClearConfirm = false">取消</button>
-              <button class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50" :disabled="clearStatus === 'clearing'" @click="handleClearAll">{{ clearStatus === 'clearing' ? '清空中…' : '确认清空' }}</button>
+              <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover" @click="showClearConfirm = false">取消</button>
+              <button class="rounded-lg bg-danger-600 px-4 py-2 text-sm font-medium text-white hover:bg-danger-700 disabled:opacity-50" :disabled="clearStatus === 'clearing'" @click="handleClearAll">{{ clearStatus === 'clearing' ? '清空中…' : '确认清空' }}</button>
             </div>
           </template>
         </div>

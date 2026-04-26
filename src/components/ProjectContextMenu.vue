@@ -64,14 +64,14 @@ onUnmounted(() => {
   <Teleport to="body">
     <div
       ref="menuEl"
-      class="fixed z-[60] min-w-[120px] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+      class="fixed z-[60] min-w-[120px] rounded-lg border border-surface-border bg-white py-1 shadow-lg"
       :style="{ left: adjustedX + 'px', top: adjustedY + 'px' }"
     >
       <button
         v-for="item in items"
         :key="item.key"
-        class="flex w-full items-center px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-50"
-        :class="item.danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700'"
+        class="flex w-full items-center px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-hover"
+        :class="item.danger ? 'text-danger-500 hover:bg-danger-50' : 'text-[#1C1C1A]'"
         @click="select(item.key)"
       >
         {{ item.label }}

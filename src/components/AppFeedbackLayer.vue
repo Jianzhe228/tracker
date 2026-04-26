@@ -21,7 +21,7 @@ function handleOverlayClick(event: MouseEvent): void {
     <div
       v-if="uiStore.notice"
       :key="uiStore.notice.id"
-      class="pointer-events-none fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-xl"
+      class="pointer-events-none fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-surface-border bg-white px-4 py-2.5 text-sm text-[#1C1C1A] shadow-xl"
     >
       {{ uiStore.notice.message }}
     </div>
@@ -37,25 +37,25 @@ function handleOverlayClick(event: MouseEvent): void {
   >
     <div
       v-if="uiStore.confirmDialog"
-      class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/30 px-4"
+      class="fixed inset-0 z-[110] flex items-center justify-center bg-[#1C1C1A]/30 px-4"
       @click="handleOverlayClick"
     >
-      <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl">
-        <div class="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-700">
+      <div class="w-full max-w-md rounded-xl border border-surface-border bg-white shadow-2xl">
+        <div class="border-b border-surface-border px-5 py-3 text-sm font-semibold text-[#1C1C1A]">
           {{ uiStore.confirmDialog.title }}
         </div>
-        <div class="px-5 py-4 text-sm text-slate-600">
+        <div class="px-5 py-4 text-sm text-[#6F6F6B]">
           {{ uiStore.confirmDialog.message }}
         </div>
-        <div class="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+        <div class="flex items-center justify-end gap-2 border-t border-surface-border px-5 py-3">
           <button
-            class="rounded px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            class="rounded px-3 py-1.5 text-sm text-[#6F6F6B] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
             @click="uiStore.resolveConfirm(false)"
           >
             {{ uiStore.confirmDialog.cancelText }}
           </button>
           <button
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            class="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
             @click="uiStore.resolveConfirm(true)"
           >
             {{ uiStore.confirmDialog.confirmText }}

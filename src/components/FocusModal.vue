@@ -165,9 +165,9 @@ function handleClose() {
 function priorityCheckboxClass(priority: number): string {
   switch (priority) {
     case 3: return 'border-red-400 ring-1 ring-red-400/30';
-    case 2: return 'border-amber-400 ring-1 ring-amber-400/30';
-    case 1: return 'border-blue-400 ring-1 ring-blue-400/30';
-    default: return 'border-slate-500';
+    case 2: return 'border-warning-400 ring-1 ring-warning-400/30';
+    case 1: return 'border-primary-400 ring-1 ring-primary-400/30';
+    default: return 'border-[#6F6F6B]';
   }
 }
 
@@ -269,10 +269,10 @@ onUnmounted(() => {
       class="fixed inset-0 z-50 flex overscroll-contain"
     >
       <!-- Main Focus Area -->
-      <div class="relative flex flex-1 flex-col items-center justify-center bg-slate-900">
+      <div class="relative flex flex-1 flex-col items-center justify-center bg-[#1C1C1A]">
         <!-- Background Gradient -->
         <div
-          class="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 opacity-80"
+          class="absolute inset-0 bg-gradient-to-br from-[#1C1C1A] via-[#252523] to-primary-950 opacity-80"
         />
 
         <!-- Timer Kind -->
@@ -313,7 +313,7 @@ onUnmounted(() => {
             <!-- 任务状态圆圈 -->
             <span
               v-if="timerStore.currentTaskId && isCurrentTaskDone"
-              class="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500"
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-success-500"
               aria-hidden="true"
             >
               <svg class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -427,7 +427,7 @@ onUnmounted(() => {
           <template v-else-if="timerStore.paused">
             <div class="flex gap-4">
               <button
-                class="flex items-center gap-2 rounded-full bg-emerald-500/20 px-6 py-3 text-emerald-400 backdrop-blur transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+                class="flex items-center gap-2 rounded-full bg-success-500/20 px-6 py-3 text-success-400 backdrop-blur transition-colors hover:bg-success-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success-400/40"
                 @click="handleResume"
               >
                 <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -451,7 +451,7 @@ onUnmounted(() => {
         <!-- Pause Info -->
         <div v-if="timerStore.paused" class="relative z-10 mt-4 text-center text-sm text-white/70">
           <div>已暂停 {{ pauseDurationText }}</div>
-          <div v-if="timerStore.pauseWarning" class="text-amber-300">暂停超过 30 分钟，请尽快恢复或结束</div>
+          <div v-if="timerStore.pauseWarning" class="text-warning-300">暂停超过 30 分钟，请尽快恢复或结束</div>
         </div>
 
         <!-- Break Controls -->
@@ -470,11 +470,11 @@ onUnmounted(() => {
       </div>
 
       <!-- Right Sidebar -->
-      <div class="flex w-80 flex-col bg-slate-900/95 border-l border-white/5">
+      <div class="flex w-80 flex-col bg-[#1C1C1A]/95 border-l border-white/5">
         <!-- Focus Time Today -->
         <section class="px-5 py-6 border-b border-white/5">
           <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
-            <span class="h-3 w-0.5 rounded-full bg-emerald-400/80" aria-hidden="true" />
+            <span class="h-3 w-0.5 rounded-full bg-success-400/80" aria-hidden="true" />
             今日专注时间
           </div>
           <div class="mt-3 flex items-baseline gap-2 tabular-nums text-white">
@@ -489,7 +489,7 @@ onUnmounted(() => {
             <!-- 父任务视图 -->
             <template v-if="selectedParentId === null">
               <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
-                <span class="h-3 w-0.5 rounded-full bg-amber-400/80" aria-hidden="true" />
+                <span class="h-3 w-0.5 rounded-full bg-warning-400/80" aria-hidden="true" />
                 今日任务
               </div>
               <ul class="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
@@ -499,7 +499,7 @@ onUnmounted(() => {
                 >
                   <div
                     class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer"
-                    :class="timerStore.currentTaskId === task.id ? 'bg-white/10 ring-1 ring-emerald-400/40' : 'hover:bg-white/5'"
+                    :class="timerStore.currentTaskId === task.id ? 'bg-white/10 ring-1 ring-success-400/40' : 'hover:bg-white/5'"
                     @click="selectTask(task.id, task.title)"
                   >
                     <button
@@ -508,7 +508,7 @@ onUnmounted(() => {
                       :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
                       class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       :class="task.status === 'done'
-                        ? 'border-emerald-500 bg-emerald-500'
+                        ? 'border-success-500 bg-success-500'
                         : 'border-white/30 hover:border-white/60'"
                       @click.stop="toggleTask($event, task.id)"
                     >
@@ -547,7 +547,7 @@ onUnmounted(() => {
                 返回
               </button>
               <div class="mt-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
-                <span class="h-3 w-0.5 rounded-full bg-amber-400/80" aria-hidden="true" />
+                <span class="h-3 w-0.5 rounded-full bg-warning-400/80" aria-hidden="true" />
                 <span class="truncate normal-case tracking-normal text-sm text-white/80">{{ selectedParent?.title }}</span>
               </div>
               <ul class="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
@@ -557,7 +557,7 @@ onUnmounted(() => {
                 >
                   <div
                     class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer"
-                    :class="timerStore.currentTaskId === subtask.id ? 'bg-white/10 ring-1 ring-emerald-400/40' : 'hover:bg-white/5'"
+                    :class="timerStore.currentTaskId === subtask.id ? 'bg-white/10 ring-1 ring-success-400/40' : 'hover:bg-white/5'"
                     @click="selectTask(subtask.id, subtask.title)"
                   >
                     <button
@@ -566,7 +566,7 @@ onUnmounted(() => {
                       :aria-label="subtask.status === 'done' ? '标记为未完成' : '标记为已完成'"
                       class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                       :class="subtask.status === 'done'
-                        ? 'border-emerald-500 bg-emerald-500'
+                        ? 'border-success-500 bg-success-500'
                         : 'border-white/30 hover:border-white/60'"
                       @click.stop="toggleTask($event, subtask.id)"
                     >
@@ -589,7 +589,7 @@ onUnmounted(() => {
           <!-- Today's Progress (completed tasks) -->
           <section v-if="selectedParentId === null" class="px-5 py-5">
             <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
-              <span class="h-3 w-0.5 rounded-full bg-blue-400/80" aria-hidden="true" />
+              <span class="h-3 w-0.5 rounded-full bg-primary-400/80" aria-hidden="true" />
               今日进展
             </div>
             <ul v-if="todayDoneParentTasks.length > 0" class="mt-3 space-y-1.5">
@@ -602,7 +602,7 @@ onUnmounted(() => {
                   :class="hasSubtasks(task.id) ? 'cursor-pointer hover:bg-white/5' : ''"
                   @click="hasSubtasks(task.id) && enterSubtasks(task.id)"
                 >
-                  <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500" aria-hidden="true">
+                  <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-success-500" aria-hidden="true">
                     <svg class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                     </svg>

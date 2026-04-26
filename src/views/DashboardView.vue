@@ -302,19 +302,19 @@ function levelByCount(count: number): number {
 }
 
 const heatmapColorMap: Record<number, string> = {
-  0: '#f1f5f9',
-  1: '#dbeafe',
-  2: '#93c5fd',
-  3: '#60a5fa',
-  4: '#2563eb'
+  0: '#F0F0EC',
+  1: '#E7E5FF',
+  2: '#CFCBFF',
+  3: '#B0A9FF',
+  4: '#6E63FF'
 };
 
 const heatmapColorMapDimmed: Record<number, string> = {
-  0: '#f8fafc',
-  1: '#f8fafc',
-  2: '#f8fafc',
-  3: '#f8fafc',
-  4: '#f8fafc'
+  0: '#FAFAF8',
+  1: '#FAFAF8',
+  2: '#FAFAF8',
+  3: '#FAFAF8',
+  4: '#FAFAF8'
 };
 
 const weekdayLabels = ['一', '三', '五'];
@@ -578,7 +578,7 @@ function drawHeatmapCanvas(): void {
     if (!cell.inYear) ctx.globalAlpha = 1;
 
     if (cell.inYear && cell.key === selKey) {
-      ctx.strokeStyle = '#60a5fa';
+      ctx.strokeStyle = '#7A86E3';
       ctx.lineWidth = 2;
       ctx.beginPath();
       if (hasRoundRect) {
@@ -668,76 +668,76 @@ onMounted(() => {
 <template>
   <div class="h-full overflow-y-auto p-6">
     <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-800">仪表盘</h1>
-      <p class="mt-1 text-sm text-slate-500">数据统计与分析</p>
+      <h1 class="text-2xl font-bold text-[#1C1C1A]">仪表盘</h1>
+      <p class="mt-1 text-sm text-[#6F6F6B]">数据统计与分析</p>
     </div>
 
     <!-- ── Metric Cards ─────────────────────────────────────────── -->
     <div class="mb-6 grid gap-4 grid-cols-2 lg:grid-cols-4">
-      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      <article class="group rounded-xl border border-surface-border bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-100">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 transition-colors group-hover:bg-primary-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div class="min-w-0">
-            <p class="text-xs text-slate-500">今日专注</p>
-            <p class="text-xl font-bold tabular-nums text-slate-800">
+            <p class="text-xs text-[#6F6F6B]">今日专注</p>
+            <p class="text-xl font-bold tabular-nums text-[#1C1C1A]">
               {{ formatDuration(todayFocusSecondsIncludingCurrentSession) }}
-              <span v-if="todayFocusSecondsIncludingCurrentSession < 3600" class="text-xs font-normal text-slate-400">分钟</span>
+              <span v-if="todayFocusSecondsIncludingCurrentSession < 3600" class="text-xs font-normal text-[#9E9E9A]">分钟</span>
             </p>
           </div>
         </div>
       </article>
 
-      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      <article class="group rounded-xl border border-surface-border bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-colors group-hover:bg-red-100">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-danger-50 text-danger-400 transition-colors group-hover:bg-danger-100">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" />
               <circle cx="12" cy="12" r="4" />
             </svg>
           </div>
           <div class="min-w-0">
-            <p class="text-xs text-slate-500">今日番茄</p>
-            <p class="text-xl font-bold tabular-nums text-slate-800">
+            <p class="text-xs text-[#6F6F6B]">今日番茄</p>
+            <p class="text-xl font-bold tabular-nums text-[#1C1C1A]">
               {{ formatPomodoros(todayPomodorosIncludingCurrentSession) }}
-              <span class="text-xs font-normal text-slate-400">个</span>
+              <span class="text-xs font-normal text-[#9E9E9A]">个</span>
             </p>
           </div>
         </div>
       </article>
 
-      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      <article class="group rounded-xl border border-surface-border bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors group-hover:bg-emerald-100">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success-50 text-success-500 transition-colors group-hover:bg-success-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div class="min-w-0">
-            <p class="text-xs text-slate-500">今日完成</p>
-            <p class="text-xl font-bold tabular-nums text-slate-800">
+            <p class="text-xs text-[#6F6F6B]">今日完成</p>
+            <p class="text-xl font-bold tabular-nums text-[#1C1C1A]">
               {{ overview?.today.tasksCompleted ?? 0 }}
-              <span class="text-xs font-normal text-slate-400">个任务</span>
+              <span class="text-xs font-normal text-[#9E9E9A]">个任务</span>
             </p>
           </div>
         </div>
       </article>
 
-      <article class="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+      <article class="group rounded-xl border border-surface-border bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover:bg-purple-100">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-400 transition-colors group-hover:bg-primary-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
           </div>
           <div class="min-w-0">
-            <p class="text-xs text-slate-500">本周累计</p>
-            <p class="text-xl font-bold tabular-nums text-slate-800">
+            <p class="text-xs text-[#6F6F6B]">本周累计</p>
+            <p class="text-xl font-bold tabular-nums text-[#1C1C1A]">
               {{ formatDuration(overview?.week.focusSeconds ?? 0) }}
-              <span v-if="!overview?.week.focusSeconds || overview.week.focusSeconds < 3600" class="text-xs font-normal text-slate-400">分钟</span>
+              <span v-if="!overview?.week.focusSeconds || overview.week.focusSeconds < 3600" class="text-xs font-normal text-[#9E9E9A]">分钟</span>
             </p>
           </div>
         </div>
@@ -746,17 +746,17 @@ onMounted(() => {
 
     <div class="space-y-6">
       <!-- ── Annual Heatmap ─────────────────────────────────────── -->
-      <div class="dashboard-panel w-full rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="dashboard-panel w-full rounded-xl border border-surface-border bg-white p-6 shadow-card">
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 class="font-semibold text-slate-800">年度活跃热力图</h3>
-            <p class="mt-1 text-xs text-slate-500">{{ heatmapData.activeDays }} 天活跃（{{ selectedYear }} 年）</p>
+            <h3 class="font-semibold text-[#1C1C1A]">年度活跃热力图</h3>
+            <p class="mt-1 text-xs text-[#6F6F6B]">{{ heatmapData.activeDays }} 天活跃（{{ selectedYear }} 年）</p>
           </div>
-          <label class="inline-flex items-center gap-2 text-xs text-slate-500">
+          <label class="inline-flex items-center gap-2 text-xs text-[#6F6F6B]">
             <span>年份</span>
             <select
               v-model.number="selectedYear"
-              class="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              class="rounded-md border border-surface-border bg-white px-2 py-1 text-sm text-[#1C1C1A] shadow-card outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
             >
               <option v-for="year in availableYears" :key="year" :value="year">{{ year }} 年</option>
             </select>
@@ -764,26 +764,26 @@ onMounted(() => {
         </div>
 
         <div
-          class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs text-slate-600"
+          class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-surface-border bg-surface-hover px-3 py-2 text-xs text-[#6F6F6B]"
         >
-          <span class="font-medium text-slate-700">
+          <span class="font-medium text-[#1C1C1A]">
             {{ selectedHeatmapCell?.dateLabel || `${selectedYear}年` }}
           </span>
-          <span class="rounded-full bg-white px-2 py-0.5 text-slate-600">
+          <span class="rounded-full bg-white px-2 py-0.5 text-[#6F6F6B]">
             专注 {{ Math.round((selectedHeatmapCell?.focusSeconds || 0) / 60) }} 分钟
           </span>
-          <span class="rounded-full bg-white px-2 py-0.5 text-slate-600">
+          <span class="rounded-full bg-white px-2 py-0.5 text-[#6F6F6B]">
             任务 {{ selectedHeatmapCell?.taskCount || 0 }}
           </span>
-          <span class="rounded-full bg-white px-2 py-0.5 text-slate-600">
+          <span class="rounded-full bg-white px-2 py-0.5 text-[#6F6F6B]">
             番茄 {{ formatPomodoros(selectedHeatmapCell?.pomodoroCount || 0) }}
           </span>
-          <span v-if="selectedHeatmapCell?.count" class="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700">
+          <span v-if="selectedHeatmapCell?.count" class="rounded-full bg-primary-100 px-2 py-0.5 font-medium text-primary-700">
             活跃强度 {{ selectedHeatmapCell.count.toFixed(1) }}
           </span>
         </div>
 
-        <div class="overflow-x-auto rounded-lg bg-slate-50/70 px-4 py-4" style="contain: content;">
+        <div class="overflow-x-auto rounded-lg bg-surface-hover px-4 py-4" style="contain: content;">
           <div class="mx-auto min-w-[760px]">
             <div class="flex gap-2">
               <div class="w-6" />
@@ -791,7 +791,7 @@ onMounted(() => {
                 <span
                   v-for="label in heatmapData.monthLabels"
                   :key="label.key"
-                  class="absolute whitespace-nowrap text-xs text-slate-400"
+                  class="absolute whitespace-nowrap text-xs text-[#9E9E9A]"
                   :style="{ left: `${label.leftPercent}%` }"
                 >
                   {{ label.label }}
@@ -800,7 +800,7 @@ onMounted(() => {
             </div>
 
             <div class="flex gap-2">
-              <div class="mt-0.5 grid w-6 grid-rows-7 items-center gap-[3px] text-[10px] text-slate-400">
+              <div class="mt-0.5 grid w-6 grid-rows-7 items-center gap-[3px] text-[10px] text-[#9E9E9A]">
                 <span />
                 <span>{{ weekdayLabels[0] }}</span>
                 <span />
@@ -821,11 +821,11 @@ onMounted(() => {
                 <!-- Heatmap hover tooltip -->
                 <div
                   v-if="hoveredCell"
-                  class="pointer-events-none absolute z-10 whitespace-nowrap rounded-lg bg-slate-800 px-3 py-2 text-xs text-white shadow-lg"
+                  class="pointer-events-none absolute z-10 whitespace-nowrap rounded-lg bg-[#1C1C1A] px-3 py-2 text-xs text-white shadow-lg"
                   :style="{ left: tooltipPos.x + 'px', top: tooltipPos.y + 'px', transform: 'translateY(-100%)' }"
                 >
                   <div class="font-medium">{{ hoveredCell.dateLabel }}</div>
-                  <div class="mt-1 text-slate-300">
+                  <div class="mt-1 text-[#9E9E9A]">
                     专注 {{ Math.round(hoveredCell.focusSeconds / 60) }} 分钟
                     · 任务 {{ hoveredCell.taskCount }}
                     · 番茄 {{ formatPomodoros(hoveredCell.pomodoroCount) }}
@@ -834,7 +834,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="mt-3 flex items-center justify-end gap-1 text-xs text-slate-400">
+            <div class="mt-3 flex items-center justify-end gap-1 text-xs text-[#9E9E9A]">
               <span>少</span>
               <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[0] }" />
               <span class="h-3 w-3 rounded-sm" :style="{ backgroundColor: heatmapColorMap[1] }" />
@@ -849,39 +849,39 @@ onMounted(() => {
 
       <!-- ── Focus Trend + Hourly Distribution (Phase 1) ─────── -->
       <div class="grid gap-6 lg:grid-cols-2">
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="font-semibold text-slate-800">近期专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">{{ displayedDailyTotals.length }} 天趋势</p>
+        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+          <h3 class="font-semibold text-[#1C1C1A]">近期专注趋势</h3>
+          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">{{ displayedDailyTotals.length }} 天趋势</p>
           <FocusTrendChart
             v-if="renderPhase >= 1 && displayedDailyTotals.length"
             :data="displayedDailyTotals"
             compact
           />
-          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 1 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
 
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="font-semibold text-slate-800">高产时段分布</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">按小时分布</p>
+        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+          <h3 class="font-semibold text-[#1C1C1A]">高产时段分布</h3>
+          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">按小时分布</p>
           <HourlyDistributionChart
             v-if="renderPhase >= 1 && displayedHourlyDistribution.length"
             :data="displayedHourlyDistribution"
             compact
           />
-          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 1 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
       </div>
 
       <!-- ── Day-Hour Distribution (Phase 2, full width) ────────── -->
-      <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h3 class="font-semibold text-slate-800">每日时段消耗分布</h3>
-            <p class="mt-0.5 text-xs text-slate-500">{{ statisticsStore.dayHourWindowDays }} 天分布</p>
+            <h3 class="font-semibold text-[#1C1C1A]">每日时段消耗分布</h3>
+            <p class="mt-0.5 text-xs text-[#6F6F6B]">{{ statisticsStore.dayHourWindowDays }} 天分布</p>
           </div>
         </div>
         <DayHourDistributionChart
@@ -889,33 +889,33 @@ onMounted(() => {
           :data="displayedDayHourDistribution"
           :days="statisticsStore.dayHourWindowDays"
         />
-        <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+        <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
           加载中…
         </div>
       </div>
 
       <!-- ── Project Distribution + Estimation Accuracy (Phase 3) ── -->
       <div class="grid gap-6 lg:grid-cols-2">
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="font-semibold text-slate-800">项目时间分布</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">时间占比</p>
+        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+          <h3 class="font-semibold text-[#1C1C1A]">项目时间分布</h3>
+          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">时间占比</p>
           <ProjectDistributionChart
             v-if="renderPhase >= 3 && displayedProjectDistribution.length"
             :data="displayedProjectDistribution"
           />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
 
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="font-semibold text-slate-800">估算准确度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">按偏差排序</p>
+        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+          <h3 class="font-semibold text-[#1C1C1A]">估算准确度</h3>
+          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">按偏差排序</p>
           <EstVsActualChart
             v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
             :data="statisticsStore.estVsActual"
           />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
@@ -923,26 +923,26 @@ onMounted(() => {
 
       <!-- ── Weekly Focus Trend + Task Velocity (Phase 3) ────────── -->
       <div class="grid gap-6 lg:grid-cols-2">
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="font-semibold text-slate-800">每周专注趋势</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">12 周趋势</p>
+        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+          <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
+          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">12 周趋势</p>
           <WeeklyFocusTrendChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
             :data="statisticsStore.weeklyFocus"
           />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
 
-        <div class="dashboard-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="font-semibold text-slate-800">任务完成速度</h3>
-          <p class="mt-0.5 mb-2 text-xs text-slate-500">12 周趋势</p>
+        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+          <h3 class="font-semibold text-[#1C1C1A]">任务完成速度</h3>
+          <p class="mt-0.5 mb-2 text-xs text-[#6F6F6B]">12 周趋势</p>
           <TaskVelocityChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
             :data="statisticsStore.weeklyTaskVelocity"
           />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">
+          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>

@@ -419,10 +419,10 @@ type CalendarCell = {
 };
 
 const priorityOptions: { value: Priority; label: string; color: string; activeColor: string }[] = [
-  { value: 0, label: '无', color: 'text-slate-400 border-slate-200', activeColor: 'bg-slate-100 text-slate-700 border-slate-300' },
-  { value: 1, label: '低', color: 'text-blue-400 border-slate-200', activeColor: 'bg-blue-50 text-blue-700 border-blue-400' },
-  { value: 2, label: '中', color: 'text-amber-500 border-slate-200', activeColor: 'bg-amber-50 text-amber-700 border-amber-400' },
-  { value: 3, label: '高', color: 'text-red-500 border-slate-200', activeColor: 'bg-red-50 text-red-700 border-red-400' },
+  { value: 0, label: '无', color: 'text-[#9E9E9A] border-surface-border', activeColor: 'bg-surface-hover text-[#1C1C1A] border-surface-border-hover' },
+  { value: 1, label: '低', color: 'text-primary-400 border-surface-border', activeColor: 'bg-primary-50 text-primary-700 border-primary-400' },
+  { value: 2, label: '中', color: 'text-warning-500 border-surface-border', activeColor: 'bg-warning-50 text-warning-700 border-warning-400' },
+  { value: 3, label: '高', color: 'text-danger-400 border-surface-border', activeColor: 'bg-danger-50 text-danger-600 border-danger-400' },
 ];
 
 const repeatOptions: { value: string; label: string }[] = [
@@ -1424,27 +1424,27 @@ function getProjectName(projectId: number): string {
 
 function priorityBarClass(priority: number): string {
   switch (priority) {
-    case 3: return 'bg-red-500';
-    case 2: return 'bg-amber-400';
-    case 1: return 'bg-blue-400';
+    case 3: return 'bg-danger-500';
+    case 2: return 'bg-warning-400';
+    case 1: return 'bg-primary-400';
     default: return 'bg-transparent';
   }
 }
 
 function priorityCheckboxClass(priority: number): string {
   switch (priority) {
-    case 3: return 'border-red-400 ring-1 ring-red-100';
-    case 2: return 'border-amber-400 ring-1 ring-amber-100';
-    case 1: return 'border-blue-400 ring-1 ring-blue-100';
-    default: return 'border-slate-300';
+    case 3: return 'border-danger-400 ring-1 ring-danger-100';
+    case 2: return 'border-warning-400 ring-1 ring-warning-100';
+    case 1: return 'border-primary-400 ring-1 ring-primary-100';
+    default: return 'border-surface-border-hover';
   }
 }
 
 function priorityBadge(priority: number): { label: string; cls: string } | null {
   switch (priority) {
-    case 3: return { label: '高', cls: 'bg-red-50 text-red-600 ring-1 ring-red-200' };
-    case 2: return { label: '中', cls: 'bg-amber-50 text-amber-600 ring-1 ring-amber-200' };
-    case 1: return { label: '低', cls: 'bg-blue-50 text-blue-600 ring-1 ring-blue-200' };
+    case 3: return { label: '高', cls: 'bg-danger-50 text-danger-500 ring-1 ring-danger-200' };
+    case 2: return { label: '中', cls: 'bg-warning-50 text-warning-500 ring-1 ring-warning-200' };
+    case 1: return { label: '低', cls: 'bg-primary-50 text-primary-500 ring-1 ring-primary-200' };
     default: return null;
   }
 }
@@ -1530,38 +1530,38 @@ onMounted(() => {
     <!-- Main Task List -->
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Header -->
-      <div class="border-b border-slate-200 bg-white px-6 py-4">
+      <div class="border-b border-surface-border bg-white px-6 py-4">
         <div class="flex items-end justify-between">
-          <h1 class="text-xl font-semibold tracking-tight text-slate-800">{{ pageTitle }}</h1>
-          <span v-if="canDragSort" class="text-xs text-slate-400">拖拽任务卡片可排序</span>
-          <span v-else-if="activeTaskFilter === 'all'" class="text-xs text-slate-400">按时间树查看全部任务</span>
+          <h1 class="text-xl font-semibold tracking-tight text-[#1C1C1A]">{{ pageTitle }}</h1>
+          <span v-if="canDragSort" class="text-xs text-[#9E9E9A]">拖拽任务卡片可排序</span>
+          <span v-else-if="activeTaskFilter === 'all'" class="text-xs text-[#9E9E9A]">按时间树查看全部任务</span>
         </div>
 
         <!-- Stats Bar -->
-        <div class="mt-3 grid grid-cols-4 gap-3 rounded-lg bg-slate-50 p-3">
+        <div class="mt-3 grid grid-cols-4 gap-3 rounded-lg bg-surface-hover p-3">
           <div class="text-center">
-            <div class="text-xl font-semibold tabular-nums text-blue-600">{{ estimatedTime.value }}<span class="text-xs text-slate-400">{{ estimatedTime.unit }}</span></div>
-            <div class="text-xs text-slate-500">预计时间</div>
+            <div class="text-xl font-semibold tabular-nums text-primary-500">{{ estimatedTime.value }}<span class="text-xs text-[#9E9E9A]">{{ estimatedTime.unit }}</span></div>
+            <div class="text-xs text-[#6F6F6B]">预计时间</div>
           </div>
           <div class="text-center">
-            <div class="text-xl font-semibold tabular-nums text-blue-600">{{ tasksToComplete }}</div>
-            <div class="text-xs text-slate-500">待完成任务</div>
+            <div class="text-xl font-semibold tabular-nums text-primary-500">{{ tasksToComplete }}</div>
+            <div class="text-xs text-[#6F6F6B]">待完成任务</div>
           </div>
           <div class="text-center">
-            <div class="text-xl font-semibold tabular-nums text-blue-600">{{ elapsedTime.value }}<span class="text-xs text-slate-400">{{ elapsedTime.unit }}</span></div>
-            <div class="text-xs text-slate-500">已用时间</div>
+            <div class="text-xl font-semibold tabular-nums text-primary-500">{{ elapsedTime.value }}<span class="text-xs text-[#9E9E9A]">{{ elapsedTime.unit }}</span></div>
+            <div class="text-xs text-[#6F6F6B]">已用时间</div>
           </div>
           <div class="text-center">
-            <div class="text-xl font-semibold tabular-nums text-emerald-500">{{ completedTasks }}</div>
-            <div class="text-xs text-slate-500">已完成任务</div>
+            <div class="text-xl font-semibold tabular-nums text-success-500">{{ completedTasks }}</div>
+            <div class="text-xs text-[#6F6F6B]">已完成任务</div>
           </div>
         </div>
       </div>
 
       <!-- Task Input -->
-      <div class="border-b border-slate-200 bg-white px-6 py-3">
+      <div class="border-b border-surface-border bg-white px-6 py-3">
         <div class="flex items-center gap-3">
-          <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <svg class="h-4 w-4 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           <input
@@ -1569,7 +1569,7 @@ onMounted(() => {
             type="text"
             aria-label="新增任务"
             placeholder="添加任务，按 Enter 保存…"
-            class="flex-1 text-sm text-slate-600 placeholder:text-slate-400 focus:outline-none"
+            class="flex-1 text-sm text-[#6F6F6B] placeholder:text-[#9E9E9A] focus:outline-none"
             @keyup.enter="submitTask"
           />
 
@@ -1577,10 +1577,10 @@ onMounted(() => {
           <div ref="newTaskCalendarWrap" class="relative">
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              class="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
               :class="newTaskDate
-                ? 'border-blue-300 bg-blue-50 text-blue-700'
-                : 'border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-600'"
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-surface-border text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B]'"
               @click="toggleNewTaskCalendar"
             >
               <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1590,7 +1590,7 @@ onMounted(() => {
             </button>
             <button
               v-if="newTaskDate"
-              class="ml-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              class="ml-0.5 rounded p-0.5 text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B]"
               aria-label="清除日期"
               @click.stop="clearNewTaskDate"
             >
@@ -1602,12 +1602,12 @@ onMounted(() => {
             <!-- Calendar Popup -->
             <div
               v-if="showNewTaskCalendar"
-              class="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+              class="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-surface-border bg-white p-3 shadow-xl"
             >
               <div class="mb-2 flex items-center justify-between">
                 <button
                   type="button"
-                  class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                  class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                   aria-label="上一月"
                   @click="shiftNewTaskCalMonth(-1)"
                 >
@@ -1615,10 +1615,10 @@ onMounted(() => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <div class="text-sm font-medium text-slate-700">{{ newTaskCalTitle }}</div>
+                <div class="text-sm font-medium text-[#1C1C1A]">{{ newTaskCalTitle }}</div>
                 <button
                   type="button"
-                  class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                  class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                   aria-label="下一月"
                   @click="shiftNewTaskCalMonth(1)"
                 >
@@ -1627,7 +1627,7 @@ onMounted(() => {
                   </svg>
                 </button>
               </div>
-              <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-slate-400">
+              <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-[#9E9E9A]">
                 <span v-for="week in calendarWeekdays" :key="week">{{ week }}</span>
               </div>
               <div class="grid grid-cols-7 gap-1">
@@ -1635,12 +1635,12 @@ onMounted(() => {
                   v-for="cell in newTaskCalendarCells"
                   :key="cell.dateKey"
                   type="button"
-                  class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                  class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                   :class="cell.isSelected
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-primary-600 text-white'
                     : cell.inCurrentMonth
-                      ? (cell.isToday ? 'border border-blue-300 text-blue-600' : 'text-slate-700 hover:bg-slate-100')
-                      : 'text-slate-300 hover:bg-slate-50'"
+                      ? (cell.isToday ? 'border border-primary-300 text-primary-500' : 'text-[#1C1C1A] hover:bg-surface-hover')
+                      : 'text-[#9E9E9A] hover:bg-surface-hover'"
                   @click="pickNewTaskDate(cell.dateKey)"
                 >
                   {{ cell.day }}
@@ -1650,7 +1650,7 @@ onMounted(() => {
           </div>
 
           <button
-            class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+            class="rounded-md bg-[#1C1C1A] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#2A2A28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
             @click="submitTask"
           >
             提交
@@ -1659,7 +1659,7 @@ onMounted(() => {
       </div>
 
       <!-- Task List -->
-      <div class="flex-1 overflow-auto bg-slate-50 p-6">
+      <div class="flex-1 overflow-auto bg-surface-hover p-6">
         <div
           v-if="displayTasks.length > 0"
           ref="taskListWrap"
@@ -1681,17 +1681,17 @@ onMounted(() => {
                   @click="toggleGroupCollapse(getTimelineDateKey(task))"
                 >
                   <svg
-                    class="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform"
+                    class="h-3.5 w-3.5 shrink-0 text-[#9E9E9A] transition-transform"
                     :class="isGroupCollapsed(getTimelineDateKey(task)) ? '' : 'rotate-90'"
                     viewBox="0 0 20 20" fill="currentColor"
                   >
                     <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
                   </svg>
-                  <h3 class="text-sm font-semibold text-slate-600">{{ getTimelineHeaderLabel(task) }}</h3>
-                  <span class="text-xs text-slate-400">{{ getTimelineHeaderCount(task) }} 项</span>
+                  <h3 class="text-sm font-semibold text-[#6F6F6B]">{{ getTimelineHeaderLabel(task) }}</h3>
+                  <span class="text-xs text-[#9E9E9A]">{{ getTimelineHeaderCount(task) }} 项</span>
                   <button
                     v-if="isTimelineGroupOverdue(task)"
-                    class="flex items-center gap-1 shrink-0 rounded-md px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    class="flex items-center gap-1 shrink-0 rounded-md px-2 py-1 text-xs font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                     @click.stop="copyGroupToToday(task)"
                   >
                     <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1699,22 +1699,22 @@ onMounted(() => {
                     </svg>
                     复制到今天
                   </button>
-                  <div class="h-px flex-1 bg-slate-200" />
+                  <div class="h-px flex-1 bg-surface-border" />
                 </div>
 
                 <div
                   v-show="!isTaskInCollapsedGroup(task)"
                   :data-task-id="task.id"
-                  class="group relative flex cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white transition-all"
+                  class="group relative flex cursor-pointer overflow-hidden rounded-xl border border-surface-border bg-white transition-all"
                   :class="[
-                    selectedTaskId === task.id ? 'border-blue-300 ring-2 ring-blue-200/80' : '',
-                    isTaskDragging ? '' : 'hover:border-slate-300 hover:shadow-sm',
+                    selectedTaskId === task.id ? 'border-primary-300 ring-2 ring-primary-200/80' : '',
+                    isTaskDragging ? '' : 'hover:border-surface-border-hover hover:shadow-sm',
                     canDragSort
                       ? (draggingTaskId === task.id && isTaskDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing')
                       : '',
                     draggingTaskId === task.id && isTaskDragging ? 'task-drag-origin pointer-events-none opacity-35' : '',
-                    task.status === 'done' ? 'border-emerald-200' : '',
-                    isTaskOverdue(task) ? 'border-red-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]' : '',
+                    task.status === 'done' ? 'border-success-200' : '',
+                    isTaskOverdue(task) ? 'border-danger-300 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.15)]' : '',
                     task.rescheduledTo ? 'opacity-50' : ''
                   ]"
                   @pointerdown="onTaskPointerDown($event, task.id)"
@@ -1723,7 +1723,7 @@ onMounted(() => {
                   <!-- Priority Bar -->
                   <div
                     class="my-2 ml-1 w-1.5 shrink-0 rounded-full transition-colors"
-                    :class="dragOverTaskId === task.id && draggingTaskId !== task.id ? 'bg-blue-500' : priorityBarClass(task.priority)"
+                    :class="dragOverTaskId === task.id && draggingTaskId !== task.id ? 'bg-primary-500' : priorityBarClass(task.priority)"
                   />
 
                   <div class="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5">
@@ -1732,10 +1732,10 @@ onMounted(() => {
                       role="checkbox"
                       :aria-checked="task.status === 'done'"
                       :aria-label="task.status === 'done' ? '标记为未完成' : '标记为已完成'"
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                       :class="task.status === 'done'
-                        ? 'border-emerald-500 bg-emerald-500'
-                        : priorityCheckboxClass(task.priority) + ' hover:border-red-400'"
+                        ? 'border-success-500 bg-success-500'
+                        : priorityCheckboxClass(task.priority) + ' hover:border-danger-400'"
                       @click.stop="handleToggleTask(task.id)"
                     >
                       <svg v-if="task.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1747,9 +1747,9 @@ onMounted(() => {
                     <span
                       class="min-w-0 flex-1 truncate text-sm"
                       :class="[
-                        task.status === 'done' ? 'text-slate-400 line-through' : '',
-                        task.rescheduledTo ? 'text-slate-400 line-through' : '',
-                        !task.rescheduledTo && task.status !== 'done' ? 'text-slate-700' : '',
+                        task.status === 'done' ? 'text-[#9E9E9A] line-through' : '',
+                        task.rescheduledTo ? 'text-[#9E9E9A] line-through' : '',
+                        !task.rescheduledTo && task.status !== 'done' ? 'text-[#1C1C1A]' : '',
                       ]"
                     >
                       {{ task.title }}
@@ -1758,7 +1758,7 @@ onMounted(() => {
                     <!-- Rescheduled badge -->
                     <span
                       v-if="task.rescheduledTo"
-                      class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-400"
+                      class="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-[11px] text-[#9E9E9A]"
                     >
                       已推迟到 {{ formatRescheduledDate(task.rescheduledTo) }}
                     </span>
@@ -1766,7 +1766,7 @@ onMounted(() => {
                     <!-- Subtask Count -->
                     <span
                       v-if="hasTaskSubtasks(task.id)"
-                      class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-500"
+                      class="inline-flex items-center gap-1 rounded-full border border-surface-border px-2.5 py-1 text-xs text-[#6F6F6B]"
                     >
                       <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -1784,31 +1784,31 @@ onMounted(() => {
                     </span>
 
                     <!-- Pomodoro Dots -->
-                    <div class="flex items-center gap-1 text-xs text-slate-400">
+                    <div class="flex items-center gap-1 text-xs text-[#9E9E9A]">
                       <div class="flex items-center gap-0.5">
                         <span
                           v-for="dotIndex in Math.min(task.pomodoroCount || 1, 5)"
                           :key="dotIndex"
                           class="h-2 w-2 rounded-full"
                           :class="dotIndex <= (task.pomodoroCount || 1)
-                            ? (task.status === 'done' ? 'bg-emerald-400' : 'bg-red-400')
-                            : (task.status === 'done' ? 'bg-emerald-200' : 'bg-red-200')"
+                            ? (task.status === 'done' ? 'bg-success-400' : 'bg-danger-400')
+                            : (task.status === 'done' ? 'bg-success-200' : 'bg-danger-200')"
                         />
                       </div>
                       <span v-if="(task.pomodoroCount || 1) > 5">+{{ (task.pomodoroCount || 1) - 5 }}</span>
                     </div>
 
                     <!-- Due Date -->
-                    <span class="text-xs" :class="task.status === 'done' ? 'font-medium text-emerald-600' : isTaskOverdue(task) ? 'font-medium text-red-600' : task.dueAt ? 'text-rose-500' : 'text-slate-400'">
+                    <span class="text-xs" :class="task.status === 'done' ? 'font-medium text-success-500' : isTaskOverdue(task) ? 'font-medium text-danger-500' : task.dueAt ? 'text-rose-500' : 'text-[#9E9E9A]'">
                       {{ formatDueAt(task.dueAt) }}
-                      <span v-if="task.status === 'done'" class="ml-0.5 rounded bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-600 ring-1 ring-emerald-200">已完成</span>
-                      <span v-else-if="isTaskOverdue(task)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
+                      <span v-if="task.status === 'done'" class="ml-0.5 rounded bg-success-50 px-1 py-0.5 text-[10px] text-success-500 ring-1 ring-success-200">已完成</span>
+                      <span v-else-if="isTaskOverdue(task)" class="ml-0.5 rounded bg-danger-50 px-1 py-0.5 text-[10px] text-danger-500 ring-1 ring-danger-200">已逾期</span>
                     </span>
 
                     <!-- Copy to today -->
                     <button
                       v-if="canCopyTaskToToday(task)"
-                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40"
+                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/40"
                       aria-label="复制到今天"
                       @click.stop="copySingleTaskToToday(task.id)"
                     >
@@ -1820,7 +1820,7 @@ onMounted(() => {
 
                     <!-- Quick Focus -->
                     <button
-                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                       aria-label="设为当前专注任务"
                       @click.stop="startFocusOnTask(task.id, task.title)"
                     >
@@ -1838,13 +1838,13 @@ onMounted(() => {
 
           <!-- Empty State -->
           <div v-else class="flex h-full flex-col items-center justify-center">
-            <div class="flex h-24 w-24 items-center justify-center rounded-full bg-slate-100">
-              <svg class="h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <div class="flex h-24 w-24 items-center justify-center rounded-full bg-surface-hover">
+              <svg class="h-12 w-12 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <p class="mt-4 text-slate-600">暂无任务</p>
-            <p class="mt-1 text-sm text-slate-400">点击上方输入框添加新任务</p>
+            <p class="mt-4 text-[#6F6F6B]">暂无任务</p>
+            <p class="mt-1 text-sm text-[#9E9E9A]">点击上方输入框添加新任务</p>
           </div>
       </div>
     </div>
@@ -1860,24 +1860,24 @@ onMounted(() => {
     >
       <aside
         v-if="selectedTask && taskDraft"
-        class="relative h-full min-h-0 shrink-0 self-stretch border-l border-slate-200 bg-white"
+        class="relative h-full min-h-0 shrink-0 self-stretch border-l border-surface-border bg-white"
         :style="{ width: `${detailPanelWidth}px` }"
       >
         <button
-          class="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize bg-transparent transition-colors hover:bg-blue-200/40"
+          class="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize bg-transparent transition-colors hover:bg-primary-200/40"
           aria-label="拖拽调整宽度"
           @mousedown="startResize"
         />
 
         <div class="flex h-full flex-col">
           <!-- Detail Header -->
-          <div class="flex items-center gap-3 border-b border-slate-200 p-4">
+          <div class="flex items-center gap-3 border-b border-surface-border p-4">
             <button
               role="checkbox"
               :aria-checked="selectedTask.status === 'done'"
               :aria-label="selectedTask.status === 'done' ? '标记为未完成' : '标记为已完成'"
-              class="flex h-5 w-5 items-center justify-center rounded-full border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-              :class="selectedTask.status === 'done' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'"
+              class="flex h-5 w-5 items-center justify-center rounded-full border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+              :class="selectedTask.status === 'done' ? 'border-success-500 bg-success-500' : 'border-surface-border-hover'"
               @click="handleToggleTask(selectedTask.id)"
             >
               <svg v-if="selectedTask.status === 'done'" class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1888,10 +1888,10 @@ onMounted(() => {
               v-model="taskDraft.title"
               type="text"
               aria-label="任务标题"
-              class="flex-1 rounded border border-slate-200 px-2 py-1 font-medium text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="flex-1 rounded border border-surface-border px-2 py-1 font-medium text-[#1C1C1A] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               placeholder="任务标题…"
             >
-            <button class="text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40" aria-label="关闭详情" @click="closeDetail">
+            <button class="text-[#9E9E9A] hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40" aria-label="关闭详情" @click="closeDetail">
               <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -1902,8 +1902,8 @@ onMounted(() => {
           <div class="flex-1 overflow-auto p-4">
             <div class="space-y-4">
               <!-- Priority -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
                   </svg>
@@ -1913,8 +1913,8 @@ onMounted(() => {
                   <button
                     v-for="opt in priorityOptions"
                     :key="opt.value"
-                    class="flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                    :class="taskDraft.priority === opt.value ? opt.activeColor : opt.color + ' hover:bg-slate-50'"
+                    class="flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                    :class="taskDraft.priority === opt.value ? opt.activeColor : opt.color + ' hover:bg-surface-hover'"
                     @click="taskDraft.priority = opt.value"
                   >
                     {{ opt.label }}
@@ -1923,8 +1923,8 @@ onMounted(() => {
               </div>
 
               <!-- Pomodoro Quantity -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-pomodoro-count">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-pomodoro-count">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -1933,7 +1933,7 @@ onMounted(() => {
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <button
-                      class="h-8 w-8 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      class="h-8 w-8 rounded border border-surface-border text-[#6F6F6B] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                       aria-label="减少番茄数量"
                       @click="changePomodoro(-1)"
                     >
@@ -1945,24 +1945,24 @@ onMounted(() => {
                       type="number"
                       min="1"
                       max="10"
-                      class="pomodoro-input w-16 rounded border border-slate-200 px-2 py-1 text-center text-sm focus:border-blue-500 focus:outline-none"
+                      class="pomodoro-input w-16 rounded border border-surface-border px-2 py-1 text-center text-sm focus:border-primary-500 focus:outline-none"
                       @blur="taskDraft.pomodoroCount = clampPomodoro(taskDraft.pomodoroCount)"
                     >
                     <button
-                      class="h-8 w-8 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      class="h-8 w-8 rounded border border-surface-border text-[#6F6F6B] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                       aria-label="增加番茄数量"
                       @click="changePomodoro(1)"
                     >
                       +
                     </button>
                   </div>
-                  <div class="text-sm tabular-nums text-slate-500">≈ {{ taskDraft.pomodoroCount * settingsStore.timer.focusMinutes }} 分钟</div>
+                  <div class="text-sm tabular-nums text-[#6F6F6B]">≈ {{ taskDraft.pomodoroCount * settingsStore.timer.focusMinutes }} 分钟</div>
                 </div>
               </div>
 
               <!-- Start Date -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-start-at">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-start-at">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -1973,8 +1973,8 @@ onMounted(() => {
                     <button
                       id="task-start-at"
                       type="button"
-                      class="h-10 w-full rounded border border-slate-200 px-3 text-left text-sm focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      :class="taskDraft.startAt ? 'text-slate-700' : 'text-slate-400'"
+                      class="h-10 w-full rounded border border-surface-border px-3 text-left text-sm focus:border-primary-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                      :class="taskDraft.startAt ? 'text-[#1C1C1A]' : 'text-[#9E9E9A]'"
                       @click="openDatePicker('startAt')"
                     >
                       {{ formatDateInputLabel(taskDraft.startAt) || '选择日期' }}
@@ -1982,12 +1982,12 @@ onMounted(() => {
 
                     <div
                       v-if="isDatePickerOpen('startAt')"
-                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-surface-border bg-white p-3 shadow-xl"
                     >
                       <div class="mb-2 flex items-center justify-between">
                         <button
                           type="button"
-                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                           aria-label="上一月"
                           @click="shiftCalendarMonth(-1)"
                         >
@@ -1995,10 +1995,10 @@ onMounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                           </svg>
                         </button>
-                        <div class="text-sm font-medium text-slate-700">{{ calendarTitle }}</div>
+                        <div class="text-sm font-medium text-[#1C1C1A]">{{ calendarTitle }}</div>
                         <button
                           type="button"
-                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                           aria-label="下一月"
                           @click="shiftCalendarMonth(1)"
                         >
@@ -2007,7 +2007,7 @@ onMounted(() => {
                           </svg>
                         </button>
                       </div>
-                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-slate-400">
+                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-[#9E9E9A]">
                         <span v-for="week in calendarWeekdays" :key="week">{{ week }}</span>
                       </div>
                       <div class="grid grid-cols-7 gap-1">
@@ -2015,12 +2015,12 @@ onMounted(() => {
                           v-for="cell in calendarCells"
                           :key="cell.dateKey"
                           type="button"
-                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                           :class="cell.isSelected
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-primary-600 text-white'
                             : cell.inCurrentMonth
-                              ? (cell.isToday ? 'border border-blue-300 text-blue-600' : 'text-slate-700 hover:bg-slate-100')
-                              : 'text-slate-300 hover:bg-slate-50'"
+                              ? (cell.isToday ? 'border border-primary-300 text-primary-500' : 'text-[#1C1C1A] hover:bg-surface-hover')
+                              : 'text-[#9E9E9A] hover:bg-surface-hover'"
                           @click="pickDate(cell.dateKey)"
                         >
                           {{ cell.day }}
@@ -2031,7 +2031,7 @@ onMounted(() => {
 
                   <button
                     v-if="taskDraft.startAt"
-                    class="h-10 min-w-[52px] shrink-0 rounded border border-slate-200 px-2 text-xs text-slate-500 hover:bg-slate-50"
+                    class="h-10 min-w-[52px] shrink-0 rounded border border-surface-border px-2 text-xs text-[#6F6F6B] hover:bg-surface-hover"
                     @click="clearDateField('startAt')"
                   >
                     清除
@@ -2040,8 +2040,8 @@ onMounted(() => {
               </div>
 
               <!-- Due Date -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-due-at">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-due-at">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -2052,8 +2052,8 @@ onMounted(() => {
                     <button
                       id="task-due-at"
                       type="button"
-                      class="h-10 w-full rounded border border-slate-200 px-3 text-left text-sm focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      :class="taskDraft.dueAt ? 'text-slate-700' : 'text-slate-400'"
+                      class="h-10 w-full rounded border border-surface-border px-3 text-left text-sm focus:border-primary-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                      :class="taskDraft.dueAt ? 'text-[#1C1C1A]' : 'text-[#9E9E9A]'"
                       @click="openDatePicker('dueAt')"
                     >
                       {{ formatDateInputLabel(taskDraft.dueAt) || '选择日期' }}
@@ -2061,12 +2061,12 @@ onMounted(() => {
 
                     <div
                       v-if="isDatePickerOpen('dueAt')"
-                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-surface-border bg-white p-3 shadow-xl"
                     >
                       <div class="mb-2 flex items-center justify-between">
                         <button
                           type="button"
-                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                           aria-label="上一月"
                           @click="shiftCalendarMonth(-1)"
                         >
@@ -2074,10 +2074,10 @@ onMounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                           </svg>
                         </button>
-                        <div class="text-sm font-medium text-slate-700">{{ calendarTitle }}</div>
+                        <div class="text-sm font-medium text-[#1C1C1A]">{{ calendarTitle }}</div>
                         <button
                           type="button"
-                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                           aria-label="下一月"
                           @click="shiftCalendarMonth(1)"
                         >
@@ -2086,7 +2086,7 @@ onMounted(() => {
                           </svg>
                         </button>
                       </div>
-                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-slate-400">
+                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-[#9E9E9A]">
                         <span v-for="week in calendarWeekdays" :key="week">{{ week }}</span>
                       </div>
                       <div class="grid grid-cols-7 gap-1">
@@ -2094,12 +2094,12 @@ onMounted(() => {
                           v-for="cell in calendarCells"
                           :key="cell.dateKey"
                           type="button"
-                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                           :class="cell.isSelected
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-primary-600 text-white'
                             : cell.inCurrentMonth
-                              ? (cell.isToday ? 'border border-blue-300 text-blue-600' : 'text-slate-700 hover:bg-slate-100')
-                              : 'text-slate-300 hover:bg-slate-50'"
+                              ? (cell.isToday ? 'border border-primary-300 text-primary-500' : 'text-[#1C1C1A] hover:bg-surface-hover')
+                              : 'text-[#9E9E9A] hover:bg-surface-hover'"
                           @click="pickDate(cell.dateKey)"
                         >
                           {{ cell.day }}
@@ -2110,7 +2110,7 @@ onMounted(() => {
 
                   <button
                     v-if="taskDraft.dueAt"
-                    class="h-10 min-w-[52px] shrink-0 rounded border border-slate-200 px-2 text-xs text-slate-500 hover:bg-slate-50"
+                    class="h-10 min-w-[52px] shrink-0 rounded border border-surface-border px-2 text-xs text-[#6F6F6B] hover:bg-surface-hover"
                     @click="clearDateField('dueAt')"
                   >
                     清除
@@ -2119,8 +2119,8 @@ onMounted(() => {
               </div>
 
               <!-- Project -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-project-id">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-project-id">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
@@ -2129,7 +2129,7 @@ onMounted(() => {
                 <select
                   id="task-project-id"
                   v-model="taskDraft.projectId"
-                  class="h-10 w-full rounded border border-slate-200 px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+                  class="h-10 w-full rounded border border-surface-border px-3 text-sm text-[#1C1C1A] focus:border-primary-500 focus:outline-none"
                 >
                   <option :value="null">无</option>
                   <option v-for="project in taskStore.projects" :key="project.id" :value="project.id">
@@ -2139,8 +2139,8 @@ onMounted(() => {
               </div>
 
               <!-- Reminder -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-reminder-at">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-reminder-at">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
@@ -2151,8 +2151,8 @@ onMounted(() => {
                     <button
                       id="task-reminder-at"
                       type="button"
-                      class="h-10 w-full rounded border border-slate-200 px-3 text-left text-sm focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      :class="taskDraft.reminderDate ? 'text-slate-700' : 'text-slate-400'"
+                      class="h-10 w-full rounded border border-surface-border px-3 text-left text-sm focus:border-primary-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                      :class="taskDraft.reminderDate ? 'text-[#1C1C1A]' : 'text-[#9E9E9A]'"
                       @click="openDatePicker('reminderDate')"
                     >
                       {{ formatDateInputLabel(taskDraft.reminderDate) || '选择日期' }}
@@ -2160,12 +2160,12 @@ onMounted(() => {
 
                     <div
                       v-if="isDatePickerOpen('reminderDate')"
-                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"
+                      class="absolute left-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-surface-border bg-white p-3 shadow-xl"
                     >
                       <div class="mb-2 flex items-center justify-between">
                         <button
                           type="button"
-                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                           aria-label="上一月"
                           @click="shiftCalendarMonth(-1)"
                         >
@@ -2173,10 +2173,10 @@ onMounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                           </svg>
                         </button>
-                        <div class="text-sm font-medium text-slate-700">{{ calendarTitle }}</div>
+                        <div class="text-sm font-medium text-[#1C1C1A]">{{ calendarTitle }}</div>
                         <button
                           type="button"
-                          class="rounded p-1 text-slate-500 hover:bg-slate-100"
+                          class="rounded p-1 text-[#6F6F6B] hover:bg-surface-hover"
                           aria-label="下一月"
                           @click="shiftCalendarMonth(1)"
                         >
@@ -2185,7 +2185,7 @@ onMounted(() => {
                           </svg>
                         </button>
                       </div>
-                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-slate-400">
+                      <div class="mb-1 grid grid-cols-7 text-center text-[11px] text-[#9E9E9A]">
                         <span v-for="week in calendarWeekdays" :key="week">{{ week }}</span>
                       </div>
                       <div class="grid grid-cols-7 gap-1">
@@ -2193,12 +2193,12 @@ onMounted(() => {
                           v-for="cell in calendarCells"
                           :key="cell.dateKey"
                           type="button"
-                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                          class="h-8 rounded text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                           :class="cell.isSelected
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-primary-600 text-white'
                             : cell.inCurrentMonth
-                              ? (cell.isToday ? 'border border-blue-300 text-blue-600' : 'text-slate-700 hover:bg-slate-100')
-                              : 'text-slate-300 hover:bg-slate-50'"
+                              ? (cell.isToday ? 'border border-primary-300 text-primary-500' : 'text-[#1C1C1A] hover:bg-surface-hover')
+                              : 'text-[#9E9E9A] hover:bg-surface-hover'"
                           @click="pickDate(cell.dateKey)"
                         >
                           {{ cell.day }}
@@ -2209,24 +2209,24 @@ onMounted(() => {
 
                   <select
                     v-model="taskDraft.reminderTime"
-                    class="h-10 w-24 shrink-0 rounded border border-slate-200 px-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none sm:w-28"
+                    class="h-10 w-24 shrink-0 rounded border border-surface-border px-2 text-sm text-[#1C1C1A] focus:border-primary-500 focus:outline-none sm:w-28"
                   >
                     <option v-for="time in reminderTimeOptions" :key="time" :value="time">{{ time }}</option>
                   </select>
                   <button
                     v-if="taskDraft.reminderDate"
-                    class="h-10 min-w-[52px] shrink-0 rounded border border-slate-200 px-2 text-xs text-slate-500 hover:bg-slate-50"
+                    class="h-10 min-w-[52px] shrink-0 rounded border border-surface-border px-2 text-xs text-[#6F6F6B] hover:bg-surface-hover"
                     @click="clearDateField('reminderDate')"
                   >
                     清除
                   </button>
                 </div>
-                <p class="mt-2 text-xs text-slate-400">当前：{{ formatReminder(toReminderIso(taskDraft.reminderDate, taskDraft.reminderTime)) }}</p>
+                <p class="mt-2 text-xs text-[#9E9E9A]">当前：{{ formatReminder(toReminderIso(taskDraft.reminderDate, taskDraft.reminderTime)) }}</p>
               </div>
 
               <!-- Repeat -->
-              <div class="rounded-lg border border-slate-200 p-3">
-                <label class="mb-2 flex items-center gap-2 text-sm text-slate-700" for="task-repeat-rule">
+              <div class="rounded-lg border border-surface-border p-3">
+                <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-repeat-rule">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
@@ -2235,7 +2235,7 @@ onMounted(() => {
                 <select
                   id="task-repeat-rule"
                   v-model="taskDraft.repeatRule"
-                  class="h-10 w-full rounded border border-slate-200 px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+                  class="h-10 w-full rounded border border-surface-border px-3 text-sm text-[#1C1C1A] focus:border-primary-500 focus:outline-none"
                 >
                   <option v-for="opt in repeatOptions" :key="opt.value" :value="opt.value">
                     {{ opt.label }}
@@ -2246,27 +2246,27 @@ onMounted(() => {
                   <button
                     v-for="(label, idx) in weekdayLabels"
                     :key="idx"
-                    class="flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    class="flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                     :class="taskDraft.repeatDays.includes(idx + 1)
-                      ? 'border-blue-500 bg-blue-500 text-white'
-                      : 'border-slate-200 text-slate-500 hover:bg-slate-50'"
+                      ? 'border-primary-500 bg-primary-500 text-white'
+                      : 'border-surface-border text-[#6F6F6B] hover:bg-surface-hover'"
                     @click="toggleRepeatDay(idx + 1)"
                   >
                     {{ label }}
                   </button>
                 </div>
-                <p v-if="taskDraft.repeatRule && !taskDraft.dueAt" class="mt-2 text-xs text-amber-500">
+                <p v-if="taskDraft.repeatRule && !taskDraft.dueAt" class="mt-2 text-xs text-warning-500">
                   重复任务需要先设置本次截止日期（将作为重复锚点）
                 </p>
-                <p v-else-if="taskDraft.repeatRule" class="mt-2 text-xs text-slate-400">
+                <p v-else-if="taskDraft.repeatRule" class="mt-2 text-xs text-[#9E9E9A]">
                   重复锚点：使用本次截止日期
                 </p>
               </div>
 
               <!-- Subtasks -->
-              <div class="rounded-lg border border-slate-200 bg-white p-3">
+              <div class="rounded-lg border border-surface-border bg-white p-3">
                 <div class="mb-2 flex items-center justify-between">
-                  <label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <label class="flex items-center gap-2 text-sm font-medium text-[#1C1C1A]">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h10M9 12h10M9 19h10M4 6h.01M4 12h.01M4 18h.01" />
                     </svg>
@@ -2274,10 +2274,10 @@ onMounted(() => {
                   </label>
                   <div class="flex items-center gap-2">
                     <button
-                      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                      class="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                       :class="currentSuggestionPanel?.loading
-                        ? 'bg-blue-50 text-blue-400 cursor-not-allowed'
-                        : 'text-blue-600 hover:bg-blue-50'"
+                        ? 'bg-primary-50 text-primary-400 cursor-not-allowed'
+                        : 'text-primary-500 hover:bg-primary-50'"
                       :disabled="currentSuggestionPanel?.loading"
                       @click="handleRequestSuggestions"
                     >
@@ -2290,11 +2290,11 @@ onMounted(() => {
                       </svg>
                       {{ currentSuggestionPanel?.loading ? '加载中…' : '建议' }}
                     </button>
-                    <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
+                    <span class="rounded-full border border-surface-border bg-surface-hover px-2 py-0.5 text-xs text-[#6F6F6B]">{{ subtaskDoneCount }}/{{ selectedTaskSubtasks.length }}</span>
                   </div>
                 </div>
 
-                <div v-if="!canAddSubtaskToSelected" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                <div v-if="!canAddSubtaskToSelected" class="rounded-lg border border-surface-border bg-white px-3 py-2 text-xs text-[#6F6F6B]">
                   已达最大嵌套层级（{{ MAX_TASK_DEPTH }} 层），无法继续添加子任务
                 </div>
                 <div v-else class="mb-3 flex items-center gap-2">
@@ -2303,11 +2303,11 @@ onMounted(() => {
                     type="text"
                     aria-label="新增子任务"
                     placeholder="添加子任务，按 Enter 保存…"
-                    class="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                    class="h-9 flex-1 rounded-lg border border-surface-border bg-white px-3 text-sm text-[#1C1C1A] placeholder:text-[#9E9E9A] focus:border-primary-500 focus:outline-none"
                     @keyup.enter="submitSubtask"
                   >
                   <button
-                    class="h-9 shrink-0 rounded-lg bg-slate-800 px-3 text-xs font-medium text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                    class="h-9 shrink-0 rounded-lg bg-[#1C1C1A] px-3 text-xs font-medium text-white transition-colors hover:bg-[#2A2A28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                     @click="submitSubtask"
                   >
                     添加
@@ -2319,15 +2319,15 @@ onMounted(() => {
                   <div
                     v-for="subtask in selectedTaskSubtasks"
                     :key="subtask.id"
-                    class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/40 px-2.5 py-2 transition-colors hover:bg-slate-50"
+                    class="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-hover/40 px-2.5 py-2 transition-colors hover:bg-surface-hover"
                   >
                     <div class="h-7 w-1 shrink-0 rounded-full opacity-70" :class="priorityBarClass(subtask.priority)" />
                     <button
                       role="checkbox"
                       :aria-checked="subtask.status === 'done'"
                       :aria-label="subtask.status === 'done' ? '标记为未完成' : '标记为已完成'"
-                      class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                      :class="subtask.status === 'done' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'"
+                      class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                      :class="subtask.status === 'done' ? 'border-success-500 bg-success-500' : 'border-surface-border-hover'"
                       @click="handleToggleTask(subtask.id)"
                     >
                       <svg v-if="subtask.status === 'done'" class="h-2.5 w-2.5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -2336,14 +2336,14 @@ onMounted(() => {
                     </button>
                     <button
                       class="min-w-0 flex-1 truncate text-left text-sm"
-                      :class="subtask.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'"
+                      :class="subtask.status === 'done' ? 'text-[#9E9E9A] line-through' : 'text-[#1C1C1A]'"
                       @click="selectTask(subtask.id)"
                     >
                       {{ subtask.title }}
                     </button>
                     <span
                       v-if="hasTaskSubtasks(subtask.id)"
-                      class="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-500"
+                      class="shrink-0 rounded border border-surface-border bg-white px-1.5 py-0.5 text-[10px] text-[#6F6F6B]"
                     >
                       {{ getTaskSubtaskDoneCount(subtask.id) }}/{{ getTaskSubtasks(subtask.id).length }} 子任务
                     </span>
@@ -2354,35 +2354,35 @@ onMounted(() => {
                     >
                       {{ priorityBadge(subtask.priority)!.label }}
                     </span>
-                    <div class="flex items-center gap-1 text-xs text-slate-400">
+                    <div class="flex items-center gap-1 text-xs text-[#9E9E9A]">
                       <div class="flex items-center gap-0.5">
                         <span
                           v-for="dotIndex in Math.min(subtask.pomodoroCount || 1, 5)"
                           :key="dotIndex"
                           class="h-1.5 w-1.5 rounded-full"
-                          :class="dotIndex <= (subtask.pomodoroCount || 1) ? 'bg-red-400' : 'bg-red-200'"
+                          :class="dotIndex <= (subtask.pomodoroCount || 1) ? 'bg-danger-400' : 'bg-danger-200'"
                         />
                       </div>
                       <span v-if="(subtask.pomodoroCount || 1) > 5">+{{ (subtask.pomodoroCount || 1) - 5 }}</span>
                     </div>
-                    <span class="text-xs" :class="isTaskOverdue(subtask) ? 'font-medium text-red-600' : subtask.dueAt ? 'text-rose-500' : 'text-slate-400'">
+                    <span class="text-xs" :class="isTaskOverdue(subtask) ? 'font-medium text-danger-500' : subtask.dueAt ? 'text-rose-500' : 'text-[#9E9E9A]'">
                       {{ formatDueAt(subtask.dueAt) }}
-                      <span v-if="isTaskOverdue(subtask)" class="ml-0.5 rounded bg-red-50 px-1 py-0.5 text-[10px] text-red-600 ring-1 ring-red-200">已逾期</span>
+                      <span v-if="isTaskOverdue(subtask)" class="ml-0.5 rounded bg-danger-50 px-1 py-0.5 text-[10px] text-danger-500 ring-1 ring-danger-200">已逾期</span>
                     </span>
                     <button
-                      class="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                      class="shrink-0 rounded px-2 py-1 text-xs text-danger-400 hover:bg-danger-50 hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
                       @click="deleteSubtask(subtask.id)"
                     >
                       删除
                     </button>
                   </div>
                 </div>
-                <p v-else class="text-xs text-slate-400">暂无子任务</p>
+                <p v-else class="text-xs text-[#9E9E9A]">暂无子任务</p>
 
                 <!-- Suggestion Panel (below subtask list) -->
                 <div
                   v-if="currentSuggestionPanel?.requested && !currentSuggestionPanel.collapsed"
-                  class="mt-3 rounded-lg border border-blue-200 bg-blue-50/40"
+                  class="mt-3 rounded-lg border border-primary-200 bg-primary-50/40"
                 >
                   <!-- Panel header -->
                   <button
@@ -2390,12 +2390,12 @@ onMounted(() => {
                     @click="selectedTask && toggleSuggestionCollapsed(selectedTask.id)"
                   >
                     <div class="flex items-center gap-1.5">
-                      <svg class="h-3.5 w-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg class="h-3.5 w-3.5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                       </svg>
-                      <span class="text-xs font-semibold text-blue-700">
+                      <span class="text-xs font-semibold text-primary-700">
                         建议
-                        <span v-if="currentSuggestionPanel.suggestions.length > 0" class="font-normal text-blue-500">
+                        <span v-if="currentSuggestionPanel.suggestions.length > 0" class="font-normal text-primary-500">
                           ({{ currentSuggestionPanel.suggestions.length }} 条)
                         </span>
                       </span>
@@ -2403,20 +2403,20 @@ onMounted(() => {
                     <div class="flex items-center gap-1">
                       <button
                         v-if="!currentSuggestionPanel.collapsed && currentSuggestionPanel.suggestions.length > 0"
-                        class="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-blue-700"
+                        class="rounded bg-primary-600 px-2 py-0.5 text-[11px] font-medium text-white transition-colors hover:bg-primary-700"
                         @click.stop="handleAcceptAllSuggestions"
                       >
                         全部添加
                       </button>
                       <button
                         v-if="!currentSuggestionPanel.collapsed"
-                        class="rounded border border-blue-200 px-2 py-0.5 text-[11px] font-medium text-blue-500 transition-colors hover:bg-blue-100"
+                        class="rounded border border-primary-200 px-2 py-0.5 text-[11px] font-medium text-primary-500 transition-colors hover:bg-primary-100"
                         @click.stop="handleDismissSuggestions"
                       >
                         忽略
                       </button>
                       <svg
-                        class="h-4 w-4 text-blue-400 transition-transform"
+                        class="h-4 w-4 text-primary-400 transition-transform"
                         :class="currentSuggestionPanel.collapsed ? '-rotate-90' : ''"
                         fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
                       >
@@ -2438,27 +2438,27 @@ onMounted(() => {
                           :class="s.source === 'ai'
                             ? 'bg-violet-100 text-violet-600'
                             : s.source === 'pattern'
-                              ? 'bg-emerald-100 text-emerald-600'
-                              : 'bg-blue-100 text-blue-600'"
+                              ? 'bg-success-100 text-success-500'
+                              : 'bg-primary-100 text-primary-500'"
                         >
                           {{ s.source === 'ai' ? '远程' : s.source === 'pattern' ? '模板' : '学习' }}
                         </span>
                         <div class="min-w-0">
-                          <span class="block truncate text-xs text-slate-700">{{ s.title }}</span>
-                          <span v-if="s.childCount" class="block text-[10px] text-slate-400">
+                          <span class="block truncate text-xs text-[#1C1C1A]">{{ s.title }}</span>
+                          <span v-if="s.childCount" class="block text-[10px] text-[#9E9E9A]">
                             {{ s.childCount }} 个子任务
                           </span>
                         </div>
                       </div>
                       <div class="flex shrink-0 gap-1">
                         <button
-                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:bg-emerald-50"
+                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-success-500 transition-colors hover:bg-success-50"
                           @click="handleAcceptSuggestion(s)"
                         >
                           采纳
                         </button>
                         <button
-                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-50"
+                          class="rounded px-1.5 py-0.5 text-[10px] font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover"
                           @click="handleRejectSuggestion(s)"
                         >
                           忽略
@@ -2481,7 +2481,7 @@ onMounted(() => {
                     <!-- Empty state after all dismissed -->
                     <p
                       v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.suggestions.length === 0"
-                      class="py-1 text-center text-xs text-slate-400"
+                      class="py-1 text-center text-xs text-[#9E9E9A]"
                     >
                       暂无内容
                     </p>
@@ -2494,7 +2494,7 @@ onMounted(() => {
                 <textarea
                   v-model="taskDraft.notes"
                   aria-label="备注"
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm text-[#6F6F6B] placeholder:text-[#9E9E9A] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                   rows="4"
                   placeholder="添加备注…"
                 />
@@ -2503,22 +2503,22 @@ onMounted(() => {
           </div>
 
           <!-- Footer -->
-          <div class="space-y-3 border-t border-slate-200 px-4 py-3">
-            <div class="flex items-center justify-between text-xs text-slate-400">
+          <div class="space-y-3 border-t border-surface-border px-4 py-3">
+            <div class="flex items-center justify-between text-xs text-[#9E9E9A]">
               <span>所属清单：{{ getProjectName(taskDraft.projectId || 0) }}</span>
               <span>创建于 {{ new Date(selectedTask.createdAt || selectedTask.id).toLocaleDateString() }}</span>
             </div>
             <div class="flex items-center gap-2">
               <button
-                class="flex-1 rounded px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                :class="hasUnsavedChanges ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-300 cursor-not-allowed'"
+                class="flex-1 rounded px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                :class="hasUnsavedChanges ? 'bg-primary-600 hover:bg-primary-700' : 'bg-surface-border cursor-not-allowed'"
                 :disabled="!hasUnsavedChanges"
                 @click="saveTaskDetail"
               >
                 保存修改
               </button>
               <button
-                class="rounded px-3 py-2 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                class="rounded px-3 py-2 text-sm text-danger-400 hover:bg-danger-50 hover:text-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
                 @click="deleteSelectedTask"
               >
                 删除
@@ -2539,7 +2539,7 @@ onMounted(() => {
     >
       <div
         v-if="pendingUndoDeletion"
-        class="pointer-events-auto fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-xl"
+        class="pointer-events-auto fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-[#1C1C1A] px-4 py-3 text-sm text-white shadow-xl"
       >
         <div class="flex items-center gap-3">
           <span>任务“{{ pendingUndoDeletion.taskTitle }}”已删除</span>
@@ -2549,7 +2549,7 @@ onMounted(() => {
           >
             撤销
           </button>
-          <span class="text-xs text-slate-300">{{ undoRemainingSeconds }}s</span>
+          <span class="text-xs text-[#9E9E9A]">{{ undoRemainingSeconds }}s</span>
         </div>
       </div>
     </Transition>
@@ -2565,7 +2565,7 @@ onMounted(() => {
       <div
         v-if="inlineNoticeMessage"
         :key="inlineNoticeToken"
-        class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-xl"
+        class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-surface-border bg-white px-4 py-2.5 text-sm text-[#1C1C1A] shadow-xl"
       >
         {{ inlineNoticeMessage }}
       </div>
@@ -2581,20 +2581,20 @@ onMounted(() => {
     >
       <div
         v-if="inlineConfirmState"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-[#1C1C1A]/30 px-4"
       >
-        <div class="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl">
-          <div class="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-700">确认操作</div>
-          <div class="px-5 py-4 text-sm text-slate-600">{{ inlineConfirmState.message }}</div>
-          <div class="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3">
+        <div class="w-full max-w-md rounded-xl border border-surface-border bg-white shadow-2xl">
+          <div class="border-b border-surface-border px-5 py-3 text-sm font-semibold text-[#1C1C1A]">确认操作</div>
+          <div class="px-5 py-4 text-sm text-[#6F6F6B]">{{ inlineConfirmState.message }}</div>
+          <div class="flex items-center justify-end gap-2 border-t border-surface-border px-5 py-3">
             <button
-              class="rounded px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              class="rounded px-3 py-1.5 text-sm text-[#6F6F6B] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
               @click="resolveInlineConfirm(false)"
             >
               取消
             </button>
             <button
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              class="rounded bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
               @click="resolveInlineConfirm(true)"
             >
               确认

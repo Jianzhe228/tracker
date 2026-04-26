@@ -89,7 +89,7 @@ watch(() => props.anchorEl, () => {
   <Teleport to="body">
     <div
       ref="popoverEl"
-      class="fixed z-[60] w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+      class="fixed z-[60] w-56 rounded-lg border border-surface-border bg-white p-3 shadow-lg"
       :style="{ left: posX + 'px', top: posY + 'px' }"
     >
       <!-- Title input -->
@@ -97,7 +97,7 @@ watch(() => props.anchorEl, () => {
         ref="inputEl"
         v-model="title"
         type="text"
-        class="mb-3 w-full rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+        class="mb-3 w-full rounded border border-surface-border px-2 py-1.5 text-sm outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400"
         placeholder="清单名称"
         maxlength="50"
         @keydown.enter="submit"
@@ -108,7 +108,7 @@ watch(() => props.anchorEl, () => {
           v-for="color in PRESET_COLORS"
           :key="color"
           class="h-5 w-5 rounded-full border-2 transition-transform hover:scale-110"
-          :class="selectedColor === color ? 'border-slate-800' : 'border-transparent'"
+          :class="selectedColor === color ? 'border-[#1C1C1A]' : 'border-transparent'"
           :style="{ backgroundColor: color }"
           @click="selectedColor = color"
         />
@@ -116,13 +116,13 @@ watch(() => props.anchorEl, () => {
       <!-- Actions -->
       <div class="flex justify-end gap-2">
         <button
-          class="rounded px-3 py-1 text-xs text-slate-500 hover:bg-slate-100"
+          class="rounded px-3 py-1 text-xs text-[#6F6F6B] hover:bg-surface-hover"
           @click="emit('close')"
         >
           取消
         </button>
         <button
-          class="rounded bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600 disabled:opacity-50"
+          class="rounded bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600 disabled:opacity-50"
           :disabled="!title.trim()"
           @click="submit"
         >

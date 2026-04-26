@@ -142,7 +142,7 @@ onUnmounted(() => {
   <div ref="panelRef" class="relative">
     <!-- Bell button -->
     <button
-      class="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+      class="relative flex h-8 w-8 items-center justify-center rounded-lg text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B]"
       aria-label="通知中心"
       @click.stop="toggle"
     >
@@ -151,7 +151,7 @@ onUnmounted(() => {
       </svg>
       <span
         v-if="totalBadge > 0"
-        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-bold text-white"
       >
         {{ totalBadge > 99 ? '99+' : totalBadge }}
       </span>
@@ -168,14 +168,14 @@ onUnmounted(() => {
     >
       <div
         v-if="open"
-        class="absolute bottom-full left-0 z-50 mb-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg"
+        class="absolute bottom-full left-0 z-50 mb-2 w-80 rounded-xl border border-surface-border bg-white shadow-lg"
       >
         <!-- Header -->
-        <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h3 class="text-sm font-semibold text-slate-800">通知</h3>
+        <div class="flex items-center justify-between border-b border-surface-border px-4 py-3">
+          <h3 class="text-sm font-semibold text-[#1C1C1A]">通知</h3>
           <button
             v-if="unreadCount > 0"
-            class="text-xs text-blue-600 hover:text-blue-700"
+            class="text-xs text-primary-500 hover:text-primary-700"
             @click="handleMarkAllRead"
           >
             全部标记已读
@@ -184,18 +184,18 @@ onUnmounted(() => {
 
         <!-- Task Predictions -->
         <div v-if="predictionStore.pendingPredictions.length > 0">
-          <div class="border-b border-slate-100 bg-sky-50/80 px-4 py-2">
+          <div class="border-b border-surface-border bg-sky-50/80 px-4 py-2">
             <span class="text-xs font-semibold text-sky-700">任务预测</span>
           </div>
           <div
             v-for="prediction in predictionStore.pendingPredictions"
             :key="'prediction-' + prediction.id"
-            class="border-b border-slate-100 px-4 py-3"
+            class="border-b border-surface-border px-4 py-3"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
-                <p class="text-sm font-medium text-slate-700">{{ prediction.title }}</p>
-                <p v-if="prediction.reason" class="mt-1 text-xs leading-5 text-slate-500">
+                <p class="text-sm font-medium text-[#1C1C1A]">{{ prediction.title }}</p>
+                <p v-if="prediction.reason" class="mt-1 text-xs leading-5 text-[#6F6F6B]">
                   {{ prediction.reason }}
                 </p>
               </div>
@@ -207,7 +207,7 @@ onUnmounted(() => {
                   创建
                 </button>
                 <button
-                  class="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-50"
+                  class="rounded border border-surface-border px-2 py-0.5 text-[11px] font-medium text-[#6F6F6B] transition-colors hover:bg-surface-hover"
                   @click="predictionStore.rejectPrediction(prediction.id)"
                 >
                   忽略
@@ -219,18 +219,18 @@ onUnmounted(() => {
 
         <!-- AI Pending Actions -->
         <div v-if="aiStore.pendingJobs.length > 0">
-          <div class="border-b border-slate-100 bg-violet-50/60 px-4 py-2">
+          <div class="border-b border-surface-border bg-violet-50/60 px-4 py-2">
             <span class="text-xs font-semibold text-violet-700">待确认</span>
           </div>
           <div
             v-for="job in aiStore.pendingJobs"
             :key="'ai-' + job.id"
-            class="border-b border-slate-100 px-4 py-3"
+            class="border-b border-surface-border px-4 py-3"
           >
             <div class="flex items-center justify-between">
               <div class="min-w-0">
                 <span class="text-xs font-semibold text-violet-600">{{ getSkillName(job.skillId) }}</span>
-                <p v-if="getJobTargetTitle(job)" class="mt-0.5 truncate text-[11px] text-slate-400">
+                <p v-if="getJobTargetTitle(job)" class="mt-0.5 truncate text-[11px] text-[#9E9E9A]">
                   目标任务：{{ getJobTargetTitle(job) }}
                 </p>
               </div>
@@ -242,7 +242,7 @@ onUnmounted(() => {
                   全部确认
                 </button>
                 <button
-                  class="rounded border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-50"
+                  class="rounded border border-surface-border px-2 py-0.5 text-[11px] font-medium text-[#6F6F6B] transition-colors hover:bg-surface-hover"
                   @click="aiStore.rejectJob(job.id)"
                 >
                   忽略
@@ -256,18 +256,18 @@ onUnmounted(() => {
                 class="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1.5 text-xs"
               >
                 <div class="min-w-0 flex-1">
-                  <span class="font-medium text-slate-600">{{ getActionLabel(action.type) }}</span>
-                  <span v-if="action.params.title" class="ml-1 text-slate-500">{{ action.params.title }}</span>
+                  <span class="font-medium text-[#6F6F6B]">{{ getActionLabel(action.type) }}</span>
+                  <span v-if="action.params.title" class="ml-1 text-[#6F6F6B]">{{ action.params.title }}</span>
                 </div>
                 <div class="flex shrink-0 gap-1">
                   <button
-                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:bg-emerald-50"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-success-500 transition-colors hover:bg-success-50"
                     @click="aiStore.approveAction(job.id, job.actions!.indexOf(action))"
                   >
                     确认
                   </button>
                   <button
-                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-slate-50"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover"
                     @click="aiStore.rejectAction(job.id, job.actions!.indexOf(action))"
                   >
                     忽略
@@ -279,12 +279,12 @@ onUnmounted(() => {
         </div>
 
         <!-- Processing indicator -->
-        <div v-if="aiStore.processingCount > 0" class="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
+        <div v-if="aiStore.processingCount > 0" class="flex items-center gap-2 border-b border-surface-border px-4 py-2">
           <span class="h-2 w-2 animate-pulse rounded-full bg-violet-400" />
           <span class="text-xs text-violet-600">正在分析...</span>
         </div>
 
-        <div v-if="predictionStore.isAnalyzing" class="flex items-center gap-2 border-b border-slate-100 px-4 py-2">
+        <div v-if="predictionStore.isAnalyzing" class="flex items-center gap-2 border-b border-surface-border px-4 py-2">
           <span class="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
           <span class="text-xs text-sky-600">预测更新中...</span>
         </div>
@@ -293,27 +293,27 @@ onUnmounted(() => {
         <div class="max-h-72 overflow-y-auto">
           <div
             v-if="notifications.length === 0 && aiStore.pendingJobs.length === 0 && predictionStore.pendingPredictions.length === 0"
-            class="px-4 py-8 text-center text-sm text-slate-400"
+            class="px-4 py-8 text-center text-sm text-[#9E9E9A]"
           >
             暂无通知
           </div>
           <div
             v-for="item in notifications"
             :key="item.id"
-            class="flex cursor-pointer gap-3 border-b border-slate-50 px-4 py-3 transition-colors last:border-b-0 hover:bg-slate-50"
+            class="flex cursor-pointer gap-3 border-b border-surface-border px-4 py-3 transition-colors last:border-b-0 hover:bg-surface-hover"
             :class="item.isRead ? 'opacity-60' : ''"
             @click="!item.isRead && handleMarkRead(item.id)"
           >
             <div class="mt-0.5 shrink-0">
               <span
                 class="block h-2 w-2 rounded-full"
-                :class="item.isRead ? 'bg-transparent' : 'bg-blue-500'"
+                :class="item.isRead ? 'bg-transparent' : 'bg-primary-500'"
               />
             </div>
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium text-slate-700">{{ item.title }}</p>
-              <p class="mt-0.5 text-xs text-slate-500">{{ item.body }}</p>
-              <p class="mt-1 text-xs text-slate-400">{{ formatTime(item.createdAt) }}</p>
+              <p class="text-sm font-medium text-[#1C1C1A]">{{ item.title }}</p>
+              <p class="mt-0.5 text-xs text-[#6F6F6B]">{{ item.body }}</p>
+              <p class="mt-1 text-xs text-[#9E9E9A]">{{ formatTime(item.createdAt) }}</p>
             </div>
           </div>
         </div>

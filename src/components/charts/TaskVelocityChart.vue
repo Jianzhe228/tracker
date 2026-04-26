@@ -64,5 +64,5 @@ const option = computed(() => {
 
 <template>
   <VChart v-if="data.length" class="h-[200px] w-full" :option="option" autoresize />
-  <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">暂无数据</div>
+  <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">暂无数据</div>
 </template>

@@ -19,13 +19,13 @@ const dateRange = ref("7d");
             >
                 <!-- Header -->
                 <div
-                    class="flex items-center justify-between border-b border-slate-200 px-6 py-4"
+                    class="flex items-center justify-between border-b border-surface-border px-6 py-4"
                 >
-                    <h2 class="text-lg font-semibold text-slate-800">
+                    <h2 class="text-lg font-semibold text-[#1C1C1A]">
                         统计报告
                     </h2>
                     <button
-                        class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                        class="rounded p-1 text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B]"
                         @click="emit('close')"
                     >
                         <svg
@@ -48,89 +48,89 @@ const dateRange = ref("7d");
                 <div class="flex-1 overflow-auto p-6">
                     <!-- Stats Cards -->
                     <div class="mb-6 grid grid-cols-6 gap-4">
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500"
+                                class="flex items-center gap-2 text-sm text-[#6F6F6B]"
                             >
-                                <span class="h-2 w-0.5 rounded bg-red-400" />
+                                <span class="h-2 w-0.5 rounded bg-danger-400" />
                                 总专注时间
                             </div>
                             <div class="mt-2">
                                 <span
-                                    class="text-2xl font-semibold text-red-500"
+                                    class="text-2xl font-semibold text-danger-400"
                                     >0</span
                                 >
-                                <span class="text-sm text-slate-400">分钟</span>
+                                <span class="text-sm text-[#9E9E9A]">分钟</span>
                             </div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500"
+                                class="flex items-center gap-2 text-sm text-[#6F6F6B]"
                             >
-                                <span class="h-2 w-0.5 rounded bg-red-400" />
+                                <span class="h-2 w-0.5 rounded bg-danger-400" />
                                 本周专注
                             </div>
                             <div class="mt-2">
                                 <span
-                                    class="text-2xl font-semibold text-red-500"
+                                    class="text-2xl font-semibold text-danger-400"
                                     >0</span
                                 >
-                                <span class="text-sm text-slate-400">分钟</span>
+                                <span class="text-sm text-[#9E9E9A]">分钟</span>
                             </div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500"
+                                class="flex items-center gap-2 text-sm text-[#6F6F6B]"
                             >
-                                <span class="h-2 w-0.5 rounded bg-red-400" />
+                                <span class="h-2 w-0.5 rounded bg-danger-400" />
                                 今日专注
                             </div>
                             <div class="mt-2">
                                 <span
-                                    class="text-2xl font-semibold text-red-500"
+                                    class="text-2xl font-semibold text-danger-400"
                                     >0</span
                                 >
-                                <span class="text-sm text-slate-400">分钟</span>
+                                <span class="text-sm text-[#9E9E9A]">分钟</span>
                             </div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500"
+                                class="flex items-center gap-2 text-sm text-[#6F6F6B]"
                             >
-                                <span class="h-2 w-0.5 rounded bg-blue-400" />
+                                <span class="h-2 w-0.5 rounded bg-primary-400" />
                                 总完成任务
                             </div>
                             <div class="mt-2">
                                 <span
-                                    class="text-2xl font-semibold text-blue-500"
+                                    class="text-2xl font-semibold text-primary-500"
                                     >0</span
                                 >
                             </div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500"
+                                class="flex items-center gap-2 text-sm text-[#6F6F6B]"
                             >
-                                <span class="h-2 w-0.5 rounded bg-blue-400" />
+                                <span class="h-2 w-0.5 rounded bg-primary-400" />
                                 本周完成
                             </div>
                             <div class="mt-2">
                                 <span
-                                    class="text-2xl font-semibold text-blue-500"
+                                    class="text-2xl font-semibold text-primary-500"
                                     >0</span
                                 >
                             </div>
                         </div>
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div
-                                class="flex items-center gap-2 text-sm text-slate-500"
+                                class="flex items-center gap-2 text-sm text-[#6F6F6B]"
                             >
-                                <span class="h-2 w-0.5 rounded bg-blue-400" />
+                                <span class="h-2 w-0.5 rounded bg-primary-400" />
                                 今日完成
                             </div>
                             <div class="mt-2">
                                 <span
-                                    class="text-2xl font-semibold text-blue-500"
+                                    class="text-2xl font-semibold text-primary-500"
                                     >0</span
                                 >
                             </div>
@@ -141,15 +141,15 @@ const dateRange = ref("7d");
                     <div class="grid grid-cols-3 gap-6">
                         <!-- Pomodoro Records -->
                         <div
-                            class="col-span-2 rounded-lg border border-slate-200 p-4"
+                            class="col-span-2 rounded-lg border border-surface-border p-4"
                         >
-                            <h3 class="mb-4 font-medium text-slate-800">
+                            <h3 class="mb-4 font-medium text-[#1C1C1A]">
                                 番茄记录
                             </h3>
                             <div
-                                class="flex h-48 items-center justify-center rounded bg-slate-50"
+                                class="flex h-48 items-center justify-center rounded bg-surface-hover"
                             >
-                                <div class="text-center text-slate-400">
+                                <div class="text-center text-[#9E9E9A]">
                                     <svg
                                         class="mx-auto h-12 w-12"
                                         fill="none"
@@ -169,22 +169,22 @@ const dateRange = ref("7d");
                         </div>
 
                         <!-- Focus Time -->
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div class="mb-4 flex items-center justify-between">
-                                <h3 class="font-medium text-slate-800">
+                                <h3 class="font-medium text-[#1C1C1A]">
                                     专注时间
                                 </h3>
                                 <button
-                                    class="text-xs text-slate-500 hover:text-slate-700"
+                                    class="text-xs text-[#6F6F6B] hover:text-[#1C1C1A]"
                                 >
                                     显示任务
                                 </button>
                             </div>
-                            <p class="mb-3 text-xs text-slate-500">
+                            <p class="mb-3 text-xs text-[#6F6F6B]">
                                 总专注时间: 0分钟
                             </p>
                             <div
-                                class="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1"
+                                class="mb-3 flex gap-1 rounded-lg bg-surface-hover p-1"
                             >
                                 <button
                                     class="flex-1 rounded-md bg-white px-2 py-1 text-xs font-medium shadow-sm"
@@ -192,39 +192,39 @@ const dateRange = ref("7d");
                                     日
                                 </button>
                                 <button
-                                    class="flex-1 rounded-md px-2 py-1 text-xs text-slate-600"
+                                    class="flex-1 rounded-md px-2 py-1 text-xs text-[#6F6F6B]"
                                 >
                                     周
                                 </button>
                                 <button
-                                    class="flex-1 rounded-md px-2 py-1 text-xs text-slate-600"
+                                    class="flex-1 rounded-md px-2 py-1 text-xs text-[#6F6F6B]"
                                 >
                                     月
                                 </button>
                                 <button
-                                    class="flex-1 rounded-md px-2 py-1 text-xs text-slate-600"
+                                    class="flex-1 rounded-md px-2 py-1 text-xs text-[#6F6F6B]"
                                 >
                                     年
                                 </button>
                             </div>
                             <div
-                                class="flex h-32 items-center justify-center rounded bg-slate-50"
+                                class="flex h-32 items-center justify-center rounded bg-surface-hover"
                             >
-                                <p class="text-sm text-slate-400">暂无数据</p>
+                                <p class="text-sm text-[#9E9E9A]">暂无数据</p>
                             </div>
                         </div>
 
                         <!-- Project Time Distribution -->
                         <div
-                            class="col-span-2 rounded-lg border border-slate-200 p-4"
+                            class="col-span-2 rounded-lg border border-surface-border p-4"
                         >
                             <div class="mb-4 flex items-center justify-between">
-                                <h3 class="font-medium text-slate-800">
+                                <h3 class="font-medium text-[#1C1C1A]">
                                     清单时间分布
                                 </h3>
                                 <div class="flex items-center gap-2">
                                     <div
-                                        class="flex gap-1 rounded-lg bg-slate-100 p-1"
+                                        class="flex gap-1 rounded-lg bg-surface-hover p-1"
                                     >
                                         <button
                                             class="rounded-md bg-white px-2 py-1 text-xs font-medium shadow-sm"
@@ -232,24 +232,24 @@ const dateRange = ref("7d");
                                             日
                                         </button>
                                         <button
-                                            class="rounded-md px-2 py-1 text-xs text-slate-600"
+                                            class="rounded-md px-2 py-1 text-xs text-[#6F6F6B]"
                                         >
                                             周
                                         </button>
                                         <button
-                                            class="rounded-md px-2 py-1 text-xs text-slate-600"
+                                            class="rounded-md px-2 py-1 text-xs text-[#6F6F6B]"
                                         >
                                             月
                                         </button>
                                         <button
-                                            class="rounded-md px-2 py-1 text-xs text-slate-600"
+                                            class="rounded-md px-2 py-1 text-xs text-[#6F6F6B]"
                                         >
                                             年
                                         </button>
                                     </div>
                                     <div class="flex items-center gap-1">
                                         <button
-                                            class="rounded p-1 text-slate-400 hover:bg-slate-100"
+                                            class="rounded p-1 text-[#9E9E9A] hover:bg-surface-hover"
                                         >
                                             <svg
                                                 class="h-4 w-4"
@@ -265,11 +265,11 @@ const dateRange = ref("7d");
                                                 />
                                             </svg>
                                         </button>
-                                        <span class="text-sm text-slate-600"
+                                        <span class="text-sm text-[#6F6F6B]"
                                             >今天</span
                                         >
                                         <button
-                                            class="rounded p-1 text-slate-400 hover:bg-slate-100"
+                                            class="rounded p-1 text-[#9E9E9A] hover:bg-surface-hover"
                                         >
                                             <svg
                                                 class="h-4 w-4"
@@ -289,9 +289,9 @@ const dateRange = ref("7d");
                                 </div>
                             </div>
                             <div
-                                class="flex h-40 items-center justify-center rounded bg-slate-50"
+                                class="flex h-40 items-center justify-center rounded bg-surface-hover"
                             >
-                                <div class="text-center text-slate-400">
+                                <div class="text-center text-[#9E9E9A]">
                                     <svg
                                         class="mx-auto h-10 w-10"
                                         fill="none"
@@ -311,26 +311,26 @@ const dateRange = ref("7d");
                         </div>
 
                         <!-- Focus Time Goal -->
-                        <div class="rounded-lg border border-slate-200 p-4">
+                        <div class="rounded-lg border border-surface-border p-4">
                             <div class="mb-2 flex items-center justify-between">
-                                <h3 class="font-medium text-slate-800">
+                                <h3 class="font-medium text-[#1C1C1A]">
                                     专注目标
                                 </h3>
-                                <span class="text-xs text-slate-500"
+                                <span class="text-xs text-[#6F6F6B]"
                                     >目标: 3小时</span
                                 >
                             </div>
-                            <p class="mb-3 text-xs text-slate-500">
+                            <p class="mb-3 text-xs text-[#6F6F6B]">
                                 专注天数: 0天，完成目标天数: 0天，目标完成率: 0%
                             </p>
 
                             <!-- Mini Calendar -->
-                            <div class="rounded-lg border border-slate-100 p-3">
+                            <div class="rounded-lg border border-surface-border p-3">
                                 <div
                                     class="mb-2 flex items-center justify-between"
                                 >
                                     <button
-                                        class="text-slate-400 hover:text-slate-600"
+                                        class="text-[#9E9E9A] hover:text-[#6F6F6B]"
                                     >
                                         <svg
                                             class="h-4 w-4"
@@ -350,7 +350,7 @@ const dateRange = ref("7d");
                                         >Feb 2026</span
                                     >
                                     <button
-                                        class="text-slate-400 hover:text-slate-600"
+                                        class="text-[#9E9E9A] hover:text-[#6F6F6B]"
                                     >
                                         <svg
                                             class="h-4 w-4"
@@ -370,21 +370,21 @@ const dateRange = ref("7d");
                                 <div
                                     class="grid grid-cols-7 gap-1 text-center text-xs"
                                 >
-                                    <span class="text-slate-400">Mo</span>
-                                    <span class="text-slate-400">Tu</span>
-                                    <span class="text-slate-400">We</span>
-                                    <span class="text-slate-400">Th</span>
-                                    <span class="text-slate-400">Fr</span>
-                                    <span class="text-slate-400">Sa</span>
-                                    <span class="text-red-400">Su</span>
+                                    <span class="text-[#9E9E9A]">Mo</span>
+                                    <span class="text-[#9E9E9A]">Tu</span>
+                                    <span class="text-[#9E9E9A]">We</span>
+                                    <span class="text-[#9E9E9A]">Th</span>
+                                    <span class="text-[#9E9E9A]">Fr</span>
+                                    <span class="text-[#9E9E9A]">Sa</span>
+                                    <span class="text-danger-400">Su</span>
                                     <span
                                         v-for="d in 28"
                                         :key="d"
                                         class="rounded py-1"
                                         :class="
                                             d === 8
-                                                ? 'bg-red-500 text-white'
-                                                : 'text-slate-600 hover:bg-slate-100'
+                                                ? 'bg-danger-500 text-white'
+                                                : 'text-[#6F6F6B] hover:bg-surface-hover'
                                         "
                                     >
                                         {{ d }}

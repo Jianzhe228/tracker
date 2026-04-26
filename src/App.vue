@@ -81,7 +81,7 @@ function toggleSidebar() {
 // Smart lists - 智能列表（借鉴 Focus To-Do）
 const smartLists = [
   { path: '/tasks/today', name: 'today', label: '今天', icon: 'sun', color: 'text-amber-500' },
-  { path: '/tasks/all', name: 'all', label: '全部', icon: 'inbox', color: 'text-slate-500' },
+  { path: '/tasks/all', name: 'all', label: '全部', icon: 'inbox', color: 'text-[#6F6F6B]' },
 ];
 
 const isActive = (path: string) => route.path === path;
@@ -228,43 +228,43 @@ const focusButtonSubLabel = computed(() => {
 const focusButtonTone = computed(() => {
   if (timerStore.running) {
     return {
-      shell: 'border-slate-700/80 bg-slate-900/95',
-      chip: 'border-emerald-300/30 bg-emerald-500/15 text-emerald-100',
-      subLabel: 'text-emerald-200/80',
-      pulse: 'bg-emerald-300',
-      arrow: 'bg-emerald-500/20 ring-1 ring-emerald-300/35',
+      shell: 'border-[#2A2A28] bg-[#1C1C1A]',
+      chip: 'border-success-300/30 bg-success-500/15 text-success-100',
+      subLabel: 'text-success-200/80',
+      pulse: 'bg-success-300',
+      arrow: 'bg-success-500/20 ring-1 ring-success-300/35',
     };
   }
   if (timerStore.paused) {
     return {
-      shell: 'border-slate-700/80 bg-slate-900/95',
-      chip: 'border-amber-300/30 bg-amber-500/15 text-amber-100',
-      subLabel: 'text-amber-200/80',
-      pulse: 'bg-amber-200',
-      arrow: 'bg-amber-500/20 ring-1 ring-amber-300/35',
+      shell: 'border-[#2A2A28] bg-[#1C1C1A]',
+      chip: 'border-warning-300/30 bg-warning-500/15 text-warning-100',
+      subLabel: 'text-warning-200/80',
+      pulse: 'bg-warning-200',
+      arrow: 'bg-warning-500/20 ring-1 ring-warning-300/35',
     };
   }
   return {
-    shell: 'border-slate-700/80 bg-slate-900/95',
-    chip: 'border-sky-300/30 bg-sky-500/15 text-sky-100',
-    subLabel: 'text-slate-300/80',
-    pulse: 'bg-sky-200',
-    arrow: 'bg-slate-700/70 ring-1 ring-white/20',
+    shell: 'border-[#2A2A28] bg-[#1C1C1A]',
+    chip: 'border-primary-300/30 bg-primary-500/15 text-primary-100',
+    subLabel: 'text-[#9E9E9A]/80',
+    pulse: 'bg-primary-200',
+    arrow: 'bg-white/10 ring-1 ring-white/15',
   };
 });
 </script>
 
 <template>
-  <div class="flex h-screen bg-[#F9F9FB] text-slate-800 antialiased selection:bg-blue-200">
+  <div class="flex h-screen bg-surface-page text-[#1C1C1A] antialiased selection:bg-primary-100">
     <!-- Sidebar -->
     <aside
-      class="flex flex-col border-r border-slate-200/60 bg-[#F9F9FB] transition-[width] duration-200"
+      class="flex flex-col border-r border-surface-border bg-surface-page transition-[width] duration-300"
       :class="sidebarCollapsed ? 'w-16' : 'w-60'"
     >
       <!-- App Brand -->
       <div class="flex h-14 shrink-0 items-center px-3" :class="sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'" data-tauri-drag-region>
         <button
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-b from-blue-500 to-indigo-600 text-white shadow-sm ring-1 ring-blue-600/20"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm transition-colors hover:bg-primary-700"
           aria-label="收起/展开侧边栏"
           @click="toggleSidebar"
         >
@@ -274,8 +274,8 @@ const focusButtonTone = computed(() => {
           </svg>
         </button>
         <div v-if="!sidebarCollapsed" class="flex-1 overflow-hidden" data-tauri-drag-region>
-          <h1 class="truncate text-sm font-semibold tracking-tight text-slate-800">{{ APP_NAME }}</h1>
-          <p class="truncate text-[11px] font-medium text-slate-400">Focus & Flow</p>
+          <h1 class="truncate text-sm font-semibold tracking-tight text-[#1C1C1A]">{{ APP_NAME }}</h1>
+          <p class="truncate text-[11px] font-medium text-[#9E9E9A]">Focus & Flow</p>
         </div>
       </div>
 
@@ -288,8 +288,8 @@ const focusButtonTone = computed(() => {
           :class="[
             sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5',
             isActive('/')
-              ? 'bg-white shadow-sm ring-1 ring-slate-200/50 text-red-600'
-              : 'text-slate-600 hover:bg-slate-50'
+              ? 'bg-primary-50 text-primary-700'
+              : 'text-[#6F6F6B] hover:bg-surface-hover'
           ]"
           :title="sidebarCollapsed ? '仪表盘' : undefined"
         >
@@ -301,8 +301,8 @@ const focusButtonTone = computed(() => {
 
         <!-- Smart Lists Section - 智能列表 -->
         <div class="mb-2">
-          <div v-if="!sidebarCollapsed" class="mb-1 px-3 text-xs font-medium text-slate-400">任务</div>
-          <div v-else class="mb-1 border-t border-slate-100 pt-1" />
+          <div v-if="!sidebarCollapsed" class="mb-1 px-3 text-xs font-medium text-[#9E9E9A]">任务</div>
+          <div v-else class="mb-1 border-t border-surface-border pt-1" />
           <RouterLink
             v-for="item in smartLists"
             :key="item.path"
@@ -311,8 +311,8 @@ const focusButtonTone = computed(() => {
             :class="[
               sidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-3 py-2',
               isActive(item.path)
-                ? 'bg-white shadow-sm ring-1 ring-slate-200/50 text-slate-900'
-                : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-primary-50 text-primary-700'
+                : 'text-[#6F6F6B] hover:bg-surface-hover'
             ]"
             :title="sidebarCollapsed ? item.label : undefined"
           >
@@ -339,21 +339,21 @@ const focusButtonTone = computed(() => {
               </svg>
               <span v-if="!sidebarCollapsed">{{ item.label }}</span>
             </div>
-            <span v-if="!sidebarCollapsed && getTaskCount(item.name)" class="text-xs text-slate-400">{{ getTaskCount(item.name) }}</span>
+            <span v-if="!sidebarCollapsed && getTaskCount(item.name)" class="text-xs text-[#9E9E9A]">{{ getTaskCount(item.name) }}</span>
           </RouterLink>
         </div>
 
         <!-- Projects Section - 清单 -->
         <div class="mb-2">
           <div v-if="!sidebarCollapsed" class="mb-1 flex items-center justify-between px-3">
-            <span class="text-xs font-medium text-slate-400">清单</span>
-            <button class="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="新增清单" @click="openCreateProject($event)">
+            <span class="text-xs font-medium text-[#9E9E9A]">清单</span>
+            <button class="rounded p-0.5 text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B]" aria-label="新增清单" @click="openCreateProject($event)">
               <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
               </svg>
             </button>
           </div>
-          <div v-else class="mb-1 border-t border-slate-100 pt-1" />
+          <div v-else class="mb-1 border-t border-surface-border pt-1" />
           <RouterLink
             v-for="project in taskStore.projects"
             :key="project.id"
@@ -363,8 +363,8 @@ const focusButtonTone = computed(() => {
             :class="[
               sidebarCollapsed ? 'justify-center px-0 py-2' : 'justify-between px-3 py-2',
               isActive(`/project/${project.id}`)
-                ? 'bg-white shadow-sm ring-1 ring-slate-200/50 text-slate-900'
-                : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-primary-50 text-primary-700'
+                : 'text-[#6F6F6B] hover:bg-surface-hover'
             ]"
             :title="sidebarCollapsed ? project.title : undefined"
             @contextmenu="onProjectContextMenu($event, project)"
@@ -373,13 +373,13 @@ const focusButtonTone = computed(() => {
               <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: project.color || '#6b7280' }" />
               <span v-if="!sidebarCollapsed">{{ project.title }}</span>
             </div>
-            <span v-if="!sidebarCollapsed" class="text-xs text-slate-400">{{ getProjectTaskCount(project.id) }}</span>
+            <span v-if="!sidebarCollapsed" class="text-xs text-[#9E9E9A]">{{ getProjectTaskCount(project.id) }}</span>
           </RouterLink>
         </div>
       </nav>
 
       <!-- Bottom toolbar: Notification, Settings, Sync -->
-      <div class="border-t border-slate-100 p-3" :class="sidebarCollapsed ? 'px-1.5' : ''">
+      <div class="border-t border-surface-border p-3" :class="sidebarCollapsed ? 'px-1.5' : ''">
         <div
           class="flex items-center rounded-lg"
           :class="sidebarCollapsed ? 'flex-col gap-2 px-0 py-2' : 'gap-1 px-2 py-1.5'"
@@ -387,8 +387,8 @@ const focusButtonTone = computed(() => {
           <NotificationCenter />
           <RouterLink
             to="/settings"
-            class="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            :class="isActive('/settings') ? 'bg-slate-100 text-slate-900' : ''"
+            class="flex items-center justify-center rounded-lg px-2 py-1.5 text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B]"
+            :class="isActive('/settings') ? 'bg-surface-hover text-[#1C1C1A]' : ''"
             :title="'设置'"
             aria-label="设置"
           >
@@ -399,8 +399,8 @@ const focusButtonTone = computed(() => {
           </RouterLink>
           <template v-if="!sidebarCollapsed">
             <button
-              class="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              :class="{ 'animate-pulse text-blue-500': syncing }"
+              class="flex items-center justify-center rounded-lg px-2 py-1.5 text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B]"
+              :class="{ 'animate-pulse text-primary-500': syncing }"
               :disabled="syncing || !settingsStore.webdav.url"
               :title="settingsStore.webdav.url ? '上传到云端' : '请先在设置中配置 WebDAV'"
               aria-label="WebDAV 上传"
@@ -411,8 +411,8 @@ const focusButtonTone = computed(() => {
               </svg>
             </button>
             <button
-              class="flex items-center justify-center rounded-lg px-2 py-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              :class="{ 'animate-pulse text-blue-500': downloading }"
+              class="flex items-center justify-center rounded-lg px-2 py-1.5 text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B]"
+              :class="{ 'animate-pulse text-primary-500': downloading }"
               :disabled="downloading || !settingsStore.webdav.url"
               :title="settingsStore.webdav.url ? '从云端拉取' : '请先在设置中配置 WebDAV'"
               aria-label="WebDAV 拉取"
@@ -422,31 +422,31 @@ const focusButtonTone = computed(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
               </svg>
             </button>
-            <span v-if="syncing || downloading" class="ml-1 text-xs text-slate-400">{{ syncing ? '上传中…' : '拉取中…' }}</span>
+            <span v-if="syncing || downloading" class="ml-1 text-xs text-[#9E9E9A]">{{ syncing ? '上传中…' : '拉取中…' }}</span>
           </template>
         </div>
       </div>
     </aside>
 
     <!-- Main Content -->
-    <div class="flex min-w-0 flex-1 flex-col bg-[#F9F9FB] pt-2 pr-2 pb-2">
+    <div class="flex min-w-0 flex-1 flex-col bg-surface-page pt-2 pr-2 pb-2">
       <!-- Custom Titlebar (drag region) -->
-      <div class="flex h-12 shrink-0 items-center justify-end rounded-tr-xl bg-[#F9F9FB]" data-tauri-drag-region>
+      <div class="flex h-12 shrink-0 items-center justify-end rounded-tr-xl bg-surface-page" data-tauri-drag-region>
         <div class="flex h-full items-center px-1">
-          <button class="flex h-7 w-10 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/60 hover:text-slate-700" title="最小化" @click="appWindow.minimize()">
+          <button class="flex h-7 w-10 items-center justify-center rounded-md text-[#9E9E9A] transition-colors hover:bg-surface-border hover:text-[#6F6F6B]" title="最小化" @click="appWindow.minimize()">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M5 12h14" /></svg>
           </button>
-          <button class="flex h-7 w-10 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/60 hover:text-slate-700" :title="isMaximized ? '还原' : '最大化'" @click="appWindow.toggleMaximize()">
+          <button class="flex h-7 w-10 items-center justify-center rounded-md text-[#9E9E9A] transition-colors hover:bg-surface-border hover:text-[#6F6F6B]" :title="isMaximized ? '还原' : '最大化'" @click="appWindow.toggleMaximize()">
             <svg v-if="isMaximized" class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M8 4h12a1 1 0 011 1v12M4 8h12a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" /></svg>
             <svg v-else class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2" /></svg>
           </button>
-          <button class="flex h-7 w-10 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-500 hover:text-white" title="关闭" @click="appWindow.close()">
+          <button class="flex h-7 w-10 items-center justify-center rounded-md text-[#9E9E9A] transition-colors hover:bg-danger-400 hover:text-white" title="关闭" @click="appWindow.close()">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M6 6l12 12M6 18L18 6" /></svg>
           </button>
         </div>
       </div>
       <!-- Router View -->
-      <main ref="mainRef" class="relative flex-1 overflow-auto rounded-xl border border-slate-200/60 bg-white shadow-sm ring-1 ring-black/[0.03]" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
+      <main ref="mainRef" class="relative flex-1 overflow-auto rounded-xl bg-white shadow-card" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
         <RouterView />
       </main>
     </div>
@@ -454,7 +454,7 @@ const focusButtonTone = computed(() => {
     <!-- Bottom Focus Button -->
     <div class="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
       <button
-        class="pointer-events-auto group relative inline-flex w-full max-w-[21rem] items-center gap-3 overflow-hidden rounded-full border border-slate-700/70 px-3 py-2.5 text-white shadow-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40"
+        class="pointer-events-auto group relative inline-flex w-full max-w-[21rem] items-center gap-3 overflow-hidden rounded-full border px-3 py-2.5 text-white shadow-md transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/40"
         :class="focusButtonTone.shell"
         @click="openFocusModal"
       >
