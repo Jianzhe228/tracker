@@ -85,6 +85,33 @@ export interface FocusSessionSegment {
   createdAt: string;
 }
 
+// ── Task lazy-load (working set + archive) ───────────────────────────
+
+export interface ArchiveCursor {
+  /** COALESCE(completed_at, updated_at) of the last row of the previous page */
+  completedAt: string;
+  id: number;
+}
+
+export interface TaskArchivePage {
+  tasks: TaskItem[];
+  nextCursor: ArchiveCursor | null;
+  exhausted: boolean;
+}
+
+export interface TaskStatusCounts {
+  todo: number;
+  inProgress: number;
+  done: number;
+  cancelled: number;
+  total: number;
+  rootTodo: number;
+  rootInProgress: number;
+  rootDone: number;
+  rootCancelled: number;
+  rootTotal: number;
+}
+
 export interface NotificationSettings {
   notifyFocusStart: boolean;
   notifyFocusEnd: boolean;

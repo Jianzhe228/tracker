@@ -742,5 +742,55 @@ Detail level: {{detailLevel}}
         .map_err(|e| format!("failed to run migration v19: {}", e))?;
     }
 
+    if version < 20 {
+        // Partial index to accelerate working-set / archive queries that filter
+        // by status and order by COALESCE(completed_at, updated_at). Partial on
+        // deleted_at IS NULL because every task query already excludes deletes.
+        conn.execute_batch(
+            "
+        CREATE INDEX IF NOT EXISTS idx_tasks_status_complete_ts
+          ON tasks(status, completed_at, updated_at)
+          WHERE deleted_at IS NULL;
+
+        PRAGMA user_version = 20;
+        ",
+        )
+        .map_err(|e| format!("failed to run migration v20: {}", e))?;
+    }
+
+    if version < 21 {
+        // Backfill completed_at for cancelled tasks so archive ordering can use
+        // a single column (no more COALESCE in WHERE/ORDER BY). After this all
+        // done/cancelled rows have a non-null completed_at, letting SQLite walk
+        // the new partial index instead of doing a full sort.
+        //
+        // task_update is also updated to set completed_at on future cancellations.
+        conn.execute_batch(
+            "
+        UPDATE tasks
+        SET completed_at = updated_at
+        WHERE status = 'cancelled'
+          AND completed_at IS NULL
+          AND deleted_at IS NULL;
+
+        -- Drop the v20 compound index; the new ones below are more selective.
+        DROP INDEX IF EXISTS idx_tasks_status_complete_ts;
+
+        -- Archive paging: ORDER BY completed_at DESC, id DESC over status IN ('done','cancelled').
+        CREATE INDEX IF NOT EXISTS idx_tasks_archive_ts
+          ON tasks(completed_at DESC, id DESC)
+          WHERE deleted_at IS NULL AND status IN ('done', 'cancelled');
+
+        -- Working-set base CTE: filter by status and recent completed_at.
+        CREATE INDEX IF NOT EXISTS idx_tasks_status_completed
+          ON tasks(status, completed_at)
+          WHERE deleted_at IS NULL;
+
+        PRAGMA user_version = 21;
+        ",
+        )
+        .map_err(|e| format!("failed to run migration v21: {}", e))?;
+    }
+
     Ok(())
 }

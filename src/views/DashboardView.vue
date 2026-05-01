@@ -16,6 +16,7 @@ import {
   type DashboardTimerState,
 } from '../utils/dashboardMetrics';
 import { toDateKey } from '../utils/date';
+import { getTaskYearRange } from '../services/commands/statistics';
 
 // Lazy-load heavy ECharts components — only create instances when needed
 const DayHourDistributionChart = defineAsyncComponent(() => import('../components/charts/DayHourDistributionChart.vue'));
@@ -104,6 +105,7 @@ function formatPomodoros(value: number): string {
 
 type LiveFocusSegment = {
   taskId: number | null;
+  projectId: number | null;
   dateKey: string;
   hour: number;
   durationSeconds: number;
@@ -130,6 +132,7 @@ const activeFocusSegments = computed<LiveFocusSegment[]>(() => {
       const startedAt = new Date(segment.startedAt);
       return {
         taskId: segment.taskId,
+        projectId: segment.projectId,
         dateKey: toDateKey(startedAt),
         hour: startedAt.getHours(),
         durationSeconds,
@@ -227,9 +230,13 @@ const displayedProjectDistribution = computed<ProjectTimeStat[]>(() => {
   }
 
   for (const segment of activeFocusSegments.value) {
-    const projectId = segment.taskId != null
-      ? (taskStore.tasks.find(task => task.id === segment.taskId)?.projectId ?? null)
-      : null;
+    // Use the projectId snapshotted on the segment (timerStore captures it at
+    // segment-open time). Falls back to taskStore lookup for older persisted
+    // segments that pre-date the snapshot field.
+    const projectId = segment.projectId
+      ?? (segment.taskId != null
+        ? (taskStore.tasks.find(task => task.id === segment.taskId)?.projectId ?? null)
+        : null);
     const key = String(projectId ?? 'null');
     const current = base.get(key) ?? {
       projectId,
@@ -366,15 +373,35 @@ function getDateYear(value: string | number | null | undefined): number | null {
   return date.getFullYear();
 }
 
+const availableYearsFromBackend = ref<number[] | null>(null);
+
+onMounted(() => {
+  // Backend returns DISTINCT years from tasks.created_at / updated_at —
+  // avoids scanning all tasks in memory now that they're lazy-loaded.
+  void getTaskYearRange()
+    .then((years) => {
+      availableYearsFromBackend.value = years;
+    })
+    .catch((err) => {
+      console.warn('[DashboardView] task_year_range failed, falling back to in-memory scan:', err);
+    });
+});
+
 const availableYears = computed<number[]>(() => {
   const years = new Set<number>([currentYear]);
 
-  for (const task of taskStore.tasks) {
-    const createdYear = getDateYear(task.createdAt);
-    if (createdYear !== null) years.add(createdYear);
-
-    const updatedYear = getDateYear(task.updatedAt);
-    if (updatedYear !== null) years.add(updatedYear);
+  if (availableYearsFromBackend.value) {
+    for (const y of availableYearsFromBackend.value) years.add(y);
+  } else {
+    // Fallback: scan loaded tasks. After lazy-load this only sees the working
+    // set, but it's still better than nothing while the backend call is in
+    // flight or has errored.
+    for (const task of taskStore.tasks) {
+      const createdYear = getDateYear(task.createdAt);
+      if (createdYear !== null) years.add(createdYear);
+      const updatedYear = getDateYear(task.updatedAt);
+      if (updatedYear !== null) years.add(updatedYear);
+    }
   }
 
   return Array.from(years).sort((a, b) => b - a);

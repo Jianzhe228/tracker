@@ -13,6 +13,12 @@ vi.hoisted(() => {
 // Mock commands BEFORE importing taskStore
 vi.mock('../../services/commands/task', () => ({
   listTasks: vi.fn(),
+  listWorkingSet: vi.fn().mockResolvedValue([]),
+  listArchive: vi.fn().mockResolvedValue({ tasks: [], nextCursor: null, exhausted: true }),
+  taskStatusCounts: vi.fn().mockResolvedValue({
+    todo: 0, inProgress: 0, done: 0, cancelled: 0, total: 0,
+    rootTodo: 0, rootInProgress: 0, rootDone: 0, rootCancelled: 0, rootTotal: 0,
+  }),
   createTask: vi.fn().mockImplementation((task) => Promise.resolve({ ...task, id: Math.floor(Math.random() * 10000) })),
   updateTask: vi.fn().mockResolvedValue(undefined),
   deleteTask: vi.fn().mockResolvedValue(undefined),

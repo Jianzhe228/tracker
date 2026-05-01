@@ -40,8 +40,8 @@ const pauseDurationText = computed(() => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 });
 
-function selectTask(taskId: number, taskTitle: string): boolean {
-  timerStore.setTask(taskId, taskTitle);
+function selectTask(taskId: number, taskTitle: string, projectId: number | null = null): boolean {
+  timerStore.setTask(taskId, taskTitle, projectId);
   return true;
 }
 
@@ -228,7 +228,7 @@ const statusLabel = computed(() => {
                       const target = e.target as HTMLSelectElement;
                       const task = activeTasks.find(t => t.id === Number(target.value));
                       if (task) {
-                        selectTask(task.id, task.title);
+                        selectTask(task.id, task.title, task.projectId);
                       } else {
                         timerStore.clearTask();
                       }
@@ -339,7 +339,7 @@ const statusLabel = computed(() => {
                 :key="task.id"
                 class="rounded-full px-3 py-1 text-xs transition"
                 :class="timerStore.currentTaskId === task.id ? 'bg-primary-100 text-primary-700 ring-1 ring-primary-300' : 'bg-surface-hover text-[#1C1C1A] hover:bg-surface-border'"
-                @click="selectTask(task.id, task.title)"
+                @click="selectTask(task.id, task.title, task.projectId)"
               >
                 {{ task.title }}
               </button>

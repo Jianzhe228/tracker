@@ -520,3 +520,35 @@ pub fn stats_weekly_task_velocity(
     }
     Ok(result)
 }
+
+/// Returns the distinct years present in tasks.created_at and tasks.updated_at,
+/// sorted descending. Used by DashboardView's year selector to avoid scanning
+/// all tasks in memory after the lazy-load refactor.
+#[tauri::command]
+pub fn task_year_range(state: State<'_, AppState>) -> Result<Vec<i64>, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT DISTINCT CAST(strftime('%Y', dt) AS INTEGER) AS y
+             FROM (
+               SELECT created_at AS dt FROM tasks WHERE deleted_at IS NULL
+               UNION
+               SELECT updated_at AS dt FROM tasks WHERE deleted_at IS NULL
+             )
+             WHERE y IS NOT NULL
+             ORDER BY y DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?;
+
+    let mut years = Vec::new();
+    for row in rows {
+        years.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(years)
+}
+

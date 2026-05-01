@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, TransitionGroup } from 'vue';
 import { useRoute } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
@@ -37,6 +37,7 @@ const dragOverTaskId = ref<number | null>(null);
 const isTaskDragging = ref(false);
 const suppressTaskClick = ref(false);
 const taskListWrap = ref<HTMLElement | null>(null);
+const taskScrollContainer = ref<HTMLElement | null>(null);
 const dragPreviewIds = ref<number[] | null>(null);
 const dragStartOrderIds = ref<number[] | null>(null);
 
@@ -190,9 +191,7 @@ const elapsedTime = computed(() => {
   return formatDuration(elapsedMinutes);
 });
 
-const completedTasks = computed(() => {
-  return taskStore.tasks.filter(t => t.parentId === null && t.status === 'done').length;
-});
+const completedTasks = computed(() => taskStore.statusCounts.rootDone);
 
 const canDragSort = computed(() => activeTaskFilter.value !== 'all');
 
@@ -205,15 +204,29 @@ function compareTimelineDateKey(a: string, b: string): number {
 
 const displayTasks = computed(() => {
   if (activeTaskFilter.value === 'all') {
-    const sorted = [...filteredTasks.value];
-    sorted.sort((a, b) => {
+    // 'all' 视图分两段：working set 部分按 timeline date key 排序（产生
+    // 今天/昨天/前天 的分组），archive 部分按后端返回顺序（已经是 completed_at
+    // DESC, id DESC）追加。两段在 timeline 排序方向上同向，拼起来还是降序。
+    //
+    // 这样设计让 loadMoreArchive 仅追加 archive 段，working set 段引用不变，
+    // Vue 不会 diff 那一段；archive 段也只是末尾追加，diff 是局部的。toggleTask
+    // 把单个 working set 任务标 done 时也只移动一行。
+    const all = filteredTasks.value;
+    const archiveSet = taskStore.archiveOnlyIds;
+    const workingPart: TaskItem[] = [];
+    const archivePart: TaskItem[] = [];
+    for (const task of all) {
+      if (archiveSet.has(task.id)) archivePart.push(task);
+      else workingPart.push(task);
+    }
+    workingPart.sort((a, b) => {
       const dateCmp = compareTimelineDateKey(getTimelineDateKey(a), getTimelineDateKey(b));
       if (dateCmp !== 0) return dateCmp;
       if (a.status !== b.status) return a.status === 'done' ? 1 : -1;
       if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
       return a.createdAt.localeCompare(b.createdAt);
     });
-    return sorted;
+    return [...workingPart, ...archivePart];
   }
 
   if (!dragPreviewIds.value || !isTaskDragging.value) return filteredTasks.value;
@@ -1364,7 +1377,7 @@ async function saveTaskDetail(): Promise<void> {
     }
 
     if (timerStore.currentTaskId === editingTaskId) {
-      timerStore.setTask(editingTaskId, normalized.title);
+      timerStore.setTask(editingTaskId, normalized.title, normalized.projectId ?? null);
     }
 
     closeDetail();
@@ -1407,8 +1420,8 @@ async function undoDeleteTask(): Promise<void> {
   }
 }
 
-function startFocusOnTask(taskId: number, taskTitle: string): void {
-  const success = timerStore.setTask(taskId, taskTitle);
+function startFocusOnTask(taskId: number, taskTitle: string, projectId: number | null = null): void {
+  const success = timerStore.setTask(taskId, taskTitle, projectId);
   if (!success) {
     showInlineNotice('计时进行中，需先结束当前计时后再切换任务');
     return;
@@ -1523,6 +1536,36 @@ onMounted(() => {
   // Initialize keyword cache for self-learning suggestions
   refreshKnownKeywords().catch(() => {});
 });
+
+// ── "All" view: lazy-load older completed/cancelled tasks on scroll ─────────
+// Working set covers everything for today/project; only "all" view needs the
+// archive. Fire when the user scrolls within 200px of the bottom. Reentry is
+// guarded by taskStore.archiveLoading.
+
+async function handleTaskListScroll(): Promise<void> {
+  if (activeTaskFilter.value !== 'all') return;
+  if (taskStore.archiveExhausted || taskStore.archiveLoading) return;
+
+  const el = taskScrollContainer.value;
+  if (!el) return;
+
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  if (distanceFromBottom > 200) return;
+
+  try {
+    await taskStore.loadMoreArchive();
+  } catch (err) {
+    console.warn('[TasksView] Failed to load archive page:', err);
+  }
+}
+
+// When the user enters "all" the first time the list may not fill the
+// viewport, so a manual scroll never fires. Trigger one initial load.
+watch(activeTaskFilter, (filter) => {
+  if (filter === 'all' && !taskStore.archiveExhausted && !taskStore.archiveLoading) {
+    void taskStore.loadMoreArchive();
+  }
+}, { immediate: true });
 </script>
 
 <template>
@@ -1657,15 +1700,20 @@ onMounted(() => {
       </div>
 
       <!-- Task List -->
-      <div class="flex-1 overflow-auto bg-surface-hover p-6">
+      <div
+        ref="taskScrollContainer"
+        class="flex-1 overflow-auto bg-surface-hover p-6"
+        @scroll="handleTaskListScroll"
+      >
         <div
           v-if="displayTasks.length > 0"
           ref="taskListWrap"
           :class="activeTaskFilter === 'all' ? 'relative pb-10' : 'relative'"
         >
-            <TransitionGroup
-              name="task-sort"
-              tag="div"
+            <component
+              :is="canDragSort ? TransitionGroup : 'div'"
+              :name="canDragSort ? 'task-sort' : undefined"
+              :tag="canDragSort ? 'div' : undefined"
               :class="activeTaskFilter === 'all' ? 'space-y-3.5' : 'space-y-2'"
             >
               <div
@@ -1820,7 +1868,7 @@ onMounted(() => {
                     <button
                       class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
                       aria-label="设为当前专注任务"
-                      @click.stop="startFocusOnTask(task.id, task.title)"
+                      @click.stop="startFocusOnTask(task.id, task.title, task.projectId)"
                     >
                       <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M8 5v14l11-7z" />
@@ -1830,7 +1878,24 @@ onMounted(() => {
                   </div>
                 </div>
               </div>
-            </TransitionGroup>
+            </component>
+
+            <!-- "All" view: archive loading status row -->
+            <div
+              v-if="activeTaskFilter === 'all'"
+              class="mt-4 flex items-center justify-center py-3 text-xs text-[#9E9E9A]"
+              aria-live="polite"
+            >
+              <span v-if="taskStore.archiveLoading" class="inline-flex items-center gap-2">
+                <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" stroke-opacity="0.25" stroke-width="2.5"/>
+                  <path d="M22 12a10 10 0 0 1-10 10" stroke-width="2.5" stroke-linecap="round"/>
+                </svg>
+                正在加载更多历史…
+              </span>
+              <span v-else-if="taskStore.archiveExhausted">已加载全部历史任务</span>
+              <span v-else>滚动到底部以加载更多</span>
+            </div>
 
           </div>
 

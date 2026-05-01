@@ -120,8 +120,8 @@ const strokeDashoffset = computed(() => {
   return circumference - ((timerStore.progress ?? 0) / 100) * circumference;
 });
 
-function selectTask(taskId: number, taskTitle: string) {
-  timerStore.setTask(taskId, taskTitle);
+function selectTask(taskId: number, taskTitle: string, projectId: number | null = null) {
+  timerStore.setTask(taskId, taskTitle, projectId);
 }
 
 function clearSelectedTask() {
@@ -500,7 +500,7 @@ onUnmounted(() => {
                   <div
                     class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer"
                     :class="timerStore.currentTaskId === task.id ? 'bg-white/10 ring-1 ring-success-400/40' : 'hover:bg-white/5'"
-                    @click="selectTask(task.id, task.title)"
+                    @click="selectTask(task.id, task.title, task.projectId)"
                   >
                     <button
                       role="checkbox"
@@ -558,7 +558,7 @@ onUnmounted(() => {
                   <div
                     class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer"
                     :class="timerStore.currentTaskId === subtask.id ? 'bg-white/10 ring-1 ring-success-400/40' : 'hover:bg-white/5'"
-                    @click="selectTask(subtask.id, subtask.title)"
+                    @click="selectTask(subtask.id, subtask.title, subtask.projectId)"
                   >
                     <button
                       role="checkbox"

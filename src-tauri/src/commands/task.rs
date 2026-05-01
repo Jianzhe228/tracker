@@ -637,6 +637,15 @@ pub fn task_update(state: State<'_, AppState>, payload: TaskUpdatePayload) -> Re
     if let Some(ref completed_at) = payload.completed_at {
         sets.push("completed_at = ?");
         params.push(Box::new(completed_at.clone()));
+    } else if payload.status.as_deref() == Some("cancelled") {
+        // Backfill completed_at on cancellation so archive ordering can use a
+        // single column (see migration v21). This does not affect completion
+        // semantics — statistics/sync queries filter by status = 'done'
+        // explicitly. Callers that already pass completed_at win the branch
+        // above, so this only fires for paths like rescheduleToToday that
+        // cancel without setting completed_at.
+        sets.push("completed_at = ?");
+        params.push(Box::new(payload.updated_at.clone()));
     }
     if let Some(ref deleted_at) = payload.deleted_at {
         sets.push("deleted_at = ?");
@@ -813,4 +822,265 @@ pub fn task_restore(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+// ── Lazy-load: working set + archive ─────────────────────────────────────────
+//
+// 启动时只加载"工作集"：未完成 + 最近 N 天已完成/已取消 + 它们的祖先链 + 后代子树。
+// 老的已完成任务通过 task_list_archive 按需分页加载。
+//
+// 排序统一使用 completed_at 单列。Migration v21 已为存量 cancelled 任务回填
+// completed_at = updated_at，task_update 也会在新的 cancellation 上自动回填。
+// 这让 ORDER BY 可以走 idx_tasks_archive_ts 而不是触发全表 sort。
+
+const TASK_SELECT_COLUMNS: &str = "id, title, status, priority, project_id, parent_id, due_at, start_at, reminder_time, completed_at, deleted_at, notes, pomodoro_count, pomodoro_duration, sort_order, recurring_rule_id, created_at, updated_at, rescheduled_to";
+
+fn map_task_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRow> {
+    Ok(TaskRow {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        status: row.get(2)?,
+        priority: row.get(3)?,
+        project_id: row.get(4)?,
+        parent_id: row.get(5)?,
+        due_at: row.get(6)?,
+        start_at: row.get(7)?,
+        reminder_time: row.get(8)?,
+        completed_at: row.get(9)?,
+        deleted_at: row.get(10)?,
+        notes: row.get(11)?,
+        pomodoro_count: row.get(12)?,
+        pomodoro_duration: row.get(13)?,
+        sort_order: row.get(14)?,
+        recurring_rule_id: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
+        rescheduled_to: row.get(18)?,
+    })
+}
+
+#[tauri::command]
+pub fn task_list_working_set(
+    state: State<'_, AppState>,
+    archive_days: Option<i64>,
+) -> Result<Vec<TaskRow>, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    let days = archive_days.unwrap_or(30).clamp(1, 365);
+    let modifier = format!("-{} days", days);
+
+    // base = active OR recently-completed; ancestors = all parents up to root;
+    // subtree = all descendants. expanded = base ∪ ancestors ∪ subtree.
+    let sql = format!(
+        "WITH RECURSIVE
+         base(id) AS (
+             SELECT id FROM tasks
+             WHERE deleted_at IS NULL
+               AND (
+                 status IN ('todo', 'in_progress')
+                 OR (status IN ('done', 'cancelled')
+                     AND completed_at >= datetime('now', 'localtime', ?1))
+               )
+         ),
+         ancestors(id) AS (
+             SELECT id FROM base
+             UNION
+             SELECT t.parent_id FROM tasks t
+               JOIN ancestors a ON t.id = a.id
+             WHERE t.parent_id IS NOT NULL AND t.deleted_at IS NULL
+         ),
+         subtree(id) AS (
+             SELECT id FROM base
+             UNION
+             SELECT t.id FROM tasks t
+               JOIN subtree s ON t.parent_id = s.id
+             WHERE t.deleted_at IS NULL
+         ),
+         expanded(id) AS (
+             SELECT id FROM ancestors
+             UNION
+             SELECT id FROM subtree
+         )
+         SELECT {cols}
+         FROM tasks
+         WHERE id IN (SELECT id FROM expanded) AND deleted_at IS NULL
+         ORDER BY sort_order ASC, created_at DESC",
+        cols = TASK_SELECT_COLUMNS
+    );
+
+    let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![modifier], map_task_row)
+        .map_err(|e| e.to_string())?;
+
+    let mut tasks = Vec::new();
+    for row in rows {
+        tasks.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(tasks)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveCursor {
+    /// completed_at of the last row of the previous page. After v21 every
+    /// done/cancelled row has a non-null completed_at.
+    pub completed_at: String,
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskArchivePage {
+    pub tasks: Vec<TaskRow>,
+    pub next_cursor: Option<ArchiveCursor>,
+    pub exhausted: bool,
+}
+
+#[tauri::command]
+pub fn task_list_archive(
+    state: State<'_, AppState>,
+    cursor: Option<ArchiveCursor>,
+    limit: Option<i64>,
+) -> Result<TaskArchivePage, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    let limit_val = limit.unwrap_or(50).clamp(1, 200);
+
+    // Compound cursor on (completed_at, id) DESC to avoid duplicates / skips
+    // when multiple rows share the same timestamp (millisecond precision).
+    // Single-column ORDER BY lets SQLite walk idx_tasks_archive_ts directly.
+    let sql = format!(
+        "SELECT {cols}
+         FROM tasks
+         WHERE deleted_at IS NULL
+           AND status IN ('done', 'cancelled')
+           AND (
+             ?1 IS NULL
+             OR completed_at < ?1
+             OR (completed_at = ?1 AND id < ?2)
+           )
+         ORDER BY completed_at DESC, id DESC
+         LIMIT ?3",
+        cols = TASK_SELECT_COLUMNS
+    );
+
+    let (cursor_ts, cursor_id): (Option<String>, i64) = match cursor {
+        Some(c) => (Some(c.completed_at), c.id),
+        None => (None, 0),
+    };
+
+    let mut stmt = db.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![cursor_ts, cursor_id, limit_val],
+            map_task_row,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut tasks: Vec<TaskRow> = Vec::new();
+    for row in rows {
+        tasks.push(row.map_err(|e| e.to_string())?);
+    }
+
+    let exhausted = (tasks.len() as i64) < limit_val;
+    let next_cursor = if exhausted {
+        None
+    } else {
+        tasks.last().map(|t| ArchiveCursor {
+            // After v21 every done/cancelled row has a non-null completed_at.
+            // Fall back to updated_at only as a defensive guard against
+            // corrupted state — should never trigger in normal operation.
+            completed_at: t
+                .completed_at
+                .clone()
+                .unwrap_or_else(|| t.updated_at.clone()),
+            id: t.id,
+        })
+    };
+
+    Ok(TaskArchivePage {
+        tasks,
+        next_cursor,
+        exhausted,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStatusCounts {
+    pub todo: i64,
+    pub in_progress: i64,
+    pub done: i64,
+    pub cancelled: i64,
+    pub total: i64,
+    // Root-level (parent_id IS NULL) breakdown — used by sidebar / "All" view
+    // counts that historically only include top-level tasks.
+    pub root_todo: i64,
+    pub root_in_progress: i64,
+    pub root_done: i64,
+    pub root_cancelled: i64,
+    pub root_total: i64,
+}
+
+#[tauri::command]
+pub fn task_status_counts(state: State<'_, AppState>) -> Result<TaskStatusCounts, String> {
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = db
+        .prepare(
+            "SELECT status,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN parent_id IS NULL THEN 1 ELSE 0 END) AS root_total
+             FROM tasks WHERE deleted_at IS NULL GROUP BY status",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut counts = TaskStatusCounts {
+        todo: 0,
+        in_progress: 0,
+        done: 0,
+        cancelled: 0,
+        total: 0,
+        root_todo: 0,
+        root_in_progress: 0,
+        root_done: 0,
+        root_cancelled: 0,
+        root_total: 0,
+    };
+
+    let rows = stmt
+        .query_map([], |row| {
+            let status: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            // SUM over CASE returns NULL when no rows match — treat as 0.
+            let root_count: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
+            Ok((status, count, root_count))
+        })
+        .map_err(|e| e.to_string())?;
+
+    for row in rows {
+        let (status, count, root_count) = row.map_err(|e| e.to_string())?;
+        match status.as_str() {
+            "todo" => {
+                counts.todo = count;
+                counts.root_todo = root_count;
+            }
+            "in_progress" => {
+                counts.in_progress = count;
+                counts.root_in_progress = root_count;
+            }
+            "done" => {
+                counts.done = count;
+                counts.root_done = root_count;
+            }
+            "cancelled" => {
+                counts.cancelled = count;
+                counts.root_cancelled = root_count;
+            }
+            _ => {}
+        }
+        counts.total += count;
+        counts.root_total += root_count;
+    }
+
+    Ok(counts)
 }

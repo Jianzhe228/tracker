@@ -5,6 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 工作方式
 
 - 多使用 subagent 并行处理独立任务，提高效率。能并行的工作不要串行执行。
+- **推送代码必须使用项目脚本**：`./push.sh`（Bash / Git Bash）或 `.\push.ps1`（PowerShell）。脚本会同时推送到 GitHub (`origin`) 和 Gitee，并对单边失败容错。**禁止**直接调用 `git push origin` / `git push gitee`，除非用户明确要求只推一边。
+  - 仅推已提交内容：`./push.sh`
+  - 提交并推送：`./push.sh -m "commit message"`（内部执行 `git add -A && git commit -m`，再推送）
+  - 指定分支：`./push.sh -b <branch>`
+  - 同时推 tag：`./push.sh --tags`
+  - PowerShell 同名参数：`-m` / `-b` / `-Tags`
 
 ## Project Overview
 
@@ -100,6 +106,23 @@ npx vitest run src/services/ai/client.test.ts  # 运行单个测试文件
 cargo check   # 类型检查（比 build 快）
 cargo clippy  # linter
 ```
+
+### 推送代码（GitHub + Gitee 双端）
+
+```bash
+# Bash / Git Bash
+./push.sh                       # 推送当前分支已提交内容
+./push.sh -m "fix: xxx"         # add -A + commit + push
+./push.sh -b dev                # 推送指定分支
+./push.sh --tags                # 同时推送 tags
+
+# PowerShell
+.\push.ps1
+.\push.ps1 -m "fix: xxx"
+.\push.ps1 -b dev -Tags
+```
+
+脚本同时推 `origin`(GitHub) 与 `gitee`，单边失败不影响另一边，最后统一展示结果；退出码 0 = 双成功，1 = 任一失败。GitHub 走全局 git 代理（`http.https://github.com.proxy=http://127.0.0.1:7897`），Gitee 直连。
 
 ### Linux 开发依赖
 

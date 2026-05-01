@@ -13,6 +13,12 @@ let nextId = 100;
 
 vi.mock('../services/commands/task', () => ({
   listTasks: vi.fn(() => Promise.resolve([])),
+  listWorkingSet: vi.fn(() => Promise.resolve([])),
+  listArchive: vi.fn(() => Promise.resolve({ tasks: [], nextCursor: null, exhausted: true })),
+  taskStatusCounts: vi.fn(() => Promise.resolve({
+    todo: 0, inProgress: 0, done: 0, cancelled: 0, total: 0,
+    rootTodo: 0, rootInProgress: 0, rootDone: 0, rootCancelled: 0, rootTotal: 0,
+  })),
   createTask: vi.fn(async (task: Record<string, unknown>) => ({
     ...task,
     id: nextId++,

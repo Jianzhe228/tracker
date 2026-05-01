@@ -36,3 +36,6 @@ CLAUDE.md
 !AGENTS.md
 diagrams
 .ace-tool/
+
+# Tauri updater signing keys (private key only — pubkey lives in tauri.conf.json)
+*.key

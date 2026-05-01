@@ -2,14 +2,18 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type {
+  ArchiveCursor,
   HistoryTemplateNode,
   ProjectItem,
   RecurringRuleItem,
   TaskItem,
   TaskStatus,
+  TaskStatusCounts,
 } from '../types/domain';
 import {
-  listTasks as listTasksCmd,
+  listWorkingSet as listWorkingSetCmd,
+  listArchive as listArchiveCmd,
+  taskStatusCounts as taskStatusCountsCmd,
   createTask as createTaskCmd,
   updateTask as updateTaskCmd,
   deleteTask as deleteTaskCmd,
@@ -58,7 +62,33 @@ export const useTaskStore = defineStore('task', () => {
   const pendingUndoDeletion = ref<PendingUndoDeletion | null>(null);
   const togglingTaskIds = ref<Set<number>>(new Set());
 
+  // Lazy-load: archive pagination state.
+  // tasks.value = working set (active + recent done/cancelled + tree closure)
+  //             + archive pages loaded on-demand via loadMoreArchive().
+  // archiveOnlyIds tracks which tasks came purely from archive so reloadAfterRestore
+  // can preserve them across a working-set refresh.
+  const archiveCursor = ref<ArchiveCursor | null>(null);
+  const archiveExhausted = ref(false);
+  const archiveLoading = ref(false);
+  const archiveOnlyIds = ref<Set<number>>(new Set());
+
+  // Cached COUNT(*) GROUP BY status — used by sidebar / completedTasks badges
+  // so the visible count doesn't grow as the user scrolls into the archive.
+  const statusCounts = ref<TaskStatusCounts>({
+    todo: 0,
+    inProgress: 0,
+    done: 0,
+    cancelled: 0,
+    total: 0,
+    rootTodo: 0,
+    rootInProgress: 0,
+    rootDone: 0,
+    rootCancelled: 0,
+    rootTotal: 0,
+  });
+
   let undoClearTimer: ReturnType<typeof setTimeout> | null = null;
+  let statusCountsTimer: ReturnType<typeof setTimeout> | null = null;
 
   const todoCount = computed(() => tasks.value.filter((task) => task.parentId === null && task.status === 'todo').length);
 
@@ -134,6 +164,9 @@ export const useTaskStore = defineStore('task', () => {
 
   function loadFromData(rows: TaskItem[]): void {
     tasks.value = rows;
+    archiveCursor.value = null;
+    archiveExhausted.value = false;
+    archiveOnlyIds.value = new Set();
   }
 
   function loadProjectsFromData(rows: ProjectItem[]): void {
@@ -161,9 +194,88 @@ export const useTaskStore = defineStore('task', () => {
     return recurringRules.value.get(id) ?? null;
   }
 
-  async function syncTasksFromBackend(): Promise<void> {
+  // ── Lazy-load helpers ─────────────────────────────────────────────────
+
+  /** Replace tasks.value with the working set (active + recent + tree closure). */
+  async function loadWorkingSet(archiveDays = 30): Promise<void> {
     if (!isTauri) return;
-    tasks.value = await listTasksCmd();
+    const rows = await listWorkingSetCmd(archiveDays);
+    tasks.value = rows;
+    archiveCursor.value = null;
+    archiveExhausted.value = false;
+    archiveOnlyIds.value = new Set();
+  }
+
+  /** Append the next page of archived (older done/cancelled) tasks. */
+  async function loadMoreArchive(): Promise<void> {
+    if (!isTauri) return;
+    if (archiveLoading.value || archiveExhausted.value) return;
+    archiveLoading.value = true;
+    try {
+      const page = await listArchiveCmd(archiveCursor.value, 50);
+      // De-dup against working set entries that may overlap (a task completed
+      // 29 days ago is in working set; the archive query won't return it but
+      // be defensive).
+      const existingIds = new Set(tasks.value.map((t) => t.id));
+      const newOnes = page.tasks.filter((t) => !existingIds.has(t.id));
+      for (const t of newOnes) archiveOnlyIds.value.add(t.id);
+      tasks.value = [...tasks.value, ...newOnes];
+      archiveCursor.value = page.nextCursor;
+      archiveExhausted.value = page.exhausted;
+    } finally {
+      archiveLoading.value = false;
+    }
+  }
+
+  /**
+   * Reload the working set after a restore (or any path that may have changed
+   * row identity). Preserves archive-only tasks already loaded; resets the
+   * archive cursor so subsequent loadMoreArchive calls start fresh.
+   */
+  async function reloadAfterRestore(): Promise<void> {
+    if (!isTauri) return;
+    const archiveSnapshot = tasks.value.filter((t) => archiveOnlyIds.value.has(t.id));
+    const rows = await listWorkingSetCmd();
+    const wsIds = new Set(rows.map((t) => t.id));
+    // A task may have moved out of archive into working set (e.g. restored an
+    // archived todo). Drop those from the snapshot.
+    const remainingArchive = archiveSnapshot.filter((t) => !wsIds.has(t.id));
+    archiveOnlyIds.value = new Set(remainingArchive.map((t) => t.id));
+    tasks.value = [...rows, ...remainingArchive];
+    // Cursor is invalidated — caller should resume from the top of archive
+    // if they want more history.
+    archiveCursor.value = null;
+    archiveExhausted.value = false;
+    reloadStatusCounts();
+  }
+
+  async function reloadStatusCountsImmediate(): Promise<void> {
+    if (!isTauri) return;
+    if (statusCountsTimer) {
+      clearTimeout(statusCountsTimer);
+      statusCountsTimer = null;
+    }
+    try {
+      statusCounts.value = await taskStatusCountsCmd();
+    } catch (err) {
+      console.warn('[taskStore] Failed to reload status counts:', err);
+    }
+  }
+
+  /** Debounced 200ms — coalesces bursts of CRUD into a single COUNT query. */
+  function reloadStatusCounts(): void {
+    if (!isTauri) return;
+    if (statusCountsTimer) clearTimeout(statusCountsTimer);
+    statusCountsTimer = setTimeout(() => {
+      statusCountsTimer = null;
+      void reloadStatusCountsImmediate();
+    }, 200);
+  }
+
+  async function syncTasksFromBackend(): Promise<void> {
+    // Kept for backward compat (test mocks reference listTasks). Now backed by
+    // the lazy-load loop: refresh working set + status counts, retain archive.
+    await reloadAfterRestore();
   }
 
   async function createTaskRecord(title: string, options: TaskCreateOptions = {}): Promise<TaskItem> {
@@ -171,6 +283,7 @@ export const useTaskStore = defineStore('task', () => {
     if (isTauri) {
       const created = await createTaskCmd(task);
       tasks.value = [created, ...tasks.value];
+      reloadStatusCounts();
       if (!options.skipPredictionRecord) {
         // Record task creation for AI prediction analysis (fire-and-forget)
         void recordTaskCreation({
@@ -342,6 +455,7 @@ export const useTaskStore = defineStore('task', () => {
         updatedAt: now,
         completedAt: target.completedAt,
       });
+      reloadStatusCounts();
       cleanup();
       return {
         ok: true,
@@ -430,6 +544,9 @@ export const useTaskStore = defineStore('task', () => {
           )
         );
       }
+      if (payload.status !== undefined) {
+        reloadStatusCounts();
+      }
     } catch (error) {
       console.error(error);
       tasks.value = snapshot;
@@ -452,6 +569,11 @@ export const useTaskStore = defineStore('task', () => {
     }
 
     tasks.value = tasks.value.filter((task) => !idsToRemove.has(task.id));
+    // Remove archive tracking for any of those ids that were archive-only.
+    for (const removedId of idsToRemove) {
+      archiveOnlyIds.value.delete(removedId);
+    }
+    reloadStatusCounts();
 
     setPendingUndoDeletion({
       taskId: id,
@@ -847,6 +969,10 @@ export const useTaskStore = defineStore('task', () => {
     recurringRules,
     pendingUndoDeletion,
     todoCount,
+    statusCounts,
+    archiveExhausted,
+    archiveLoading,
+    archiveOnlyIds,
     loadFromData,
     loadProjectsFromData,
     loadRecurringRulesFromData,
@@ -854,6 +980,11 @@ export const useTaskStore = defineStore('task', () => {
     removeRecurringRule,
     getRecurringRule,
     syncTasksFromBackend,
+    loadWorkingSet,
+    loadMoreArchive,
+    reloadStatusCounts,
+    reloadStatusCountsImmediate,
+    reloadAfterRestore,
     addTask,
     consumeHistoryAutofill,
     toggleTask,

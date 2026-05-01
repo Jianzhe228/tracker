@@ -41,3 +41,8 @@ export function getWeeklyFocus(): Promise<WeeklyFocusStat[]> {
 export function getWeeklyTaskVelocity(): Promise<WeeklyTaskVelocity[]> {
   return invokeCommand<WeeklyTaskVelocity[]>('stats_weekly_task_velocity', {});
 }
+
+/** Returns distinct years (DESC) appearing in tasks.created_at / updated_at. */
+export function getTaskYearRange(): Promise<number[]> {
+  return invokeCommand<number[]>('task_year_range');
+}

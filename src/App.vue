@@ -10,7 +10,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useUiStore } from './stores/uiStore';
 import { useAiStore } from './stores/aiStore';
 import { usePredictionStore } from './stores/predictionStore';
-import { appInit, taskListInit } from './services/commands/init';
+import { appInit } from './services/commands/init';
 import { useFocusModal } from './composables/useFocusModal';
 import FocusModal from './components/FocusModal.vue';
 import AppFeedbackLayer from './components/AppFeedbackLayer.vue';
@@ -52,8 +52,11 @@ onMounted(async () => {
   const data = await initPromise;
   console.timeEnd('[init] appInit');
   settingsStore.loadFromData(data.settings);
-  const taskData = await taskListInit(0, 500);
-  taskStore.loadFromData(taskData.tasks);
+  // Lazy-load: pull working set + status counts in parallel.
+  await Promise.all([
+    taskStore.loadWorkingSet(),
+    taskStore.reloadStatusCountsImmediate(),
+  ]);
   taskStore.loadProjectsFromData(data.projects);
   taskStore.loadRecurringRulesFromData(data.recurringRules);
   taskStore.startDeadlineWatcher();
@@ -90,14 +93,19 @@ const noMainBottomPaddingRoutes = new Set(['today', 'all', 'project']);
 const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(String(route.name || '')));
 
 
-// Get task counts
+// Get task counts. "today" still scans in-memory (fast, working set already
+// covers all undone tasks). "all" pulls from cached statusCounts so the badge
+// stays correct without forcing the archive to fully load.
 const getTaskCount = (filter: string) => {
-  const tasks = taskStore.tasks.filter(task => task.parentId === null);
   switch (filter) {
     case 'today':
-      return tasks.filter(t => t.status === 'todo' && t.dueAt === getDateKeyFromToday(0)).length;
-    case 'all':
-      return tasks.filter(t => t.status !== 'cancelled').length;
+      return taskStore.tasks.filter(
+        (task) => task.parentId === null && task.status === 'todo' && task.dueAt === getDateKeyFromToday(0),
+      ).length;
+    case 'all': {
+      const c = taskStore.statusCounts;
+      return c.rootTodo + c.rootInProgress + c.rootDone;
+    }
     default:
       return 0;
   }

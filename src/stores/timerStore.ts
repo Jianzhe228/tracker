@@ -15,6 +15,9 @@ export type TimerKind = 'countdown' | 'countup';
 export type TimerSegment = {
   taskId: number | null;
   taskTitle: string | null;
+  /** Project snapshot at segment-open time. Avoids broken lookups when the
+   *  task is later archived and lazy-loaded out of taskStore.tasks. */
+  projectId: number | null;
   startedAt: number; // Date.now()
   durationMs: number; // accumulated duration in ms (finalized when segment is closed)
   closed: boolean;
@@ -45,6 +48,7 @@ type PersistedTimerState = {
   segments: Array<{
     taskId: number | null;
     taskTitle: string | null;
+    projectId: number | null;
     startedAt: number;
     durationMs: number;
     closed: boolean;
@@ -128,6 +132,7 @@ export const useTimerStore = defineStore('timer', () => {
   const accumulatedPauseMs = ref(0);
   const currentTaskId = ref<number | null>(null);
   const currentTaskTitle = ref<string | null>(null);
+  const currentProjectId = ref<number | null>(null);
   const awaitingRecovery = ref(false);
   const recoveryTargetStatus = ref<TimerStatus | null>(null);
   const lastFocusSessionSavedAt = ref<number>(0);
@@ -232,6 +237,7 @@ export const useTimerStore = defineStore('timer', () => {
     segments.value.push({
       taskId,
       taskTitle,
+      projectId: currentProjectId.value,
       startedAt: Date.now(),
       durationMs: 0,
       closed: false,
@@ -292,6 +298,7 @@ export const useTimerStore = defineStore('timer', () => {
       segments: segments.value.map(s => ({
         taskId: s.taskId,
         taskTitle: s.taskTitle,
+        projectId: s.projectId,
         startedAt: s.startedAt,
         durationMs: s.durationMs,
         closed: s.closed,
@@ -715,7 +722,7 @@ export const useTimerStore = defineStore('timer', () => {
     skipBreak();
   }
 
-  function setTask(taskId: number, taskTitle: string): boolean {
+  function setTask(taskId: number, taskTitle: string, projectId: number | null = null): boolean {
     const isTimerActive = !idle.value && mode.value === 'focus';
     const switchingTask = currentTaskId.value !== null && currentTaskId.value !== taskId;
 
@@ -725,6 +732,7 @@ export const useTimerStore = defineStore('timer', () => {
       countClosedSegmentsInToday();
       currentTaskId.value = taskId;
       currentTaskTitle.value = taskTitle;
+      currentProjectId.value = projectId;
       openNewSegment(taskId, taskTitle);
       segmentSwitchCount.value++;
       saveState(true);
@@ -737,6 +745,7 @@ export const useTimerStore = defineStore('timer', () => {
       countClosedSegmentsInToday();
       currentTaskId.value = taskId;
       currentTaskTitle.value = taskTitle;
+      currentProjectId.value = projectId;
       openNewSegment(taskId, taskTitle);
       segmentSwitchCount.value++;
       saveState(true);
@@ -745,6 +754,7 @@ export const useTimerStore = defineStore('timer', () => {
 
     currentTaskId.value = taskId;
     currentTaskTitle.value = taskTitle;
+    currentProjectId.value = projectId;
     saveState(true);
     return true;
   }
@@ -758,6 +768,7 @@ export const useTimerStore = defineStore('timer', () => {
       countClosedSegmentsInToday();
       currentTaskId.value = null;
       currentTaskTitle.value = null;
+      currentProjectId.value = null;
       openNewSegment(null, null);
       segmentSwitchCount.value++;
       saveState(true);
@@ -766,6 +777,7 @@ export const useTimerStore = defineStore('timer', () => {
 
     currentTaskId.value = null;
     currentTaskTitle.value = null;
+    currentProjectId.value = null;
     saveState(true);
     return true;
   }
@@ -799,6 +811,7 @@ export const useTimerStore = defineStore('timer', () => {
     segments.value = (restored.segments || []).map(s => ({
       taskId: s.taskId,
       taskTitle: s.taskTitle,
+      projectId: s.projectId ?? null,
       startedAt: s.startedAt,
       durationMs: s.durationMs,
       closed: s.closed,

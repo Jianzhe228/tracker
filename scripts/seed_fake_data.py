@@ -6,13 +6,22 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, date
 
-DB_PATH = sys.argv[1] if len(sys.argv) > 1 else "/home/zjz/.local/share/com.zjz.tracker/tracker.db"
+DB_PATH = sys.argv[1] if len(sys.argv) > 1 else None
+
+# Auto-detect DB path on different platforms
+if not DB_PATH:
+    import platform
+    if platform.system() == "Windows":
+        import os
+        DB_PATH = os.path.join(os.environ.get("APPDATA", ""), "com.zjz.tracker", "tracker.db")
+    else:
+        DB_PATH = "/home/zjz/.local/share/com.zjz.tracker/tracker.db"
 
 random.seed(42)
 
-# ── Time range: past ~120 days (covers 12+ weeks for weekly charts) ──
-TODAY = date(2026, 3, 23)
-START_DATE = TODAY - timedelta(days=120)
+# ── Time range: past 30 days (近一个月) ──
+TODAY = date(2026, 4, 30)
+START_DATE = TODAY - timedelta(days=30)
 
 # ── Projects ──
 PROJECTS = [
@@ -151,12 +160,12 @@ def main():
     # ── 2. Insert tasks ──
     all_tasks = []  # (id, project_name, title, created_date, status, completed_at)
 
-    # Spread task creation over 120 days
+    # Spread task creation over 30 days
     for project_name, titles in TASK_TITLES.items():
         pid = project_ids[project_name]
         for i, title in enumerate(titles):
-            # Spread creation dates
-            days_ago = random.randint(5, 118)
+            # Spread creation dates within 30-day window
+            days_ago = random.randint(1, 28)
             created = TODAY - timedelta(days=days_ago)
             created_dt = random_time_in_range(created, 8, 20)
 
@@ -249,7 +258,7 @@ def main():
 
         # Gradually increase productivity over time (learning curve)
         days_in = (current - START_DATE).days
-        productivity_boost = 1.0 + (days_in / 120) * 0.3  # up to 30% more sessions
+        productivity_boost = 1.0 + (days_in / 30) * 0.2  # up to 20% more sessions
         n_sessions = int(n_sessions * productivity_boost)
 
         used_hours = set()
