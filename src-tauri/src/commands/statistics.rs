@@ -215,27 +215,43 @@ pub fn stats_heatmap(state: State<'_, AppState>, year: i64) -> Result<Vec<Heatma
 pub fn stats_day_hour_distribution(
     state: State<'_, AppState>,
     days: Option<i64>,
+    end_date: Option<String>,
 ) -> Result<Vec<DayHourDistributionEntry>, String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
 
-    let day_count = days.unwrap_or(14).clamp(7, 31);
+    // Allow up to 90 days so the frontend can pan through history with dataZoom
+    // instead of refetching on every scroll.
+    let day_count = days.unwrap_or(14).clamp(7, 90);
     let start_modifier = format!("-{} days", day_count - 1);
+
+    // end_date acts as the upper bound (anchor). If absent, anchor to today.
+    let end_anchor = end_date.unwrap_or_else(|| "now".to_string());
+    let end_is_now = end_anchor == "now";
 
     // Fetch raw session rows (local start time, duration, pomodoro). Splitting
     // across hour boundaries is done in Rust so a session like 15:30 + 2h
     // correctly contributes 30min to 15:00, 60min to 16:00, 30min to 17:00.
-    let mut stmt = db
-        .prepare(
-            "SELECT datetime(start_time, 'localtime') AS start_local,
+    let sql = if end_is_now {
+        "SELECT datetime(start_time, 'localtime') AS start_local,
                     COALESCE(duration_seconds, 0) AS duration,
                     COALESCE(pomodoro_count, 0.0) AS pomodoro
              FROM focus_sessions
              WHERE type = 'focus'
                AND status IN ('completed', 'stopped')
                AND date(start_time, 'localtime') >= date('now', 'localtime', ?1)
-               AND date(start_time, 'localtime') <= date('now', 'localtime')",
-        )
-        .map_err(|e| e.to_string())?;
+               AND date(start_time, 'localtime') <= date('now', 'localtime')"
+    } else {
+        "SELECT datetime(start_time, 'localtime') AS start_local,
+                    COALESCE(duration_seconds, 0) AS duration,
+                    COALESCE(pomodoro_count, 0.0) AS pomodoro
+             FROM focus_sessions
+             WHERE type = 'focus'
+               AND status IN ('completed', 'stopped')
+               AND date(start_time, 'localtime') >= date(?2, ?1)
+               AND date(start_time, 'localtime') <= date(?2)"
+    };
+
+    let mut stmt = db.prepare(sql).map_err(|e| e.to_string())?;
 
     struct Raw {
         start_local: String,
@@ -243,8 +259,8 @@ pub fn stats_day_hour_distribution(
         pomodoro: f64,
     }
 
-    let raw_rows = stmt
-        .query_map(rusqlite::params![start_modifier], |row| {
+    let raw_rows = if end_is_now {
+        stmt.query_map(rusqlite::params![start_modifier], |row| {
             Ok(Raw {
                 start_local: row.get(0)?,
                 duration: row.get(1)?,
@@ -253,7 +269,19 @@ pub fn stats_day_hour_distribution(
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+    } else {
+        stmt.query_map(rusqlite::params![start_modifier, end_anchor], |row| {
+            Ok(Raw {
+                start_local: row.get(0)?,
+                duration: row.get(1)?,
+                pomodoro: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?
+    };
 
     // Accumulator: (date_key, hour) -> (total_seconds, session_count, pomodoro_count)
     let mut buckets: HashMap<(String, i64), (i64, i64, f64)> = HashMap::new();
@@ -455,7 +483,7 @@ pub fn stats_weekly_focus(state: State<'_, AppState>) -> Result<Vec<WeeklyFocusS
               COALESCE(SUM(pomodoro_count), 0.0) as pomodoro_count
        FROM focus_sessions
        WHERE type = 'focus' AND status IN ('completed', 'stopped')
-         AND date(start_time, 'localtime') >= date('now', 'localtime', '-83 days')
+         AND date(start_time, 'localtime') >= date('now', 'localtime', '-370 days')
        GROUP BY week_start
        ORDER BY week_start",
     )
@@ -499,7 +527,7 @@ pub fn stats_weekly_task_velocity(
        FROM tasks
        WHERE status = 'done' AND completed_at IS NOT NULL AND deleted_at IS NULL
          AND parent_id IS NULL
-         AND date(completed_at, 'localtime') >= date('now', 'localtime', '-83 days')
+         AND date(completed_at, 'localtime') >= date('now', 'localtime', '-370 days')
        GROUP BY week_start
        ORDER BY week_start",
     )

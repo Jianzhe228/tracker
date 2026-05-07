@@ -6,20 +6,25 @@ import { toDateKey, formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   data: DayHourDistributionEntry[];
+  /** Total days fetched (Y axis range). Defaults to 14, capped at 90. */
   days?: number;
+  /** Visible rows in the default zoom window. */
+  visibleRows?: number;
 }>();
 
 const hourCategories = Array.from({ length: 24 }, (_value, hour) => hour);
 
-const visibleDays = computed(() => {
+const totalDays = computed(() => {
   const value = props.days ?? 14;
-  return Math.min(31, Math.max(7, value));
+  return Math.min(90, Math.max(7, value));
 });
+
+const visibleRows = computed(() => Math.min(props.visibleRows ?? 14, totalDays.value));
 
 const dayKeys = computed(() => {
   const today = new Date();
   const keys: string[] = [];
-  for (let i = 0; i < visibleDays.value; i++) {
+  for (let i = 0; i < totalDays.value; i++) {
     const day = new Date(today);
     day.setDate(today.getDate() - i);
     keys.push(toDateKey(day));
@@ -90,8 +95,16 @@ const heatmapData = computed(() => {
   return rows;
 });
 
+// Height stays bounded — the user pans through extra days via dataZoom rather
+// than scrolling a giant canvas.
 const chartHeight = computed(() => {
-  return `${Math.max(280, visibleDays.value * 22 + 100)}px`;
+  return `${Math.max(280, visibleRows.value * 22 + 100)}px`;
+});
+
+// Default zoom window: most recent N days at top (Y axis is inverted).
+const yZoomEndPercent = computed(() => {
+  if (totalDays.value <= 1) return 100;
+  return Math.min(100, ((visibleRows.value - 1) / (totalDays.value - 1)) * 100);
 });
 
 const option = computed(() => ({
@@ -111,7 +124,7 @@ const option = computed(() => ({
   },
   grid: {
     top: 36,
-    right: 12,
+    right: 28,
     bottom: 20,
     left: 72,
   },
@@ -142,6 +155,45 @@ const option = computed(() => ({
       lineStyle: { color: '#e2e8f0' },
     },
   },
+  dataZoom: [
+    {
+      // Vertical wheel scroll pans through dates (Y axis is dates).
+      type: 'inside',
+      yAxisIndex: 0,
+      start: 0,
+      end: yZoomEndPercent.value,
+      zoomOnMouseWheel: false,
+      moveOnMouseWheel: true,
+      moveOnMouseMove: false,
+      filterMode: 'none',
+      orient: 'vertical',
+    },
+    {
+      type: 'slider',
+      yAxisIndex: 0,
+      start: 0,
+      end: yZoomEndPercent.value,
+      width: 10,
+      right: 6,
+      top: 36,
+      bottom: 20,
+      borderColor: 'transparent',
+      backgroundColor: '#F5F6FA',
+      fillerColor: 'rgba(92,105,216,0.18)',
+      handleSize: 12,
+      handleStyle: {
+        color: '#FFFFFF',
+        borderColor: '#5C69D8',
+        borderWidth: 1.5,
+      },
+      moveHandleSize: 4,
+      moveHandleStyle: { color: '#5C69D8', opacity: 0.6 },
+      showDetail: false,
+      showDataShadow: false,
+      brushSelect: false,
+      orient: 'vertical',
+    },
+  ],
   visualMap: {
     show: false,
     dimension: 6,

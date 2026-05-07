@@ -29,10 +29,15 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 type DateRangePreset = '7d' | '14d' | '30d';
 
+// Wide windows so charts can pan/zoom client-side without re-fetching.
+const TREND_WINDOW_DAYS = 60;
+const DAY_HOUR_WINDOW_DAYS = 60;
+
 export const useStatisticsStore = defineStore('statistics', () => {
   const loading = ref(false);
   const dateRange = ref<DateRangePreset>('14d');
-  const dayHourWindowDays = ref(14);
+  const dayHourWindowDays = ref(DAY_HOUR_WINDOW_DAYS);
+  const trendWindowDays = ref(TREND_WINDOW_DAYS);
 
   const focusStats = ref<FocusSessionStats | null>(null);
   const overview = ref<StatsOverview | null>(null);
@@ -53,6 +58,18 @@ export const useStatisticsStore = defineStore('statistics', () => {
     const start = new Date();
     const days = dateRange.value === '7d' ? 6 : dateRange.value === '14d' ? 13 : 29;
     start.setDate(start.getDate() - days);
+    return {
+      start: toDateKey(start),
+      end: toDateKey(end),
+    };
+  });
+
+  // Wide range used by line/bar trend charts that drive their own panning via
+  // ECharts dataZoom — fetched once, scrolled client-side.
+  const trendDateRange = computed(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - (trendWindowDays.value - 1));
     return {
       start: toDateKey(start),
       end: toDateKey(end),
@@ -80,7 +97,9 @@ export const useStatisticsStore = defineStore('statistics', () => {
 
   async function fetchFocusStats(): Promise<void> {
     if (!isTauri) return;
-    const { start, end } = effectiveDateRange.value;
+    // Use the wide trend range so FocusTrendChart and HourlyDistributionChart
+    // get a full window for client-side zoom/pan via ECharts dataZoom.
+    const { start, end } = trendDateRange.value;
     const requestId = ++latestFocusStatsRequestId;
     try {
       const stats = await getFocusSessionStats(start, end);
@@ -125,11 +144,14 @@ export const useStatisticsStore = defineStore('statistics', () => {
     }
   }
 
-  async function fetchDayHourDistribution(days = dayHourWindowDays.value): Promise<void> {
+  async function fetchDayHourDistribution(
+    days = dayHourWindowDays.value,
+    endDate?: string,
+  ): Promise<void> {
     if (!isTauri) return;
     const requestId = ++latestDayHourRequestId;
     try {
-      const distribution = await getStatsDayHourDistribution(days);
+      const distribution = await getStatsDayHourDistribution(days, endDate);
       if (requestId !== latestDayHourRequestId) return;
       dayHourDistribution.value = distribution;
     } catch (err) {
@@ -141,9 +163,10 @@ export const useStatisticsStore = defineStore('statistics', () => {
 
   async function fetchEstVsActual(): Promise<void> {
     if (!isTauri) return;
-    const { start, end } = effectiveDateRange.value;
+    // Estimation accuracy chart focuses on today's completions only.
+    const today = toDateKey(new Date());
     try {
-      estVsActual.value = await getTaskEstimationComparison({ fromDate: start, toDate: end });
+      estVsActual.value = await getTaskEstimationComparison({ fromDate: today, toDate: today });
     } catch (err) {
       console.warn('[statistics] failed to fetch est vs actual', err);
     }
@@ -203,6 +226,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
     loading,
     dateRange,
     dayHourWindowDays,
+    trendWindowDays,
     overview,
     focusStats,
     projectDistribution,
@@ -214,6 +238,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
     weeklyFocus,
     weeklyTaskVelocity,
     effectiveDateRange,
+    trendDateRange,
     totalFocusMinutes,
     totalPomodoros,
     fetchOverview,

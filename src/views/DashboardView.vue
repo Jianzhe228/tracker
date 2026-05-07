@@ -875,13 +875,16 @@ onMounted(() => {
       <!-- ── Focus Trend + Hourly Distribution (Phase 1) ─────── -->
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <h3 class="font-semibold text-[#1C1C1A]">近期专注趋势</h3>
+          <div class="mb-1 flex items-baseline justify-between">
+            <h3 class="font-semibold text-[#1C1C1A]">近期专注趋势</h3>
+            <span class="text-[11px] text-[#9E9E9A]">滚轮缩放 · 拖拽平移</span>
+          </div>
           <FocusTrendChart
             v-if="renderPhase >= 1 && displayedDailyTotals.length"
             :data="displayedDailyTotals"
             compact
           />
-          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
+          <div v-else class="flex h-[210px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 1 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
@@ -893,7 +896,7 @@ onMounted(() => {
             :data="displayedHourlyDistribution"
             compact
           />
-          <div v-else class="flex h-[180px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
+          <div v-else class="flex h-[210px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 1 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
@@ -902,8 +905,9 @@ onMounted(() => {
       <!-- ── Day-Hour Distribution (Phase 2, full width) ────────── -->
       <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
         <div class="mb-3 flex items-center justify-between gap-3">
-          <div>
+          <div class="flex items-baseline gap-3">
             <h3 class="font-semibold text-[#1C1C1A]">每日时段消耗分布</h3>
+            <span class="text-[11px] text-[#9E9E9A]">滚轮上下查看历史日期</span>
           </div>
         </div>
         <DayHourDistributionChart
@@ -930,13 +934,16 @@ onMounted(() => {
         </div>
 
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <h3 class="font-semibold text-[#1C1C1A]">估算准确度</h3>
+          <div class="mb-1 flex items-baseline justify-between">
+            <h3 class="font-semibold text-[#1C1C1A]">估算准确度</h3>
+            <span class="text-xs text-[#9E9E9A]">今日完成</span>
+          </div>
           <EstVsActualChart
             v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
             :data="statisticsStore.estVsActual"
           />
           <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
-            {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
+            {{ renderPhase < 3 ? '加载中…' : '今日暂无已完成任务' }}
           </div>
         </div>
       </div>
@@ -944,23 +951,29 @@ onMounted(() => {
       <!-- ── Weekly Focus Trend + Task Velocity (Phase 3) ────────── -->
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
+          <div class="mb-1 flex items-baseline justify-between">
+            <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
+            <span class="text-[11px] text-[#9E9E9A]">滚轮缩放 · 拖拽平移</span>
+          </div>
           <WeeklyFocusTrendChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
             :data="statisticsStore.weeklyFocus"
           />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
+          <div v-else class="flex h-[220px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>
 
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <h3 class="font-semibold text-[#1C1C1A]">任务完成速度</h3>
+          <div class="mb-1 flex items-baseline justify-between">
+            <h3 class="font-semibold text-[#1C1C1A]">任务完成速度</h3>
+            <span class="text-[11px] text-[#9E9E9A]">滚轮缩放 · 拖拽平移</span>
+          </div>
           <TaskVelocityChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
             :data="statisticsStore.weeklyTaskVelocity"
           />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
+          <div v-else class="flex h-[220px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
           </div>
         </div>

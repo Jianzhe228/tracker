@@ -22,8 +22,11 @@ export function getStatsHeatmap(year: number): Promise<HeatmapEntry[]> {
   return invokeCommand<HeatmapEntry[]>('stats_heatmap', { year });
 }
 
-export function getStatsDayHourDistribution(days = 14): Promise<DayHourDistributionEntry[]> {
-  return invokeCommand<DayHourDistributionEntry[]>('stats_day_hour_distribution', { days });
+export function getStatsDayHourDistribution(
+  days = 14,
+  endDate?: string,
+): Promise<DayHourDistributionEntry[]> {
+  return invokeCommand<DayHourDistributionEntry[]>('stats_day_hour_distribution', { days, endDate });
 }
 
 export function getTaskEstimationComparison(options?: {
