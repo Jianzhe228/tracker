@@ -877,7 +877,6 @@ onMounted(() => {
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <div class="mb-1 flex items-baseline justify-between">
             <h3 class="font-semibold text-[#1C1C1A]">近期专注趋势</h3>
-            <span class="text-[11px] text-[#9E9E9A]">滚轮缩放 · 拖拽平移</span>
           </div>
           <FocusTrendChart
             v-if="renderPhase >= 1 && displayedDailyTotals.length"
@@ -953,7 +952,6 @@ onMounted(() => {
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <div class="mb-1 flex items-baseline justify-between">
             <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
-            <span class="text-[11px] text-[#9E9E9A]">滚轮缩放 · 拖拽平移</span>
           </div>
           <WeeklyFocusTrendChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
@@ -967,7 +965,6 @@ onMounted(() => {
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <div class="mb-1 flex items-baseline justify-between">
             <h3 class="font-semibold text-[#1C1C1A]">任务完成速度</h3>
-            <span class="text-[11px] text-[#9E9E9A]">滚轮缩放 · 拖拽平移</span>
           </div>
           <TaskVelocityChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
