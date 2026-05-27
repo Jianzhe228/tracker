@@ -63,6 +63,10 @@ pub fn start_scheduler(app: AppHandle) {
                 tokio::time::Duration::from_secs(ANALYSIS_INTERVAL_HOURS * 3600),
             );
 
+            // Delay all work until app_init has finished — avoids db lock contention
+            // that would block the frontend during startup.
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+
             // Initial cleanup
             if let Some(state) = app.try_state::<AppState>() {
                 let db = state.db();
@@ -70,9 +74,6 @@ pub fn start_scheduler(app: AppHandle) {
                     let _ = cleanup_old_predictions(&conn);
                 }
             }
-
-            // Wait a bit after startup before first check
-            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
 
             while running_clone.load(Ordering::SeqCst) {
                 interval.tick().await;

@@ -891,7 +891,7 @@ pub fn task_list_working_set(
          subtree(id) AS (
              SELECT id FROM base
              UNION
-             SELECT t.id FROM tasks t
+             SELECT t.id FROM tasks AS t INDEXED BY idx_tasks_parent_id
                JOIN subtree s ON t.parent_id = s.id
              WHERE t.deleted_at IS NULL
          ),

@@ -114,6 +114,13 @@ pub fn run() {
         ))
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                // In debug builds, let the window close so the Tauri CLI can
+                // clean up the Vite dev server. In release builds, respect the
+                // user's closeToTray setting.
+                if cfg!(debug_assertions) {
+                    return;
+                }
+
                 if read_close_to_tray(window.app_handle()) {
                     api.prevent_close();
                     let _ = window.hide();
@@ -222,9 +229,12 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("failed to build tauri app")
-        .run(|_app_handle, event| {
+        .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
-                if code.is_none() {
+                // Debug builds: always exit so the Tauri CLI cleans up the Vite
+                // dev server. Release builds: stay alive only when closeToTray
+                // is enabled.
+                if code.is_none() && !cfg!(debug_assertions) && read_close_to_tray(app_handle) {
                     api.prevent_exit();
                 }
             }
