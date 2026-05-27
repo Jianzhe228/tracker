@@ -80,6 +80,13 @@ function hasSubtasks(taskId: number): boolean {
   return taskStore.tasks.some(t => t.parentId === taskId);
 }
 
+// 获取直接子任务的完成统计
+function getSubtaskCounts(taskId: number): { done: number; total: number } {
+  const subs = taskStore.tasks.filter(t => t.parentId === taskId);
+  const done = subs.filter(t => t.status === 'done' || t.status === 'cancelled').length;
+  return { done, total: subs.length };
+}
+
 // 检查父任务的所有直接子任务是否都已完成
 function areAllSubtasksDone(parentId: number): boolean {
   const subtasks = taskStore.tasks.filter(t => t.parentId === parentId);
@@ -175,6 +182,15 @@ async function toggleTask(e: Event, taskId: number): Promise<void> {
   e.stopPropagation();
   const result = await taskStore.toggleTask(taskId);
 
+  if (!result.ok) {
+    if (result.reason === 'has_incomplete_subtasks') {
+      uiStore.notify('该任务还有未完成的子任务，请先完成子任务');
+    } else if (result.reason === 'sync_failed') {
+      uiStore.notify('更新任务状态失败，请重试');
+    }
+    return;
+  }
+
   // 如果子任务全部完成，提示用户是否要完成父任务
   const task = taskStore.tasks.find(t => t.id === taskId);
   if (task?.status === 'done' && task.parentId != null && areAllSubtasksDone(task.parentId)) {
@@ -191,7 +207,7 @@ async function toggleTask(e: Event, taskId: number): Promise<void> {
   }
 
   // 如果任务完成且是当前计时器关联的任务，清空计时器任务状态
-  if (result.ok && result.taskId === timerStore.currentTaskId) {
+  if (result.taskId === timerStore.currentTaskId) {
     if (task?.status === 'done') {
       timerStore.clearTask();
     }
@@ -576,6 +592,12 @@ onUnmounted(() => {
                     </button>
                     <span class="min-w-0 flex-1 truncate text-sm" :class="subtask.status === 'done' ? 'text-white/35 line-through' : 'text-white/90'">
                       {{ subtask.title }}
+                    </span>
+                    <span
+                      v-if="hasSubtasks(subtask.id)"
+                      class="shrink-0 rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60"
+                    >
+                      {{ getSubtaskCounts(subtask.id).done }}/{{ getSubtaskCounts(subtask.id).total }}
                     </span>
                   </div>
                 </li>

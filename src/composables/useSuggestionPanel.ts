@@ -362,8 +362,7 @@ export function useSuggestionPanel() {
       parentId,
       projectId,
       dueAt,
-      forceHistoryAutofill: node.children.length === 0,
-      skipHistoryAutofill: node.children.length > 0,
+      skipHistoryAutofill: true,
     });
 
     if (!node.children.length) return;

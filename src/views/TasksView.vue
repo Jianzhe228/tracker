@@ -723,19 +723,15 @@ async function submitTask(): Promise<void> {
     const createdTask = await taskStore.addTask(taskTitle, {
       projectId,
       dueAt,
+      skipHistoryAutofill: true,
     });
 
     title.value = '';
     newTaskDate.value = '';
     showNewTaskCalendar.value = false;
 
-    const historyAutofilled = taskStore.consumeHistoryAutofill(createdTask.id);
-
-    // Run suggestion pipeline via composable only when no history template applied
     selectedTaskId.value = createdTask.id;
-    if (!historyAutofilled) {
-      requestSuggestions(createdTask.id, createdTask.title, projectId);
-    }
+    requestSuggestions(createdTask.id, createdTask.title, projectId);
   } catch (error) {
     console.error(error);
     showInlineNotice('创建任务失败，请重试');
