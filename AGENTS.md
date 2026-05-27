@@ -262,6 +262,20 @@ Scope: `task`, `project`, `ai`, `sync`, `ui`, `db`, etc.
   - Commands used for verification
 - **Verification**: Run `npm run build` before opening PR
 
+## Release & Tagging Guidelines
+
+When the user asks to tag, publish, or cut a release:
+- **Always update the app version before creating the tag or GitHub Release.**
+- Keep the release version synchronized across:
+  - `package.json` (`version`)
+  - `src-tauri/tauri.conf.json` (`version`)
+  - `src-tauri/Cargo.toml` (`[package].version`)
+  - Any lockfile that exists and records the package version
+- The git tag must match the app version, using `vX.Y.Z` unless the user explicitly requests another tag format.
+- Do not create a tag that points at a commit where these version files still contain the previous release version.
+- GitHub Releases should be published immediately by default. Do **not** create draft releases unless the user explicitly asks for a draft.
+- When using `gh release create`, omit `--draft`; prefer a normal published release and mark it latest when appropriate.
+
 ## Configuration & Secrets
 
 ### Never Commit
