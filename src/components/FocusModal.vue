@@ -39,6 +39,20 @@ const todayDoneParentTasks = computed(() => {
   );
 });
 
+// 今日有子任务完成但父任务尚未完成的父任务
+const todayInProgressParentTasks = computed(() => {
+  const today = getTodayKey();
+  return taskStore.tasks.filter(t => {
+    if (t.status !== 'todo' || t.parentId !== null) return false;
+    const subtasks = taskStore.tasks.filter(s => s.parentId === t.id);
+    return subtasks.some(s =>
+      s.status === 'done' &&
+      s.completedAt !== null &&
+      s.completedAt.slice(0, 10) === today
+    );
+  });
+});
+
 // 获取某个父任务今日完成的子任务统计
 function getTodaySubtaskStats(parentId: number): { done: number; total: number; doneTitles: string[] } {
   const today = getTodayKey();
@@ -533,6 +547,12 @@ onUnmounted(() => {
                       </svg>
                     </button>
                     <span class="min-w-0 flex-1 truncate text-sm text-white/90">{{ task.title }}</span>
+                    <span
+                      v-if="hasSubtasks(task.id)"
+                      class="shrink-0 rounded border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60"
+                    >
+                      {{ getSubtaskCounts(task.id).done }}/{{ getSubtaskCounts(task.id).total }}
+                    </span>
                     <button
                       v-if="hasSubtasks(task.id)"
                       class="flex h-5 w-5 items-center justify-center rounded text-white/30 hover:text-white/70"
@@ -614,10 +634,11 @@ onUnmounted(() => {
               <span class="h-3 w-0.5 rounded-full bg-primary-400/80" aria-hidden="true" />
               今日进展
             </div>
-            <ul v-if="todayDoneParentTasks.length > 0" class="mt-3 space-y-1.5">
+            <ul v-if="todayDoneParentTasks.length > 0 || todayInProgressParentTasks.length > 0" class="mt-3 space-y-1.5">
+              <!-- 已完成 -->
               <li
                 v-for="task in todayDoneParentTasks"
-                :key="task.id"
+                :key="'done-' + task.id"
               >
                 <div
                   class="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors"
@@ -646,9 +667,46 @@ onUnmounted(() => {
                     <div class="mt-1 text-[11px] text-white/45">
                       <span>任务已完成</span>
                       <template v-if="hasSubtasks(task.id)">
-                        <span class="mx-1 text-white/25">·</span>
+                        <span class="mx-1 text-white/25">&middot;</span>
                         <span>今日完成 {{ getTodaySubtaskStats(task.id).done }}/{{ getTodaySubtaskStats(task.id).total }} 个子任务</span>
                       </template>
+                    </div>
+                    <div
+                      v-if="getTodaySubtaskStats(task.id).doneTitles.length > 0"
+                      class="mt-0.5 truncate text-[11px] text-white/30"
+                    >
+                      已完成：{{ getTodaySubtaskStats(task.id).doneTitles.join('、') }}
+                    </div>
+                  </div>
+                </div>
+              </li>
+              <!-- 进行中（部分子任务完成） -->
+              <li
+                v-for="task in todayInProgressParentTasks"
+                :key="'progress-' + task.id"
+              >
+                <div
+                  class="group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors cursor-pointer hover:bg-white/5"
+                  @click="enterSubtasks(task.id)"
+                >
+                  <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-primary-400" aria-hidden="true">
+                    <span class="h-1.5 w-1.5 rounded-full bg-primary-400" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate text-sm text-white/90">{{ task.title }}</span>
+                      <svg
+                        class="h-3 w-3 shrink-0 text-white/25 transition-colors group-hover:text-white/60"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                    <div class="mt-1 text-[11px] text-white/45">
+                      今日完成 {{ getTodaySubtaskStats(task.id).done }}/{{ getTodaySubtaskStats(task.id).total }} 个子任务
                     </div>
                     <div
                       v-if="getTodaySubtaskStats(task.id).doneTitles.length > 0"
