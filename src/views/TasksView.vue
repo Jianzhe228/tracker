@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, TransitionGroup } from 'vue';
-import { useRoute } from 'vue-router';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, TransitionGroup } from 'vue';
+import { onBeforeRouteLeave, useRoute } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -26,6 +26,7 @@ const focusModal = useFocusModal();
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 const title = ref('');
+const newTaskInput = ref<HTMLInputElement | null>(null);
 const newTaskDate = ref('');
 const showNewTaskCalendar = ref(false);
 const newTaskCalYear = ref(new Date().getFullYear());
@@ -38,6 +39,10 @@ const isTaskDragging = ref(false);
 const suppressTaskClick = ref(false);
 const taskListWrap = ref<HTMLElement | null>(null);
 const taskScrollContainer = ref<HTMLElement | null>(null);
+const taskSearchInput = ref<HTMLInputElement | null>(null);
+const searchQuery = ref('');
+const searchLoading = ref(false);
+const searchLoadError = ref(false);
 const dragPreviewIds = ref<number[] | null>(null);
 const dragStartOrderIds = ref<number[] | null>(null);
 
@@ -123,6 +128,60 @@ const filteredTasks = computed(() => {
   }
 });
 
+const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+const searchActive = computed(() => normalizedSearchQuery.value.length > 0);
+const searchTokens = computed(() => normalizedSearchQuery.value.split(/\s+/).filter(Boolean));
+
+function getSearchStatusLabel(status: TaskStatus): string {
+  switch (status) {
+    case 'done': return '已完成';
+    case 'cancelled': return '已取消';
+    case 'in_progress': return '进行中';
+    default: return '待办';
+  }
+}
+
+function getTaskSearchText(task: TaskItem): string {
+  return [
+    task.title,
+    task.notes || '',
+    getProjectName(task.projectId || 0),
+    getSearchStatusLabel(task.status),
+    task.dueAt || '',
+    task.startAt || '',
+  ].join(' ').toLowerCase();
+}
+
+function getTaskSearchScore(task: TaskItem, query: string): number {
+  const title = task.title.toLowerCase();
+  const notes = (task.notes || '').toLowerCase();
+  let score = 0;
+  if (title === query) score += 80;
+  if (title.startsWith(query)) score += 40;
+  if (title.includes(query)) score += 24;
+  if (notes.includes(query)) score += 8;
+  if (task.status === 'todo' || task.status === 'in_progress') score += 4;
+  if (task.parentId == null) score += 2;
+  return score;
+}
+
+const visibleTasks = computed(() => {
+  if (!searchActive.value) return filteredTasks.value;
+
+  const tokens = searchTokens.value;
+  const query = normalizedSearchQuery.value;
+  return taskStore.tasks
+    .filter((task) => {
+      const text = getTaskSearchText(task);
+      return tokens.every((token) => text.includes(token));
+    })
+    .sort((a, b) => {
+      const scoreDiff = getTaskSearchScore(b, query) - getTaskSearchScore(a, query);
+      if (scoreDiff !== 0) return scoreDiff;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
+});
+
 const NO_DATE_GROUP_KEY = '__no_date__';
 
 function toDateKeyFromTimestamp(value: string): string {
@@ -193,7 +252,7 @@ const elapsedTime = computed(() => {
 
 const completedTasks = computed(() => taskStore.statusCounts.rootDone);
 
-const canDragSort = computed(() => activeTaskFilter.value !== 'all');
+const canDragSort = computed(() => !searchActive.value && activeTaskFilter.value !== 'all');
 
 function compareTimelineDateKey(a: string, b: string): number {
   if (a === b) return 0;
@@ -203,6 +262,10 @@ function compareTimelineDateKey(a: string, b: string): number {
 }
 
 const displayTasks = computed(() => {
+  if (searchActive.value) {
+    return visibleTasks.value;
+  }
+
   if (activeTaskFilter.value === 'all') {
     // 'all' 视图分两段：working set 部分按 timeline date key 排序（产生
     // 今天/昨天/前天 的分组），archive 部分按后端返回顺序（已经是 completed_at
@@ -211,7 +274,7 @@ const displayTasks = computed(() => {
     // 这样设计让 loadMoreArchive 仅追加 archive 段，working set 段引用不变，
     // Vue 不会 diff 那一段；archive 段也只是末尾追加，diff 是局部的。toggleTask
     // 把单个 working set 任务标 done 时也只移动一行。
-    const all = filteredTasks.value;
+    const all = visibleTasks.value;
     const archiveSet = taskStore.archiveOnlyIds;
     const workingPart: TaskItem[] = [];
     const archivePart: TaskItem[] = [];
@@ -229,17 +292,17 @@ const displayTasks = computed(() => {
     return [...workingPart, ...archivePart];
   }
 
-  if (!dragPreviewIds.value || !isTaskDragging.value) return filteredTasks.value;
-  const visibleTaskMap = new Map(filteredTasks.value.map((task) => [task.id, task]));
+  if (!dragPreviewIds.value || !isTaskDragging.value) return visibleTasks.value;
+  const visibleTaskMap = new Map(visibleTasks.value.map((task) => [task.id, task]));
   const ordered = dragPreviewIds.value
     .map((id) => visibleTaskMap.get(id))
     .filter((task): task is TaskItem => task != null);
-  return ordered.length === filteredTasks.value.length ? ordered : filteredTasks.value;
+  return ordered.length === visibleTasks.value.length ? ordered : visibleTasks.value;
 });
 
 const timelineGroupCounts = computed(() => {
   const map = new Map<string, number>();
-  if (activeTaskFilter.value !== 'all') return map;
+  if (searchActive.value || activeTaskFilter.value !== 'all') return map;
   for (const task of displayTasks.value) {
     const dateKey = getTimelineDateKey(task);
     map.set(dateKey, (map.get(dateKey) || 0) + 1);
@@ -266,11 +329,13 @@ function toggleGroupCollapse(dateKey: string): void {
 }
 
 function isTaskInCollapsedGroup(task: TaskItem): boolean {
+  if (searchActive.value) return false;
   if (activeTaskFilter.value !== 'all') return false;
   return isGroupCollapsed(getTimelineDateKey(task));
 }
 
 function shouldRenderTimelineHeader(taskIndex: number): boolean {
+  if (searchActive.value) return false;
   if (activeTaskFilter.value !== 'all') return false;
   if (taskIndex === 0) return true;
   const current = displayTasks.value[taskIndex];
@@ -405,6 +470,52 @@ function resolveInlineConfirm(confirmed: boolean): void {
   if (!state) return;
   inlineConfirmState.value = null;
   state.resolve(confirmed);
+}
+
+let searchLoadPromise: Promise<void> | null = null;
+let searchCorpusLoaded = false;
+
+async function ensureSearchCorpusLoaded(): Promise<void> {
+  if (!isTauri || searchCorpusLoaded) return;
+  if (searchLoadPromise) return searchLoadPromise;
+
+  searchLoading.value = true;
+  searchLoadError.value = false;
+  searchLoadPromise = taskStore.loadAllForSearch()
+    .then(() => {
+      searchCorpusLoaded = true;
+    })
+    .catch((error) => {
+      console.error('[TasksView] Failed to load search corpus:', error);
+      searchLoadError.value = true;
+      showInlineNotice('加载搜索数据失败，请重试');
+    })
+    .finally(() => {
+      searchLoading.value = false;
+      searchLoadPromise = null;
+    });
+
+  return searchLoadPromise;
+}
+
+function focusNewTaskInput(): void {
+  void nextTick(() => {
+    newTaskInput.value?.focus();
+  });
+}
+
+function focusTaskSearchInput(): void {
+  void ensureSearchCorpusLoaded();
+  void nextTick(() => {
+    taskSearchInput.value?.focus();
+    taskSearchInput.value?.select();
+  });
+}
+
+function clearSearch(): void {
+  searchQuery.value = '';
+  searchLoadError.value = false;
+  focusTaskSearchInput();
 }
 
 type TaskDraft = {
@@ -706,6 +817,14 @@ watch(activeTaskFilter, () => {
   suppressTaskClick.value = false;
 });
 
+watch(normalizedSearchQuery, (query) => {
+  if (query) {
+    void ensureSearchCorpusLoaded();
+  }
+});
+
+onBeforeRouteLeave(async () => confirmDiscardDetailChanges());
+
 async function submitTask(): Promise<void> {
   const taskTitle = title.value.trim();
   if (!validateTaskTitle(taskTitle)) return;
@@ -738,15 +857,32 @@ async function submitTask(): Promise<void> {
   }
 }
 
-function selectTask(taskId: number): void {
+function closeDetailPanel(): void {
+  closeDatePicker();
+  selectedTaskId.value = null;
+}
+
+async function confirmDiscardDetailChanges(): Promise<boolean> {
+  if (!hasUnsavedChanges.value) return true;
+  const confirmed = await requestInlineConfirm('当前任务详情有未保存修改，确定放弃这些修改吗？');
+  if (!confirmed) return false;
+  if (selectedTask.value) {
+    taskDraft.value = buildTaskDraft(selectedTask.value);
+  }
+  return true;
+}
+
+async function selectTask(taskId: number): Promise<void> {
   if (isTaskDragging.value || suppressTaskClick.value) return;
+  if (selectedTaskId.value === taskId) return;
+  if (!(await confirmDiscardDetailChanges())) return;
   closeDatePicker();
   selectedTaskId.value = taskId;
 }
 
-function closeDetail(): void {
-  closeDatePicker();
-  selectedTaskId.value = null;
+async function closeDetail(): Promise<void> {
+  if (!(await confirmDiscardDetailChanges())) return;
+  closeDetailPanel();
 }
 
 function areIdOrdersEqual(a: number[], b: number[]): boolean {
@@ -1280,8 +1416,27 @@ function handleGlobalPointerDown(event: MouseEvent | TouchEvent): void {
 
 function handleGlobalKeyDown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return;
+  event.preventDefault();
+
+  if (inlineConfirmState.value) {
+    resolveInlineConfirm(false);
+    return;
+  }
+
+  if (searchActive.value && document.activeElement === taskSearchInput.value) {
+    searchQuery.value = '';
+    return;
+  }
+
   showNewTaskCalendar.value = false;
-  closeDatePicker();
+  if (activeDatePicker.value) {
+    closeDatePicker();
+    return;
+  }
+
+  if (selectedTask.value) {
+    void closeDetail();
+  }
 }
 
 function changePomodoro(delta: number): void {
@@ -1376,7 +1531,7 @@ async function saveTaskDetail(): Promise<void> {
       timerStore.setTask(editingTaskId, normalized.title, normalized.projectId ?? null);
     }
 
-    closeDetail();
+    closeDetailPanel();
   } catch (error) {
     console.error(error);
     showInlineNotice('保存任务失败，请重试');
@@ -1498,6 +1653,14 @@ function startResize(event: MouseEvent): void {
   window.addEventListener('mouseup', stopResize);
 }
 
+function handleFocusNewTaskRequest(): void {
+  focusNewTaskInput();
+}
+
+function handleFocusSearchRequest(): void {
+  focusTaskSearchInput();
+}
+
 onUnmounted(() => {
   clearAllPanels();
   if (undoTickTimer) {
@@ -1515,6 +1678,8 @@ onUnmounted(() => {
   document.removeEventListener('mousedown', handleGlobalPointerDown, true);
   document.removeEventListener('touchstart', handleGlobalPointerDown, true);
   document.removeEventListener('keydown', handleGlobalKeyDown);
+  window.removeEventListener('tracker:focus-new-task', handleFocusNewTaskRequest);
+  window.removeEventListener('tracker:focus-task-search', handleFocusSearchRequest);
   cleanupPointerDragListeners();
   resetDragState();
   stopResize();
@@ -1528,6 +1693,8 @@ onMounted(() => {
   document.addEventListener('mousedown', handleGlobalPointerDown, true);
   document.addEventListener('touchstart', handleGlobalPointerDown, true);
   document.addEventListener('keydown', handleGlobalKeyDown);
+  window.addEventListener('tracker:focus-new-task', handleFocusNewTaskRequest);
+  window.addEventListener('tracker:focus-task-search', handleFocusSearchRequest);
 
   // Initialize keyword cache for self-learning suggestions
   refreshKnownKeywords().catch(() => {});
@@ -1539,6 +1706,7 @@ onMounted(() => {
 // guarded by taskStore.archiveLoading.
 
 async function handleTaskListScroll(): Promise<void> {
+  if (searchActive.value) return;
   if (activeTaskFilter.value !== 'all') return;
   if (taskStore.archiveExhausted || taskStore.archiveLoading) return;
 
@@ -1602,6 +1770,7 @@ watch(activeTaskFilter, (filter) => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           <input
+            ref="newTaskInput"
             v-model="title"
             type="text"
             aria-label="新增任务"
@@ -1692,6 +1861,55 @@ watch(activeTaskFilter, (filter) => {
           >
             提交
           </button>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="border-b border-surface-border bg-white px-6 py-3">
+        <div class="flex items-center gap-3">
+          <div class="relative min-w-0 flex-1">
+            <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.1-4.4a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z" />
+            </svg>
+            <input
+              ref="taskSearchInput"
+              v-model="searchQuery"
+              type="search"
+              aria-label="搜索任务"
+              placeholder="搜索任务、备注、清单"
+              class="h-9 w-full rounded-lg border border-surface-border bg-white pl-9 pr-10 text-sm text-[#1C1C1A] placeholder:text-[#9E9E9A] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              @focus="ensureSearchCorpusLoaded"
+            >
+            <button
+              v-if="searchQuery"
+              type="button"
+              class="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+              aria-label="清除搜索"
+              @click="clearSearch"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex min-w-[7rem] items-center justify-end text-xs text-[#9E9E9A]" aria-live="polite">
+            <span v-if="searchLoading" class="inline-flex items-center gap-1.5">
+              <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke-opacity="0.25" stroke-width="2.5"/>
+                <path d="M22 12a10 10 0 0 1-10 10" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+              加载中
+            </span>
+            <button
+              v-else-if="searchLoadError"
+              type="button"
+              class="rounded px-2 py-1 text-danger-500 hover:bg-danger-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-500/40"
+              @click="ensureSearchCorpusLoaded"
+            >
+              重试
+            </button>
+            <span v-else-if="searchActive">{{ displayTasks.length }} 条结果</span>
+          </div>
         </div>
       </div>
 
@@ -1878,7 +2096,7 @@ watch(activeTaskFilter, (filter) => {
 
             <!-- "All" view: archive loading status row -->
             <div
-              v-if="activeTaskFilter === 'all'"
+              v-if="!searchActive && activeTaskFilter === 'all'"
               class="mt-4 flex items-center justify-center py-3 text-xs text-[#9E9E9A]"
               aria-live="polite"
             >
@@ -1902,8 +2120,8 @@ watch(activeTaskFilter, (filter) => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <p class="mt-4 text-[#6F6F6B]">暂无任务</p>
-            <p class="mt-1 text-sm text-[#9E9E9A]">点击上方输入框添加新任务</p>
+            <p class="mt-4 text-[#6F6F6B]">{{ searchActive ? '没有匹配结果' : '暂无任务' }}</p>
+            <p class="mt-1 text-sm text-[#9E9E9A]">{{ searchActive ? '换一个关键词试试' : '点击上方输入框添加新任务' }}</p>
           </div>
       </div>
     </div>
