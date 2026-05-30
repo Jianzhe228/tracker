@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AiJob } from '../../services/ai/types';
-import { partitionPendingJobs } from '../aiPendingJobs';
+import { partitionPendingJobs, shouldShowPendingJob } from '../aiPendingJobs';
 
 function makeJob(id: number, taskId: number | undefined, skillId = 1): AiJob {
   return {
@@ -38,5 +38,26 @@ describe('partitionPendingJobs', () => {
 
     expect(result.visibleJobs.map((job) => job.id)).toEqual([50, 49, 48]);
     expect(result.supersededJobs).toHaveLength(0);
+  });
+});
+
+describe('shouldShowPendingJob', () => {
+  it('hides jobs explicitly scoped to the sidebar', () => {
+    const job = makeJob(60, 1001, 1);
+    job.inputContext.suppressNotificationCenter = true;
+
+    expect(shouldShowPendingJob(job, 'custom_skill')).toBe(false);
+  });
+
+  it('hides task_decompose jobs from the global notification center', () => {
+    const job = makeJob(61, 1001, 1);
+
+    expect(shouldShowPendingJob(job, 'task_decompose')).toBe(false);
+  });
+
+  it('keeps other pending action jobs visible', () => {
+    const job = makeJob(62, 1001, 2);
+
+    expect(shouldShowPendingJob(job, 'custom_skill')).toBe(true);
   });
 });

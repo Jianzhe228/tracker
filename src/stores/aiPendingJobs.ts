@@ -10,6 +10,13 @@ function buildPendingJobKey(job: AiJob): string {
   return taskId == null ? `job:${job.id}` : `${job.skillId}:${taskId}`;
 }
 
+export function shouldShowPendingJob(job: AiJob, skillKey?: string): boolean {
+  if (job.inputContext.suppressNotificationCenter === true) return false;
+  if (job.inputContext.notificationScope === 'sidebar') return false;
+  if (skillKey === 'task_decompose') return false;
+  return true;
+}
+
 export function partitionPendingJobs(jobs: AiJob[]): PendingJobPartition {
   const seenKeys = new Set<string>();
   const visibleJobs: AiJob[] = [];

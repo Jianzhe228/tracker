@@ -8,7 +8,7 @@ import { executeAction } from '../services/ai/actionExecutor';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { feedbackRecord } from '../services/commands/learning';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
-import { partitionPendingJobs, rejectPendingActions } from './aiPendingJobs';
+import { partitionPendingJobs, rejectPendingActions, shouldShowPendingJob } from './aiPendingJobs';
 import { useUiStore } from './uiStore';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
@@ -33,8 +33,13 @@ export const useAiStore = defineStore('ai', () => {
   async function loadPendingJobs(): Promise<void> {
     if (!isTauri) return;
     try {
+      if (skills.value.length === 0) {
+        await loadSkills();
+      }
       const jobs = await listPendingActionJobs();
-      const { visibleJobs, supersededJobs } = partitionPendingJobs(jobs);
+      const skillKeyById = new Map(skills.value.map((skill) => [skill.id, skill.key]));
+      const notificationJobs = jobs.filter((job) => shouldShowPendingJob(job, skillKeyById.get(job.skillId)));
+      const { visibleJobs, supersededJobs } = partitionPendingJobs(notificationJobs);
       pendingJobs.value = visibleJobs;
 
       for (const job of supersededJobs) {
@@ -71,7 +76,13 @@ export const useAiStore = defineStore('ai', () => {
     processingCount.value = 1;
     const job = await enqueue(skillKey, context);
     processingCount.value = getProcessingCount();
-    if (job && job.status === 'completed' && job.actions && job.actions.length > 0) {
+    if (
+      job &&
+      job.status === 'completed' &&
+      job.actions &&
+      job.actions.length > 0 &&
+      shouldShowPendingJob(job, skillKey)
+    ) {
       pendingJobs.value = [job, ...pendingJobs.value.filter((j) => j.id !== job.id)];
     }
   }

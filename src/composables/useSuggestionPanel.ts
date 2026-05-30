@@ -15,6 +15,7 @@ import { feedbackRecord } from '../services/commands/learning';
 import { updateAiJob } from '../services/commands/ai';
 import { isSemanticDuplicateTitle, normalizeSubtaskTitle } from '../services/ai/subtaskDedup';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
+import { useAiStore } from '../stores/aiStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import {
@@ -186,6 +187,8 @@ export function useSuggestionPanel() {
               taskId,
               taskTitle,
               projectName: project?.title ?? '',
+              suppressNotificationCenter: true,
+              notificationScope: 'sidebar',
               userPatterns: aiContext.userPatterns,
               learnedItems: aiContext.learnedItems,
               rejectedItems: aiContext.rejectedItems,
@@ -214,10 +217,10 @@ export function useSuggestionPanel() {
                 ) {
                   const title = String(action.params.title);
                   const normalized = normalizeSubtaskTitle(title);
-                  
+
                   // Skip if normalized title already exists (covers exact and near-exact matches)
                   if (normalized && existingByNormalized.has(normalized)) continue;
-                  
+
                   // Skip if semantically duplicate (more lenient check)
                   const isDup = [...existingByNormalized.values()].some(
                     (existing) => isSemanticDuplicateTitle(existing, title)
@@ -234,9 +237,14 @@ export function useSuggestionPanel() {
                 }
                 action.status = 'executed';
               }
-              updateAiJob(job.id, { actions: job.actions }).catch((e) => {
+              try {
+                await updateAiJob(job.id, { actions: job.actions });
+                useAiStore().loadPendingJobs().catch((e) => {
+                  console.warn('[suggestion-panel] failed to refresh pending AI jobs', e);
+                });
+              } catch (e) {
                 console.warn('[suggestion-panel] failed to persist AI job status', e);
-              });
+              }
             }
           } catch (e) {
             console.error('[suggestion-panel] AI job failed', e);

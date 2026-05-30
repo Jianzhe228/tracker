@@ -66,6 +66,7 @@ vi.mock('../services/suggestion/keywordCache', () => ({
 import { useSuggestionPanel } from '../composables/useSuggestionPanel';
 import { runHarness, buildAiContextFromAnalysis } from '../services/suggestion/suggestionHarness';
 import { enqueue } from '../services/ai/queue';
+import { updateAiJob } from '../services/commands/ai';
 import { suggestionRunCreate, suggestionCandidateInsert } from '../services/commands/suggestionTrace';
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -383,6 +384,15 @@ describe('useSuggestionPanel', () => {
         'AI建议2',
       ]);
       expect(panel!.loading).toBe(false);
+      expect(enqueue).toHaveBeenCalledWith('task_decompose', expect.objectContaining({
+        suppressNotificationCenter: true,
+        notificationScope: 'sidebar',
+      }));
+      expect(updateAiJob).toHaveBeenCalledWith(1, {
+        actions: expect.arrayContaining([
+          expect.objectContaining({ status: 'executed' }),
+        ]),
+      });
     });
 
     it('deduplicates AI suggestions against local suggestions', async () => {
