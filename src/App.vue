@@ -1,6 +1,6 @@
 <script setup lang="ts">
 console.time('[app] script setup → mounted');
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import { APP_NAME } from './utils/constants';
@@ -89,6 +89,7 @@ const smartLists = [
 
 const isActive = (path: string) => route.path === path;
 const isSmartListActive = () => route.path.startsWith('/tasks/');
+const isTaskRoute = () => ['today', 'all', 'project'].includes(String(route.name || ''));
 const noMainBottomPaddingRoutes = new Set(['today', 'all', 'project']);
 const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(String(route.name || '')));
 
@@ -259,6 +260,70 @@ const focusButtonTone = computed(() => {
     pulse: 'bg-primary-200',
     arrow: 'bg-white/10 ring-1 ring-white/15',
   };
+});
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.closest('input, textarea, select, button, a, [contenteditable="true"]') != null;
+}
+
+async function dispatchTaskShortcut(eventName: 'tracker:focus-new-task' | 'tracker:focus-task-search'): Promise<void> {
+  if (eventName === 'tracker:focus-task-search') {
+    if (route.name !== 'all') {
+      await router.push('/tasks/all');
+    }
+  } else if (!isTaskRoute() || route.name === 'all') {
+    await router.push('/tasks/today');
+  }
+  await nextTick();
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent(eventName));
+  }, 0);
+}
+
+function handleAppGlobalKeydown(event: KeyboardEvent): void {
+  const key = event.key.toLowerCase();
+  const commandPressed = event.ctrlKey || event.metaKey;
+
+  if (commandPressed && key === 'n') {
+    event.preventDefault();
+    void dispatchTaskShortcut('tracker:focus-new-task');
+    return;
+  }
+
+  if (commandPressed && key === 'f') {
+    event.preventDefault();
+    void dispatchTaskShortcut('tracker:focus-task-search');
+    return;
+  }
+
+  if (commandPressed && key === ',') {
+    event.preventDefault();
+    void router.push('/settings');
+    return;
+  }
+
+  if (event.code !== 'Space' || commandPressed || event.altKey || event.shiftKey || isEditableShortcutTarget(event.target)) {
+    return;
+  }
+
+  event.preventDefault();
+  if (timerStore.running) {
+    timerStore.pause();
+  } else if (timerStore.paused) {
+    timerStore.resume();
+  } else {
+    timerStore.start();
+    openFocusModal();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleAppGlobalKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleAppGlobalKeydown);
 });
 </script>
 

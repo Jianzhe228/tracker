@@ -11,6 +11,7 @@ import type {
   TaskStatusCounts,
 } from '../types/domain';
 import {
+  listTasks as listTasksCmd,
   listWorkingSet as listWorkingSetCmd,
   listArchive as listArchiveCmd,
   taskStatusCounts as taskStatusCountsCmd,
@@ -225,6 +226,20 @@ export const useTaskStore = defineStore('task', () => {
     } finally {
       archiveLoading.value = false;
     }
+  }
+
+  /**
+   * Search is an explicit opt-in path for heavy users. Once requested, load the
+   * full task corpus into the same cache so selection/edit/toggle flows keep
+   * using the normal store actions.
+   */
+  async function loadAllForSearch(limit = 10_000): Promise<void> {
+    if (!isTauri) return;
+    const rows = await listTasksCmd({ limit, offset: 0 });
+    tasks.value = rows;
+    archiveCursor.value = null;
+    archiveExhausted.value = true;
+    archiveOnlyIds.value = new Set();
   }
 
   /**
@@ -982,6 +997,7 @@ export const useTaskStore = defineStore('task', () => {
     syncTasksFromBackend,
     loadWorkingSet,
     loadMoreArchive,
+    loadAllForSearch,
     reloadStatusCounts,
     reloadStatusCountsImmediate,
     reloadAfterRestore,
