@@ -268,7 +268,11 @@ function isEditableShortcutTarget(target: EventTarget | null): boolean {
 }
 
 async function dispatchTaskShortcut(eventName: 'tracker:focus-new-task' | 'tracker:focus-task-search'): Promise<void> {
-  if (!isTaskRoute()) {
+  if (eventName === 'tracker:focus-task-search') {
+    if (route.name !== 'all') {
+      await router.push('/tasks/all');
+    }
+  } else if (!isTaskRoute() || route.name === 'all') {
     await router.push('/tasks/today');
   }
   await nextTick();

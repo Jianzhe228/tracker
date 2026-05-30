@@ -39,7 +39,6 @@ const isTaskDragging = ref(false);
 const suppressTaskClick = ref(false);
 const taskListWrap = ref<HTMLElement | null>(null);
 const taskScrollContainer = ref<HTMLElement | null>(null);
-const taskSearchInput = ref<HTMLInputElement | null>(null);
 const searchQuery = ref('');
 const searchLoading = ref(false);
 const searchLoadError = ref(false);
@@ -99,6 +98,8 @@ const currentProjectId = computed(() => {
   return typeof routeId === 'string' ? Number(routeId) || null : null;
 });
 
+const isAllTasksView = computed(() => activeTaskFilter.value === 'all');
+
 // Page title based on filter
 const pageTitle = computed(() => {
   if (route.name === 'project' && currentProjectId.value) {
@@ -129,8 +130,19 @@ const filteredTasks = computed(() => {
 });
 
 const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
-const searchActive = computed(() => normalizedSearchQuery.value.length > 0);
+const searchActive = computed(() => isAllTasksView.value && normalizedSearchQuery.value.length > 0);
 const searchTokens = computed(() => normalizedSearchQuery.value.split(/\s+/).filter(Boolean));
+
+const taskEntryValue = computed({
+  get: () => (isAllTasksView.value ? searchQuery.value : title.value),
+  set: (value: string) => {
+    if (isAllTasksView.value) {
+      searchQuery.value = value;
+    } else {
+      title.value = value;
+    }
+  },
+});
 
 function getSearchStatusLabel(status: TaskStatus): string {
   switch (status) {
@@ -507,8 +519,8 @@ function focusNewTaskInput(): void {
 function focusTaskSearchInput(): void {
   void ensureSearchCorpusLoaded();
   void nextTick(() => {
-    taskSearchInput.value?.focus();
-    taskSearchInput.value?.select();
+    newTaskInput.value?.focus();
+    newTaskInput.value?.select();
   });
 }
 
@@ -516,6 +528,16 @@ function clearSearch(): void {
   searchQuery.value = '';
   searchLoadError.value = false;
   focusTaskSearchInput();
+}
+
+async function handleTaskEntrySubmit(): Promise<void> {
+  if (isAllTasksView.value) {
+    await ensureSearchCorpusLoaded();
+    focusTaskSearchInput();
+    return;
+  }
+
+  await submitTask();
 }
 
 type TaskDraft = {
@@ -815,10 +837,14 @@ watch(activeTaskFilter, () => {
   resetDragState();
   isTaskDragging.value = false;
   suppressTaskClick.value = false;
+  if (!isAllTasksView.value) {
+    searchQuery.value = '';
+    searchLoadError.value = false;
+  }
 });
 
 watch(normalizedSearchQuery, (query) => {
-  if (query) {
+  if (isAllTasksView.value && query) {
     void ensureSearchCorpusLoaded();
   }
 });
@@ -1423,7 +1449,7 @@ function handleGlobalKeyDown(event: KeyboardEvent): void {
     return;
   }
 
-  if (searchActive.value && document.activeElement === taskSearchInput.value) {
+  if (searchActive.value && document.activeElement === newTaskInput.value) {
     searchQuery.value = '';
     return;
   }
@@ -1766,21 +1792,36 @@ watch(activeTaskFilter, (filter) => {
       <!-- Task Input -->
       <div class="border-b border-surface-border bg-white px-6 py-3">
         <div class="flex items-center gap-3">
-          <svg class="h-4 w-4 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <svg v-if="isAllTasksView" class="h-4 w-4 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.1-4.4a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z" />
+          </svg>
+          <svg v-else class="h-4 w-4 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           <input
             ref="newTaskInput"
-            v-model="title"
-            type="text"
-            aria-label="新增任务"
-            placeholder="添加任务，按 Enter 保存…"
+            v-model="taskEntryValue"
+            :type="isAllTasksView ? 'search' : 'text'"
+            :aria-label="isAllTasksView ? '搜索任务' : '新增任务'"
+            :placeholder="isAllTasksView ? '搜索任务、备注、清单，按 Enter 搜索…' : '添加任务，按 Enter 保存…'"
             class="flex-1 text-sm text-[#6F6F6B] placeholder:text-[#9E9E9A] focus:outline-none"
-            @keyup.enter="submitTask"
+            @focus="isAllTasksView && ensureSearchCorpusLoaded()"
+            @keyup.enter="handleTaskEntrySubmit"
           />
+          <button
+            v-if="isAllTasksView && searchQuery"
+            type="button"
+            class="rounded p-1 text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+            aria-label="清除搜索"
+            @click="clearSearch"
+          >
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
 
           <!-- Date Picker for new task -->
-          <div ref="newTaskCalendarWrap" class="relative">
+          <div v-if="!isAllTasksView" ref="newTaskCalendarWrap" class="relative">
             <button
               type="button"
               class="inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
@@ -1855,44 +1896,7 @@ watch(activeTaskFilter, (filter) => {
             </div>
           </div>
 
-          <button
-            class="rounded-md bg-[#1C1C1A] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#2A2A28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
-            @click="submitTask"
-          >
-            提交
-          </button>
-        </div>
-      </div>
-
-      <!-- Search -->
-      <div class="border-b border-surface-border bg-white px-6 py-3">
-        <div class="flex items-center gap-3">
-          <div class="relative min-w-0 flex-1">
-            <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9E9E9A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.1-4.4a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0z" />
-            </svg>
-            <input
-              ref="taskSearchInput"
-              v-model="searchQuery"
-              type="search"
-              aria-label="搜索任务"
-              placeholder="搜索任务、备注、清单"
-              class="h-9 w-full rounded-lg border border-surface-border bg-white pl-9 pr-10 text-sm text-[#1C1C1A] placeholder:text-[#9E9E9A] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-              @focus="ensureSearchCorpusLoaded"
-            >
-            <button
-              v-if="searchQuery"
-              type="button"
-              class="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
-              aria-label="清除搜索"
-              @click="clearSearch"
-            >
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div class="flex min-w-[7rem] items-center justify-end text-xs text-[#9E9E9A]" aria-live="polite">
+          <div v-if="isAllTasksView" class="flex min-w-[7rem] items-center justify-end text-xs text-[#9E9E9A]" aria-live="polite">
             <span v-if="searchLoading" class="inline-flex items-center gap-1.5">
               <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                 <circle cx="12" cy="12" r="10" stroke-opacity="0.25" stroke-width="2.5"/>
@@ -1910,6 +1914,13 @@ watch(activeTaskFilter, (filter) => {
             </button>
             <span v-else-if="searchActive">{{ displayTasks.length }} 条结果</span>
           </div>
+
+          <button
+            class="rounded-md bg-[#1C1C1A] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#2A2A28] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+            @click="handleTaskEntrySubmit"
+          >
+            {{ isAllTasksView ? '搜索' : '提交' }}
+          </button>
         </div>
       </div>
 
