@@ -9,6 +9,7 @@ import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { feedbackRecord } from '../services/commands/learning';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { partitionPendingJobs, rejectPendingActions, shouldShowPendingJob } from './aiPendingJobs';
+import { useTaskStore } from './taskStore';
 import { useUiStore } from './uiStore';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
@@ -92,11 +93,12 @@ export const useAiStore = defineStore('ai', () => {
     if (!job || !job.actions) return;
 
     const context = job.inputContext;
+    const taskStore = useTaskStore();
     let failures = 0;
     for (const action of job.actions) {
       if (action.status === 'pending') {
         try {
-          await executeAction(action, context);
+          await executeAction(action, context, taskStore);
           action.status = 'executed';
         } catch (e) {
           action.status = 'failed';
@@ -153,7 +155,7 @@ export const useAiStore = defineStore('ai', () => {
     if (action.status !== 'pending') return;
 
     try {
-      await executeAction(action, job.inputContext);
+      await executeAction(action, job.inputContext, useTaskStore());
       action.status = 'executed';
     } catch (e) {
       console.error('[ai-store] failed to execute action', e);

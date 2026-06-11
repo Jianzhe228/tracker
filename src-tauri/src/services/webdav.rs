@@ -180,33 +180,6 @@ impl WebDavClient {
             .map(|b| b.to_vec())
             .map_err(|e| format!("Failed to read response body: {}", e))
     }
-
-    /// Get Last-Modified header of the remote file via HEAD.
-    pub fn get_remote_modified(&self) -> Result<Option<String>, String> {
-        let auth = self.basic_auth_header();
-        let url = self.file_url();
-
-        let resp = self
-            .client
-            .head(&url)
-            .header(AUTHORIZATION, &auth)
-            .send()
-            .map_err(|e| format!("HEAD request failed: {}", e))?;
-
-        let status = resp.status().as_u16();
-        if status == 404 {
-            return Ok(None);
-        }
-        if !(200..300).contains(&status) {
-            return Err(format!("HEAD request failed with status: {}", status));
-        }
-
-        Ok(resp
-            .headers()
-            .get("last-modified")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()))
-    }
 }
 
 /// Simple base64 encoding (no external dependency needed).

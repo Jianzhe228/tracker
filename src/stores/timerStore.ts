@@ -53,8 +53,8 @@ type PersistedTimerState = {
     durationMs: number;
     closed: boolean;
     syncedToDb: boolean;
-    pauseOffsetMs?: number;
-    countedInToday?: boolean;
+    pauseOffsetMs: number;
+    countedInToday: boolean;
   }>;
   segmentSwitchCount: number;
 };
@@ -73,7 +73,7 @@ type SessionLog = {
   pomodoros: number;
 };
 
-const STORAGE_KEY = 'sft_timer_state_v1';
+const STORAGE_KEY = 'sft_timer_state_v2';
 const SESSION_LOG_KEY = 'sft_timer_sessions';
 const SECOND = 1000;
 const PERSIST_INTERVAL_MS = 30_000;
@@ -205,9 +205,9 @@ export const useTimerStore = defineStore('timer', () => {
   const pauseExceededLimit = computed(() => pauseDurationSeconds.value >= PAUSE_FORCE_STOP_SECONDS);
 
   function getDefaultSeconds(targetMode: TimerMode): number {
-    const focusMinutes = Math.max(1, Math.round(settingsStore.pomodoro.focusMinutes || 25));
-    const shortBreakMinutes = Math.max(1, Math.round(settingsStore.pomodoro.shortBreakMinutes || 5));
-    const longBreakMinutes = Math.max(1, Math.round(settingsStore.pomodoro.longBreakMinutes || 15));
+    const focusMinutes = Math.max(1, Math.round(settingsStore.timer.focusMinutes || 25));
+    const shortBreakMinutes = Math.max(1, Math.round(settingsStore.timer.shortBreakMinutes || 5));
+    const longBreakMinutes = Math.max(1, Math.round(settingsStore.timer.longBreakMinutes || 15));
     switch (targetMode) {
       case 'focus': return focusMinutes * 60;
       case 'shortBreak': return shortBreakMinutes * 60;
@@ -277,7 +277,7 @@ export const useTimerStore = defineStore('timer', () => {
     lastPersistAt = now;
 
     const payload: PersistedTimerState = {
-      version: 1,
+      version: 2,
       status: status.value,
       mode: mode.value,
       timerKind: timerKind.value,
@@ -325,7 +325,7 @@ export const useTimerStore = defineStore('timer', () => {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as PersistedTimerState;
-      return parsed?.version === 1 ? parsed : null;
+      return parsed?.version === 2 ? parsed : null;
     } catch (error) {
       console.warn('[timer] failed to parse persisted state', error);
       return null;
@@ -811,13 +811,13 @@ export const useTimerStore = defineStore('timer', () => {
     segments.value = (restored.segments || []).map(s => ({
       taskId: s.taskId,
       taskTitle: s.taskTitle,
-      projectId: s.projectId ?? null,
+      projectId: s.projectId,
       startedAt: s.startedAt,
       durationMs: s.durationMs,
       closed: s.closed,
-      syncedToDb: s.syncedToDb ?? false,
-      pauseOffsetMs: s.pauseOffsetMs ?? 0,
-      countedInToday: s.countedInToday ?? false,
+      syncedToDb: s.syncedToDb,
+      pauseOffsetMs: s.pauseOffsetMs,
+      countedInToday: s.countedInToday,
     }));
     segmentSwitchCount.value = restored.segmentSwitchCount || 0;
 

@@ -251,7 +251,7 @@ pub(crate) fn generate_export_json_from_db(db: &rusqlite::Connection) -> Result<
     }
 
     let export_data = serde_json::json!({
-      "version": 3,
+      "version": 1,
       "exportedAt": chrono::Utc::now().to_rfc3339(),
       "tasks": tasks,
       "projects": projects,
@@ -328,6 +328,10 @@ pub(crate) fn import_json_data_to_db(
     db: &mut rusqlite::Connection,
     data: &serde_json::Value,
 ) -> Result<(), String> {
+    if data.get("version").and_then(|v| v.as_i64()) != Some(1) {
+        return Err("备份文件版本不受支持，需要 version 1 的导出文件".to_string());
+    }
+
     let tx = db.transaction().map_err(|e| e.to_string())?;
 
     // Clear existing data
@@ -338,10 +342,7 @@ pub(crate) fn import_json_data_to_db(
     DELETE FROM task_deletion_logs;
     DELETE FROM focus_sessions;
     DELETE FROM notification_logs;
-    DELETE FROM ai_logs;
     DELETE FROM ai_jobs;
-    DELETE FROM daily_summaries;
-    DELETE FROM task_tags;
     DELETE FROM suggestion_feedback;
     DELETE FROM task_subtask_history;
     DELETE FROM subtask_learn_log;
@@ -456,7 +457,7 @@ pub(crate) fn import_json_data_to_db(
         }
     }
 
-    // Import task_completion_logs when available; otherwise rebuild from imported tasks + sessions.
+    // Import task_completion_logs
     if let Some(logs) = data.get("taskCompletionLogs").and_then(|v| v.as_array()) {
         for log in logs {
             tx.execute(
@@ -481,8 +482,6 @@ pub(crate) fn import_json_data_to_db(
             )
             .map_err(|e| format!("Failed to import task completion log: {}", e))?;
         }
-    } else {
-        rebuild_task_completion_logs(&tx)?;
     }
 
     // Import settings (skip lastSyncAt as we'll write it separately)
@@ -731,72 +730,6 @@ fn collect_task_completion_logs(
         rows.push(row.map_err(|e| e.to_string())?);
     }
     Ok(rows)
-}
-
-fn rebuild_task_completion_logs(tx: &rusqlite::Transaction<'_>) -> Result<(), String> {
-    let mut stmt = tx
-        .prepare(
-            "SELECT id, title, pomodoro_count, pomodoro_duration, completed_at
-       FROM tasks
-       WHERE status = 'done' AND completed_at IS NOT NULL",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-
-    for row in rows {
-        let (task_id, task_title, pomodoro_count, pomodoro_duration, completed_at) =
-            row.map_err(|e| e.to_string())?;
-
-        let estimated_seconds = pomodoro_count
-            .saturating_mul(pomodoro_duration)
-            .saturating_mul(60);
-        if estimated_seconds <= 0 {
-            continue;
-        }
-
-        let actual_seconds: i64 = tx
-            .query_row(
-                "SELECT COALESCE(SUM(duration_seconds), 0)
-         FROM focus_sessions
-         WHERE task_id = ?1
-           AND status IN ('completed', 'stopped')
-           AND type = 'focus'",
-                rusqlite::params![task_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-
-        let deviation_percentage =
-            ((actual_seconds - estimated_seconds).abs() as f64 / estimated_seconds as f64) * 100.0;
-
-        tx.execute(
-            "INSERT INTO task_completion_logs (
-         task_id, task_title, estimated_seconds, actual_seconds, deviation_percentage, completed_at
-       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                task_id,
-                task_title,
-                estimated_seconds,
-                actual_seconds,
-                deviation_percentage,
-                completed_at,
-            ],
-        )
-        .map_err(|e| format!("Failed to rebuild task completion log: {}", e))?;
-    }
-
-    Ok(())
 }
 
 fn collect_ai_skills(db: &rusqlite::Connection) -> Result<Vec<serde_json::Value>, String> {
@@ -1055,78 +988,33 @@ mod tests {
     }
 
     #[test]
-    fn import_rebuilds_task_completion_logs_for_legacy_exports() {
+    fn import_rejects_unsupported_version() {
         let source = setup_db();
-        seed_completed_task(&source, 21, "旧版同步恢复", "2026-03-21T10:00:00Z", 3300);
+        seed_completed_task(&source, 21, "版本校验", "2026-03-21T10:00:00Z", 3300);
 
         let export_json = generate_export_json_from_db(&source).expect("export json");
         let mut export_data: serde_json::Value =
             serde_json::from_str(&export_json).expect("parse export");
+
+        let mut target = setup_db();
+
+        // Missing version key → rejected
         export_data
             .as_object_mut()
             .expect("export object")
-            .remove("taskCompletionLogs");
+            .remove("version");
+        let err = import_json_data_to_db(&mut target, &export_data)
+            .expect_err("missing version must be rejected");
+        assert!(err.contains("version 1"));
 
-        let mut target = setup_db();
-        import_json_data_to_db(&mut target, &export_data).expect("import data");
-
-        let row: (String, i64, i64, f64, String) = target
-      .query_row(
-        "SELECT task_title, estimated_seconds, actual_seconds, deviation_percentage, completed_at
-         FROM task_completion_logs
-         WHERE task_id = 21",
-        [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-      )
-      .expect("reconstructed log");
-
-        assert_eq!(row.0, "旧版同步恢复");
-        assert_eq!(row.1, 3000);
-        assert_eq!(row.2, 3300);
-        assert!((row.3 - 10.0).abs() < f64::EPSILON);
-        assert_eq!(row.4, "2026-03-21T10:00:00Z");
-    }
-
-    #[test]
-    fn import_rebuilds_task_completion_logs_with_stopped_focus_sessions() {
-        let source = setup_db();
-        seed_completed_task(&source, 31, "跨任务专注", "2026-03-22T10:00:00Z", 1800);
-
-        source
-            .execute(
-                "INSERT INTO focus_sessions (
-                   id, task_id, start_time, end_time, duration_seconds, type, status, interruption_reason, pomodoro_count, created_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'focus', 'stopped', NULL, 0.6, ?3)",
-                rusqlite::params![
-                    3100,
-                    31,
-                    "2026-03-22T08:30:00Z",
-                    "2026-03-22T09:00:00Z",
-                    1800,
-                ],
-            )
-            .expect("insert stopped focus session");
-
-        let export_json = generate_export_json_from_db(&source).expect("export json");
-        let mut export_data: serde_json::Value =
-            serde_json::from_str(&export_json).expect("parse export");
+        // Wrong version → rejected
         export_data
             .as_object_mut()
             .expect("export object")
-            .remove("taskCompletionLogs");
-
-        let mut target = setup_db();
-        import_json_data_to_db(&mut target, &export_data).expect("import data");
-
-        let actual_seconds: i64 = target
-            .query_row(
-                "SELECT actual_seconds FROM task_completion_logs WHERE task_id = 31",
-                [],
-                |row| row.get(0),
-            )
-            .expect("rebuilt completion log");
-
-        assert_eq!(actual_seconds, 3600);
+            .insert("version".into(), serde_json::json!(2));
+        let err = import_json_data_to_db(&mut target, &export_data)
+            .expect_err("wrong version must be rejected");
+        assert!(err.contains("version 1"));
     }
 
     #[test]

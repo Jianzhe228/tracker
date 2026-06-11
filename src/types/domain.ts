@@ -285,16 +285,6 @@ export interface KeywordCluster {
   updatedAt: string;
 }
 
-// ── Suggestion pipeline result ──────────────────────────────────────
-
-export type SuggestionSource = 'pattern' | 'learning' | 'ai' | 'none';
-
-export interface SuggestionResult {
-  source: SuggestionSource;
-  suggestions: string[];
-  patternName?: string;
-}
-
 // ── Suggestion Harness types ──────────────────────────────────────
 
 export interface TitleAnalysis {

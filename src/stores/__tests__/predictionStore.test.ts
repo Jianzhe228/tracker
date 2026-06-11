@@ -18,6 +18,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 vi.mock('../../services/commands/prediction', () => ({
   getPendingPredictions: vi.fn().mockResolvedValue([]),
+  getRecentNotificationKeys: vi.fn().mockResolvedValue([]),
   getPredictionStats: vi.fn().mockResolvedValue({
     total: 0,
     pending: 0,
@@ -29,15 +30,6 @@ vi.mock('../../services/commands/prediction', () => ({
     createdCount: 1,
     skipped: false,
   }),
-  getPredictionAnalysisContext: vi.fn().mockResolvedValue({
-    currentTime: '2026-03-28 10:00',
-    dayOfWeek: '周六',
-    days: 14,
-    count: 10,
-    taskList: '- 任务1\n- 任务2',
-    recentProjects: '项目1, 项目2',
-  }),
-  savePredictions: vi.fn().mockResolvedValue([1, 2]),
   updatePredictionStatus: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -167,8 +159,6 @@ describe('predictionStore', () => {
           createdAt: '2026-03-29 10:00:00',
           notifiedAt: null,
           status: 'pending',
-          aiContext: null,
-          sourceJobId: null,
           projectId: 1,
           titleKey: '本周计划',
           score: 9.2,
@@ -214,8 +204,6 @@ describe('predictionStore', () => {
           createdAt: '2026-03-29 10:00:00',
           notifiedAt: null,
           status: 'pending',
-          aiContext: null,
-          sourceJobId: null,
           projectId: 1,
           titleKey: '写周报',
           score: 7.5,
@@ -248,8 +236,6 @@ describe('predictionStore', () => {
           createdAt: '2026-03-29 10:00:00',
           notifiedAt: null,
           status: 'pending',
-          aiContext: null,
-          sourceJobId: null,
           projectId: 1,
           titleKey: '写周报',
           score: 7.5,

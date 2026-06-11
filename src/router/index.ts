@@ -23,10 +23,6 @@ const router = createRouter({
       component: () => import('../views/TasksView.vue'),
       props: { filter: 'all' }
     },
-    {
-      path: '/tasks/completed',
-      redirect: '/tasks/all'
-    },
     // Projects - 清单视图
     {
       path: '/project/:id',

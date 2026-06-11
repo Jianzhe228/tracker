@@ -22,37 +22,37 @@ const isTauri = '__TAURI_INTERNALS__' in window;
 
 const focus = computed({
   get: () => settingsStore.timer.focusMinutes,
-  set: (value: number) => settingsStore.updatePomodoro({ focusMinutes: value })
+  set: (value: number) => settingsStore.updateTimer({ focusMinutes: value })
 });
 
 const shortBreak = computed({
   get: () => settingsStore.timer.shortBreakMinutes,
-  set: (value: number) => settingsStore.updatePomodoro({ shortBreakMinutes: value })
+  set: (value: number) => settingsStore.updateTimer({ shortBreakMinutes: value })
 });
 
 const longBreak = computed({
   get: () => settingsStore.timer.longBreakMinutes,
-  set: (value: number) => settingsStore.updatePomodoro({ longBreakMinutes: value })
+  set: (value: number) => settingsStore.updateTimer({ longBreakMinutes: value })
 });
 
 const longBreakInterval = computed({
   get: () => settingsStore.timer.longBreakInterval,
-  set: (value: number) => settingsStore.updatePomodoro({ longBreakInterval: value })
+  set: (value: number) => settingsStore.updateTimer({ longBreakInterval: value })
 });
 
 const autoStartBreak = computed({
   get: () => settingsStore.timer.autoStartBreak,
-  set: (value: boolean) => settingsStore.updatePomodoro({ autoStartBreak: value })
+  set: (value: boolean) => settingsStore.updateTimer({ autoStartBreak: value })
 });
 
 const autoStartNext = computed({
   get: () => settingsStore.timer.autoStartNext,
-  set: (value: boolean) => settingsStore.updatePomodoro({ autoStartNext: value })
+  set: (value: boolean) => settingsStore.updateTimer({ autoStartNext: value })
 });
 
 const defaultTimerKind = computed({
   get: () => settingsStore.timer.defaultTimerKind,
-  set: (value: 'countdown' | 'countup') => settingsStore.updatePomodoro({ defaultTimerKind: value })
+  set: (value: 'countdown' | 'countup') => settingsStore.updateTimer({ defaultTimerKind: value })
 });
 
 const notifyStart = computed({

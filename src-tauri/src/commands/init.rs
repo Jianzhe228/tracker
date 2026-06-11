@@ -4,13 +4,11 @@ use tauri::State;
 use crate::commands::project::ProjectRow;
 use crate::commands::recurring::RecurringRuleRow;
 use crate::commands::settings::SettingEntry;
-use crate::commands::task::TaskRow;
 use crate::db::AppState;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInitData {
-    pub tasks: Vec<TaskRow>,
     pub settings: Vec<SettingEntry>,
     pub projects: Vec<ProjectRow>,
     pub recurring_rules: Vec<RecurringRuleRow>,
@@ -95,12 +93,7 @@ pub fn app_init(state: State<'_, AppState>) -> Result<AppInitData, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
 
-    // Tasks loaded separately via task_list_working_set / task_list_archive
-    // (lazy-load: 启动只拉工作集，老的已完成任务按需分页加载)
-    let tasks: Vec<TaskRow> = Vec::new();
-
     Ok(AppInitData {
-        tasks,
         settings,
         projects,
         recurring_rules,

@@ -11,14 +11,10 @@ vi.mock('../invoke', () => ({
 
 import {
   recordTaskCreation,
-  getTaskCreationHistory,
-  getPredictionAnalysisContext,
   refreshPredictions,
-  savePredictions,
   getPendingPredictions,
   updatePredictionStatus,
   getPredictionStats,
-  cleanupExpiredPredictions,
 } from '../prediction';
 
 describe('prediction commands', () => {
@@ -52,80 +48,6 @@ describe('prediction commands', () => {
 
       expect(invokeCommand).toHaveBeenCalledWith('record_task_creation', {
         payload,
-      });
-    });
-  });
-
-  describe('getTaskCreationHistory', () => {
-    it('calls invokeCommand with days parameter', async () => {
-      vi.mocked(invokeCommand).mockResolvedValueOnce([]);
-
-      const result = await getTaskCreationHistory(30);
-
-      expect(invokeCommand).toHaveBeenCalledWith('get_task_creation_history', {
-        days: 30,
-      });
-      expect(result).toEqual([]);
-    });
-
-    it('works without days parameter', async () => {
-      vi.mocked(invokeCommand).mockResolvedValueOnce([]);
-
-      await getTaskCreationHistory();
-
-      expect(invokeCommand).toHaveBeenCalledWith('get_task_creation_history', {
-        days: undefined,
-      });
-    });
-  });
-
-  describe('getPredictionAnalysisContext', () => {
-    it('calls invokeCommand with days parameter', async () => {
-      const mockContext = {
-        currentTime: '2026-03-28 10:00',
-        dayOfWeek: '周六',
-        days: 14,
-        count: 10,
-        taskList: '- 任务1',
-        recentProjects: null,
-      };
-      vi.mocked(invokeCommand).mockResolvedValueOnce(mockContext);
-
-      const result = await getPredictionAnalysisContext(7);
-
-      expect(invokeCommand).toHaveBeenCalledWith(
-        'get_prediction_analysis_context',
-        { days: 7 }
-      );
-      expect(result).toEqual(mockContext);
-    });
-  });
-
-  describe('savePredictions', () => {
-    it('calls invokeCommand with predictions array', async () => {
-      const predictions = [
-        { title: '创建本周计划', reason: '每周一规划' },
-        { title: '整理收集箱', reason: null },
-      ];
-
-      await savePredictions(predictions, '{}', 1);
-
-      expect(invokeCommand).toHaveBeenCalledWith('save_predictions', {
-        predictions,
-        aiContext: '{}',
-        sourceJobId: 1,
-      });
-    });
-
-    it('handles null optional parameters', async () => {
-      const predictions = [{ title: '测试任务' }];
-
-      await savePredictions(predictions);
-
-      expect(invokeCommand).toHaveBeenCalledWith('save_predictions', {
-        predictions,
-        aiContext: null,
-        sourceJobId: null,
       });
     });
   });
@@ -219,29 +141,6 @@ describe('prediction commands', () => {
 
       expect(invokeCommand).toHaveBeenCalledWith('get_prediction_stats');
       expect(result).toEqual(mockStats);
-    });
-  });
-
-  describe('cleanupExpiredPredictions', () => {
-    it('calls invokeCommand with days parameter', async () => {
-      vi.mocked(invokeCommand).mockResolvedValueOnce(5);
-
-      const result = await cleanupExpiredPredictions(14);
-
-      expect(invokeCommand).toHaveBeenCalledWith('cleanup_expired_predictions', {
-        days: 14,
-      });
-      expect(result).toBe(5);
-    });
-
-    it('works without days parameter', async () => {
-      vi.mocked(invokeCommand).mockResolvedValueOnce(3);
-
-      await cleanupExpiredPredictions();
-
-      expect(invokeCommand).toHaveBeenCalledWith('cleanup_expired_predictions', {
-        days: undefined,
-      });
     });
   });
 });

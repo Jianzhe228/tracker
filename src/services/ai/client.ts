@@ -1,6 +1,6 @@
 /**
  * OpenAI-compatible chat completion client.
- * Extracted from taskAssistant.ts for reuse across AI skills.
+ * Shared across AI skills.
  */
 
 const DEFAULT_TIMEOUT = 15_000;

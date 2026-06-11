@@ -4,8 +4,6 @@ use crate::services::prediction_engine::{
     MIN_HISTORY_FOR_PREDICTION,
 };
 use rusqlite::params;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 const ANALYSIS_INTERVAL_HOURS: u64 = 1;
@@ -53,9 +51,6 @@ pub fn cleanup_old_predictions(conn: &rusqlite::Connection) -> Result<(), String
 
 /// Start the prediction scheduler background task
 pub fn start_scheduler(app: AppHandle) {
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         rt.block_on(async {
@@ -75,12 +70,8 @@ pub fn start_scheduler(app: AppHandle) {
                 }
             }
 
-            while running_clone.load(Ordering::SeqCst) {
+            loop {
                 interval.tick().await;
-
-                if !running_clone.load(Ordering::SeqCst) {
-                    break;
-                }
 
                 if let Some(state) = app.try_state::<AppState>() {
                     let db = state.db();
@@ -123,9 +114,4 @@ pub fn start_scheduler(app: AppHandle) {
     });
 
     println!("[prediction_scheduler] Started");
-}
-
-/// Stop the scheduler
-pub fn stop_scheduler() {
-    // The scheduler will stop on next tick check
 }

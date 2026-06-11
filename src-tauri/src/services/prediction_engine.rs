@@ -7,7 +7,7 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use serde_json::json;
 
-pub const ALGORITHM_VERSION: &str = "local-v2";
+pub const ALGORITHM_VERSION: &str = "local-v1";
 pub const MIN_HISTORY_FOR_PREDICTION: usize = 7;
 
 const LOOKBACK_DAYS: i64 = 90;
@@ -188,9 +188,9 @@ pub fn refresh_predictions(
     for prediction in &predictions {
         conn.execute(
             "INSERT INTO pending_predictions (
-                title, reason, predicted_for_date, created_at, notified_at, status, ai_context, source_job_id,
+                title, reason, predicted_for_date, created_at, notified_at, status,
                 project_id, title_key, score, score_breakdown, algorithm_version
-             ) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, NULL, 'pending', NULL, NULL, ?4, ?5, ?6, ?7, ?8)",
+             ) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, NULL, 'pending', ?4, ?5, ?6, ?7, ?8)",
             params![
                 prediction.title,
                 prediction.reason,
@@ -319,7 +319,7 @@ fn load_feedback(
 ) -> Result<HashMap<(String, Option<i64>), FeedbackStats>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT COALESCE(title_key, ''), project_id, status, created_at
+            "SELECT title_key, project_id, status, created_at
              FROM pending_predictions
              WHERE status IN ('accepted', 'rejected', 'notified', 'expired')",
         )
@@ -339,9 +339,6 @@ fn load_feedback(
     let mut feedback: HashMap<(String, Option<i64>), FeedbackStats> = HashMap::new();
     for row in rows {
         let (title_key, project_id, status, created_at) = row.map_err(|e| e.to_string())?;
-        if title_key.is_empty() {
-            continue;
-        }
         // exp(-days_ago / 14): fresh feedback counts fully, ~30d-old ≈ 0.12.
         let weight = created_at
             .as_deref()
@@ -376,7 +373,7 @@ fn load_recent_actioned_keys(
         .to_string();
     let mut stmt = conn
         .prepare(
-            "SELECT COALESCE(title_key, ''), project_id
+            "SELECT title_key, project_id
              FROM pending_predictions
              WHERE status IN ('accepted', 'rejected')
                AND created_at >= ?1",
@@ -391,9 +388,6 @@ fn load_recent_actioned_keys(
     let mut set = HashSet::new();
     for row in rows {
         let (title_key, project_id) = row.map_err(|e| e.to_string())?;
-        if title_key.is_empty() {
-            continue;
-        }
         set.insert((title_key, project_id));
     }
     Ok(set)
@@ -466,9 +460,7 @@ fn score_candidates(
             if active_keys.contains(&candidate.title_key) {
                 return None;
             }
-            if recent_actioned
-                .contains(&(candidate.title_key.clone(), candidate.project_id))
-            {
+            if recent_actioned.contains(&(candidate.title_key.clone(), candidate.project_id)) {
                 return None;
             }
 
@@ -699,8 +691,8 @@ mod tests {
         conn.execute(
             "INSERT INTO pending_predictions
                (title, predicted_for_date, created_at, status, project_id, title_key, algorithm_version)
-             VALUES ('本周计划', '2026-03-27', '2026-03-27 09:00:00', 'rejected', 1, '本周计划', 'local-v2')",
-            [],
+             VALUES ('本周计划', '2026-03-27', '2026-03-27 09:00:00', 'rejected', 1, '本周计划', ?1)",
+            rusqlite::params![super::ALGORITHM_VERSION],
         )
         .expect("insert rejection feedback");
 

@@ -88,10 +88,7 @@ pub fn data_clear_all(state: State<'_, AppState>) -> Result<(), String> {
     DELETE FROM task_deletion_logs;
     DELETE FROM focus_sessions;
     DELETE FROM notification_logs;
-    DELETE FROM ai_logs;
     DELETE FROM ai_jobs;
-    DELETE FROM daily_summaries;
-    DELETE FROM task_tags;
     DELETE FROM suggestion_feedback;
     DELETE FROM task_subtask_history;
     DELETE FROM subtask_learn_log;

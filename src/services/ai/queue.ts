@@ -163,12 +163,6 @@ function parseActions(
 
   if (Array.isArray(result.actions)) {
     rawActions = result.actions;
-  } else if (Array.isArray(result.suggestedSubtasks)) {
-    // Backward compat: old format from taskAssistant
-    rawActions = (result.suggestedSubtasks as string[]).map((title) => ({
-      type: 'create_subtask',
-      params: { title },
-    }));
   }
 
   if (!rawActions) return [];

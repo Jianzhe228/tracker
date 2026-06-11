@@ -287,12 +287,6 @@ export const useTaskStore = defineStore('task', () => {
     }, 200);
   }
 
-  async function syncTasksFromBackend(): Promise<void> {
-    // Kept for backward compat (test mocks reference listTasks). Now backed by
-    // the lazy-load loop: refresh working set + status counts, retain archive.
-    await reloadAfterRestore();
-  }
-
   async function createTaskRecord(title: string, options: TaskCreateOptions = {}): Promise<TaskItem> {
     const task = buildTask(title, options);
     if (isTauri) {
@@ -611,7 +605,7 @@ export const useTaskStore = defineStore('task', () => {
     try {
       if (isTauri) {
         await restoreTaskCmd(pending.taskId);
-        await syncTasksFromBackend();
+        await reloadAfterRestore();
       } else {
         const taskById = new Map<number, TaskItem>();
         for (const task of tasks.value) {
@@ -994,7 +988,6 @@ export const useTaskStore = defineStore('task', () => {
     upsertRecurringRule,
     removeRecurringRule,
     getRecurringRule,
-    syncTasksFromBackend,
     loadWorkingSet,
     loadMoreArchive,
     loadAllForSearch,

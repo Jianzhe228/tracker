@@ -3,23 +3,9 @@
 //! Tables: suggestion_runs, suggestion_candidates
 //! These tables are append-only audit logs — no updates except marking selected/rejected.
 
-use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::AppState;
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SuggestionRunRow {
-    pub id: i64,
-    pub task_id: i64,
-    pub task_title: String,
-    pub project_id: Option<i64>,
-    pub analysis_json: String,
-    pub strategy: String,
-    pub ranker_version: String,
-    pub created_at: String,
-}
 
 /// Create a new suggestion run and return its id.
 #[tauri::command]
