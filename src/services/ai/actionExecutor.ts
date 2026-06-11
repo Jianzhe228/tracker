@@ -59,14 +59,12 @@ const handlers: Record<string, ActionHandler> = {
 export async function executeAction(
   action: AiAction,
   context: Record<string, unknown>,
-  taskStore?: ActionExecutorTaskStore,
+  taskStore: ActionExecutorTaskStore,
 ): Promise<void> {
   const handler = handlers[action.type];
   if (!handler) {
     console.warn(`[ai] unknown action type: ${action.type}`);
     return;
   }
-  // Lazy-load store only if not provided (backward compat)
-  const store = taskStore ?? (await import('../../stores/taskStore')).useTaskStore();
-  await handler(action, context, store);
+  await handler(action, context, taskStore);
 }

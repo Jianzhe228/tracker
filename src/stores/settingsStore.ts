@@ -32,9 +32,6 @@ export const useSettingsStore = defineStore('settings', () => {
     defaultTimerKind: 'countdown',
   });
 
-  // Keep backward-compatible alias
-  const pomodoro = timer;
-
   const notification = ref<NotificationSettings>({
     notifyFocusStart: true,
     notifyFocusEnd: true,
@@ -131,7 +128,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function updatePomodoro(next: Partial<TimerSettings>): Promise<void> {
+  async function updateTimer(next: Partial<TimerSettings>): Promise<void> {
     timer.value = {
       ...timer.value,
       ...next
@@ -244,13 +241,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   return {
     timer,
-    pomodoro,
     notification,
     webdav,
     ai,
     closeToTray,
     loadFromData,
-    updatePomodoro,
+    updateTimer,
     updateNotification,
     updateWebDav,
     updateAi,

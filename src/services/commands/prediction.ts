@@ -1,16 +1,5 @@
 import { invokeCommand } from './invoke';
 
-export interface TaskCreationHistoryRow {
-  id: number;
-  taskTitle: string;
-  projectId: number | null;
-  createdAt: string;
-  dow: string | null;
-  hour: number | null;
-  dayOfMonth: number | null;
-  isRecurringInstance: boolean;
-}
-
 export interface PendingPredictionRow {
   id: number;
   title: string;
@@ -26,25 +15,6 @@ export interface PendingPredictionRow {
   score: number | null;
   scoreBreakdown: string | null;
   algorithmVersion: string | null;
-}
-
-export interface PredictionSavePayload {
-  title: string;
-  reason?: string | null;
-  projectId?: number | null;
-  titleKey?: string | null;
-  score?: number | null;
-  scoreBreakdown?: string | null;
-  algorithmVersion?: string | null;
-}
-
-export interface PredictionAnalysisContext {
-  currentTime: string;
-  dayOfWeek: string;
-  days: number;
-  count: number;
-  taskList: string;
-  recentProjects: string | null;
 }
 
 export interface PredictionStats {
@@ -69,28 +39,8 @@ export function recordTaskCreation(payload: {
   return invokeCommand<number>('record_task_creation', { payload });
 }
 
-export function getTaskCreationHistory(days?: number): Promise<TaskCreationHistoryRow[]> {
-  return invokeCommand<TaskCreationHistoryRow[]>('get_task_creation_history', { days });
-}
-
-export function getPredictionAnalysisContext(days?: number): Promise<PredictionAnalysisContext> {
-  return invokeCommand<PredictionAnalysisContext>('get_prediction_analysis_context', { days });
-}
-
 export function refreshPredictions(force = false): Promise<PredictionRefreshResult> {
   return invokeCommand<PredictionRefreshResult>('refresh_predictions', { force });
-}
-
-export function savePredictions(
-  predictions: PredictionSavePayload[],
-  aiContext?: string | null,
-  sourceJobId?: number | null
-): Promise<number[]> {
-  return invokeCommand<number[]>('save_predictions', {
-    predictions,
-    aiContext: aiContext ?? null,
-    sourceJobId: sourceJobId ?? null,
-  });
 }
 
 export function getPendingPredictions(limit?: number): Promise<PendingPredictionRow[]> {
@@ -103,10 +53,6 @@ export function updatePredictionStatus(id: number, status: string): Promise<void
 
 export function getPredictionStats(): Promise<PredictionStats> {
   return invokeCommand<PredictionStats>('get_prediction_stats');
-}
-
-export function cleanupExpiredPredictions(days?: number): Promise<number> {
-  return invokeCommand<number>('cleanup_expired_predictions', { days });
 }
 
 export function getRecentNotificationKeys(hours = 24): Promise<string[]> {

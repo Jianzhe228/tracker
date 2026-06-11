@@ -986,13 +986,9 @@ pub fn task_list_archive(
         None
     } else {
         tasks.last().map(|t| ArchiveCursor {
-            // After v21 every done/cancelled row has a non-null completed_at.
-            // Fall back to updated_at only as a defensive guard against
-            // corrupted state — should never trigger in normal operation.
-            completed_at: t
-                .completed_at
-                .clone()
-                .unwrap_or_else(|| t.updated_at.clone()),
+            completed_at: t.completed_at.clone().expect(
+                "done/cancelled task must have non-null completed_at (guaranteed since v21)",
+            ),
             id: t.id,
         })
     };
