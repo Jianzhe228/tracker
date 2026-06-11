@@ -87,7 +87,7 @@ keywordExtractor (C3 算法: Intl.Segmenter 分词 + n-gram + 边界合并)
 
 ### Database
 
-SQLite schema 在 `src-tauri/src/db/mod.rs`，以 `PRAGMA user_version` 管理（当前 **v1**，本版本视为全新设计的第一版）。**没有增量迁移阶梯**：全新数据库由单一基线 schema 在一个事务内一次建成；任何更早构建产生的数据库文件启动时直接报错拒绝，不做兼容。新增 schema 变更时：把变更合并进基线 + 写一个"上一版本→新版本"的迁移分支 + 版本号 +1，不保留更老的升级路径。表设计的权威文档是 `docs/数据库设计说明.md`（`docs/tracker_schema.sql` 是历史导出，已过时）。
+SQLite schema 在 `src-tauri/src/db/mod.rs`，以 `PRAGMA user_version` 管理（当前 **v1**，本版本视为全新设计的第一版）。**没有增量迁移阶梯**：全新数据库由单一基线 schema 在一个事务内一次建成；任何更早构建产生的数据库文件启动时直接报错拒绝，不做兼容。新增 schema 变更时：把变更合并进基线 + 写一个"上一版本→新版本"的迁移分支 + 版本号 +1，不保留更老的升级路径。表设计的权威文档是 `docs/数据库设计说明.md`。
 
 表分 5 域：核心任务域（projects/tasks/recurring_rules）、专注与统计域（focus_sessions/focus_session_segments/task_completion_logs）、AI 与学习域（ai_skills/ai_jobs/subtask_patterns/subtask_learn_log/keyword_clusters）、建议与预测域（suggestion_feedback/suggestion_runs/suggestion_candidates/task_creation_history/pending_predictions）、系统辅助域（user_settings/notification_logs/task_deletion_logs）。
 
