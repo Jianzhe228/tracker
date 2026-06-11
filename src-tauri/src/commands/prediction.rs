@@ -18,8 +18,6 @@ pub struct PendingPredictionRow {
     pub created_at: Option<String>,
     pub notified_at: Option<String>,
     pub status: String,
-    pub ai_context: Option<String>,
-    pub source_job_id: Option<i64>,
     pub project_id: Option<i64>,
     pub title_key: Option<String>,
     pub score: Option<f64>,
@@ -101,7 +99,7 @@ pub fn get_pending_predictions(
 
     let mut stmt = db
         .prepare(
-            "SELECT id, title, reason, predicted_for_date, created_at, notified_at, status, ai_context, source_job_id,
+            "SELECT id, title, reason, predicted_for_date, created_at, notified_at, status,
                     project_id, title_key, score, score_breakdown, algorithm_version
              FROM pending_predictions
              WHERE status IN ('pending', 'notified')
@@ -120,13 +118,11 @@ pub fn get_pending_predictions(
                 created_at: row.get(4)?,
                 notified_at: row.get(5)?,
                 status: row.get(6)?,
-                ai_context: row.get(7)?,
-                source_job_id: row.get(8)?,
-                project_id: row.get(9)?,
-                title_key: row.get(10)?,
-                score: row.get(11)?,
-                score_breakdown: row.get(12)?,
-                algorithm_version: row.get(13)?,
+                project_id: row.get(7)?,
+                title_key: row.get(8)?,
+                score: row.get(9)?,
+                score_breakdown: row.get(10)?,
+                algorithm_version: row.get(11)?,
             })
         })
         .map_err(|e| e.to_string())?;

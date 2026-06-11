@@ -7,7 +7,7 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use serde_json::json;
 
-pub const ALGORITHM_VERSION: &str = "local-v2";
+pub const ALGORITHM_VERSION: &str = "local-v1";
 pub const MIN_HISTORY_FOR_PREDICTION: usize = 7;
 
 const LOOKBACK_DAYS: i64 = 90;
@@ -188,9 +188,9 @@ pub fn refresh_predictions(
     for prediction in &predictions {
         conn.execute(
             "INSERT INTO pending_predictions (
-                title, reason, predicted_for_date, created_at, notified_at, status, ai_context, source_job_id,
+                title, reason, predicted_for_date, created_at, notified_at, status,
                 project_id, title_key, score, score_breakdown, algorithm_version
-             ) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, NULL, 'pending', NULL, NULL, ?4, ?5, ?6, ?7, ?8)",
+             ) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, NULL, 'pending', ?4, ?5, ?6, ?7, ?8)",
             params![
                 prediction.title,
                 prediction.reason,
@@ -691,8 +691,8 @@ mod tests {
         conn.execute(
             "INSERT INTO pending_predictions
                (title, predicted_for_date, created_at, status, project_id, title_key, algorithm_version)
-             VALUES ('本周计划', '2026-03-27', '2026-03-27 09:00:00', 'rejected', 1, '本周计划', 'local-v2')",
-            [],
+             VALUES ('本周计划', '2026-03-27', '2026-03-27 09:00:00', 'rejected', 1, '本周计划', ?1)",
+            rusqlite::params![super::ALGORITHM_VERSION],
         )
         .expect("insert rejection feedback");
 

@@ -8,8 +8,6 @@ export interface PendingPredictionRow {
   createdAt: string | null;
   notifiedAt: string | null;
   status: string;
-  aiContext: string | null;
-  sourceJobId: number | null;
   projectId: number | null;
   titleKey: string | null;
   score: number | null;

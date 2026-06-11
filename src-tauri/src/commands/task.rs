@@ -987,7 +987,7 @@ pub fn task_list_archive(
     } else {
         tasks.last().map(|t| ArchiveCursor {
             completed_at: t.completed_at.clone().expect(
-                "done/cancelled task must have non-null completed_at (guaranteed since v21)",
+                "done/cancelled task must have non-null completed_at (schema invariant)",
             ),
             id: t.id,
         })

@@ -48,19 +48,18 @@ fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
 
 /// Current schema version.
 ///
-/// There is no incremental migration ladder: a fresh database is created in
-/// one shot from `BASELINE_SCHEMA`, and the only supported upgrade path is
-/// from the previous release's version. Anything older is rejected at startup.
+/// This branch treats the database as a brand-new design: v1 IS the first
+/// version, and databases created by any earlier build are not supported.
+/// There is no incremental migration ladder — a fresh database is created in
+/// one shot from `BASELINE_SCHEMA`.
 ///
-/// When changing the schema: fold the change into `BASELINE_SCHEMA`, replace
-/// the single upgrade arm in `run_migrations` with "previous -> new", and
-/// bump this constant. Do not accumulate upgrade paths.
-const SCHEMA_VERSION: i32 = 22;
+/// When changing the schema later: fold the change into `BASELINE_SCHEMA`,
+/// add a single "previous -> new" upgrade arm in `run_migrations`, and bump
+/// this constant. Do not accumulate upgrade paths.
+const SCHEMA_VERSION: i32 = 1;
 
 /// Full schema as of `SCHEMA_VERSION`, applied to fresh databases in one
-/// transaction. Column order of `tasks` and `pending_predictions` mirrors the
-/// historical migrated layout (later columns appended last) so fresh and
-/// upgraded databases are positionally identical.
+/// transaction.
 const BASELINE_SCHEMA: &str = "
 -- user_settings
 CREATE TABLE user_settings (
@@ -80,14 +79,6 @@ CREATE TABLE projects (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES projects(id) ON DELETE SET NULL
-);
-
--- tags
-CREATE TABLE tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    color TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- recurring_rules
@@ -150,19 +141,6 @@ CREATE INDEX idx_tasks_status_completed
   ON tasks(status, completed_at)
   WHERE deleted_at IS NULL;
 
--- task_tags
-CREATE TABLE task_tags (
-    task_id INTEGER NOT NULL,
-    tag_id INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (task_id, tag_id),
-    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_task_tags_task_id ON task_tags(task_id);
-CREATE INDEX idx_task_tags_tag_id ON task_tags(tag_id);
-
 -- focus_sessions
 CREATE TABLE focus_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -192,17 +170,6 @@ CREATE TABLE focus_session_segments (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (session_id) REFERENCES focus_sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
-);
-
--- ai_logs
-CREATE TABLE ai_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trigger_type TEXT NOT NULL,
-    context TEXT,
-    suggestion TEXT NOT NULL,
-    user_action TEXT,
-    user_feedback TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- notification_logs
@@ -245,20 +212,6 @@ CREATE TABLE task_deletion_logs (
     task_title TEXT NOT NULL,
     deleted_at DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- daily_summaries
-CREATE TABLE daily_summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT UNIQUE NOT NULL,
-    total_focus_seconds INTEGER DEFAULT 0,
-    total_pomodoros INTEGER DEFAULT 0,
-    tasks_completed INTEGER DEFAULT 0,
-    tasks_created INTEGER DEFAULT 0,
-    interruptions INTEGER DEFAULT 0,
-    hourly_distribution TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ai_skills (prompt templates live in the DB)
@@ -388,8 +341,6 @@ CREATE TABLE pending_predictions (
     created_at TEXT,
     notified_at TEXT,
     status TEXT DEFAULT 'pending',
-    ai_context TEXT,
-    source_job_id INTEGER,
     project_id INTEGER,
     title_key TEXT,
     score REAL,
@@ -526,28 +477,10 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
             tx.commit()?;
             Ok(())
         }
-        21 => {
-            // v22: drop rows produced by the retired AI prediction pipeline.
-            // 'local-v2' was the only live algorithm when v22 shipped; rows
-            // with no version or an older one have no remaining reader.
-            let tx = conn.unchecked_transaction()?;
-            tx.execute(
-                "DELETE FROM pending_predictions
-                 WHERE algorithm_version IS NULL OR algorithm_version <> 'local-v2'",
-                [],
-            )
-            .map_err(|e| format!("failed to purge retired prediction rows: {}", e))?;
-            tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))
-                .map_err(|e| format!("failed to set user_version: {}", e))?;
-            tx.commit()?;
-            Ok(())
-        }
         v => Err(format!(
-            "unsupported database schema version {} (this build supports {} and {} only); \
-             upgrade through app 2.1.x first or remove the old tracker.db",
-            v,
-            SCHEMA_VERSION - 1,
-            SCHEMA_VERSION
+            "unsupported database schema version {}; this database was created by an \
+             incompatible build — back up and remove tracker.db to start fresh",
+            v
         )
         .into()),
     }
@@ -602,6 +535,17 @@ mod tests {
             )
             .expect("builtin skills seeded");
         assert_eq!(skills, 2);
+
+        // Retired tables from the pre-v1 design must not exist.
+        let retired: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+                 AND name IN ('tags', 'task_tags', 'ai_logs', 'daily_summaries')",
+                [],
+                |r| r.get(0),
+            )
+            .expect("check retired tables");
+        assert_eq!(retired, 0);
     }
 
     #[test]
@@ -610,33 +554,6 @@ mod tests {
         run_migrations(&conn).expect("first run");
         run_migrations(&conn).expect("second run");
         assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    }
-
-    #[test]
-    fn upgrade_from_v21_purges_retired_prediction_rows() {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
-        run_migrations(&conn).expect("baseline");
-
-        conn.execute_batch("PRAGMA user_version = 21;")
-            .expect("mark as v21");
-        conn.execute_batch(
-            "INSERT INTO pending_predictions (title, algorithm_version) VALUES ('legacy-null', NULL);
-             INSERT INTO pending_predictions (title, algorithm_version) VALUES ('legacy-v1', 'local-v1');
-             INSERT INTO pending_predictions (title, algorithm_version) VALUES ('current', 'local-v2');",
-        )
-        .expect("seed prediction rows");
-
-        run_migrations(&conn).expect("upgrade 21 -> 22");
-
-        assert_eq!(user_version(&conn), SCHEMA_VERSION);
-        let survivors: Vec<String> = conn
-            .prepare("SELECT title FROM pending_predictions")
-            .expect("prepare")
-            .query_map([], |r| r.get(0))
-            .expect("query")
-            .collect::<Result<_, _>>()
-            .expect("collect");
-        assert_eq!(survivors, vec!["current".to_string()]);
     }
 
     #[test]

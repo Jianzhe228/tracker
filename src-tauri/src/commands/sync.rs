@@ -251,7 +251,7 @@ pub(crate) fn generate_export_json_from_db(db: &rusqlite::Connection) -> Result<
     }
 
     let export_data = serde_json::json!({
-      "version": 3,
+      "version": 1,
       "exportedAt": chrono::Utc::now().to_rfc3339(),
       "tasks": tasks,
       "projects": projects,
@@ -328,8 +328,8 @@ pub(crate) fn import_json_data_to_db(
     db: &mut rusqlite::Connection,
     data: &serde_json::Value,
 ) -> Result<(), String> {
-    if data.get("version").and_then(|v| v.as_i64()) != Some(3) {
-        return Err("备份文件版本不受支持，需要 version 3 的导出文件".to_string());
+    if data.get("version").and_then(|v| v.as_i64()) != Some(1) {
+        return Err("备份文件版本不受支持，需要 version 1 的导出文件".to_string());
     }
 
     let tx = db.transaction().map_err(|e| e.to_string())?;
@@ -342,10 +342,7 @@ pub(crate) fn import_json_data_to_db(
     DELETE FROM task_deletion_logs;
     DELETE FROM focus_sessions;
     DELETE FROM notification_logs;
-    DELETE FROM ai_logs;
     DELETE FROM ai_jobs;
-    DELETE FROM daily_summaries;
-    DELETE FROM task_tags;
     DELETE FROM suggestion_feedback;
     DELETE FROM task_subtask_history;
     DELETE FROM subtask_learn_log;
@@ -1008,7 +1005,7 @@ mod tests {
             .remove("version");
         let err = import_json_data_to_db(&mut target, &export_data)
             .expect_err("missing version must be rejected");
-        assert!(err.contains("version 3"));
+        assert!(err.contains("version 1"));
 
         // Wrong version → rejected
         export_data
@@ -1017,7 +1014,7 @@ mod tests {
             .insert("version".into(), serde_json::json!(2));
         let err = import_json_data_to_db(&mut target, &export_data)
             .expect_err("wrong version must be rejected");
-        assert!(err.contains("version 3"));
+        assert!(err.contains("version 1"));
     }
 
     #[test]
