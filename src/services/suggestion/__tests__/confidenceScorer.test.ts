@@ -68,7 +68,7 @@ describe('confidenceScorer (Tauri mode)', () => {
   });
 
   describe('score calculation', () => {
-    it('calculates score with all factors at maximum', async () => {
+    it('calculates score with all factors high (3-source agreement)', async () => {
       learnStats.mockResolvedValue({
         matchCount: 5,
         maxScore: 10,
@@ -82,7 +82,9 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      expect(result.score).toBe(1.0);
+      // base = 0.35*(5/6.5) + 0.20*(10/12.5) + 0.25*(3/3.8) + 0.20*1 ≈ 0.8266
+      // 3 agreeing sources → ×1.2 ≈ 0.9919
+      expect(result.score).toBeCloseTo(0.9919, 3);
       expect(result.strategy).toBe('local');
       expect(result.hasPatternMatch).toBe(true);
     });
@@ -103,7 +105,7 @@ describe('confidenceScorer (Tauri mode)', () => {
       expect(result.hasPatternMatch).toBe(false);
     });
 
-    it('normalizes matchCount (caps at MAX_MATCH_COUNT=5)', async () => {
+    it('saturates matchCount smoothly (no hard cap, lone source discounted)', async () => {
       learnStats.mockResolvedValue({
         matchCount: 100,
         maxScore: 0,
@@ -114,10 +116,11 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      expect(result.score).toBe(0.35);
+      // 0.35*(100/101.5) × 0.85 ≈ 0.293
+      expect(result.score).toBeCloseTo(0.293, 3);
     });
 
-    it('normalizes maxScore (caps at MAX_SCORE=10)', async () => {
+    it('saturates maxScore smoothly (no hard cap, lone source discounted)', async () => {
       learnStats.mockResolvedValue({
         matchCount: 0,
         maxScore: 50,
@@ -128,10 +131,11 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      expect(result.score).toBe(0.20);
+      // 0.20*(50/52.5) × 0.85 ≈ 0.162
+      expect(result.score).toBeCloseTo(0.162, 3);
     });
 
-    it('normalizes historyCount (caps at MAX_HISTORY=3)', async () => {
+    it('saturates historyCount smoothly (no hard cap, lone source discounted)', async () => {
       learnStats.mockResolvedValue({
         matchCount: 0,
         maxScore: 0,
@@ -142,10 +146,11 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      expect(result.score).toBeCloseTo(0.25, 2);
+      // 0.25*(10/10.8) × 0.85 ≈ 0.197
+      expect(result.score).toBeCloseTo(0.197, 3);
     });
 
-    it('calculates mixed score correctly', async () => {
+    it('calculates mixed score correctly (learn + history agreement)', async () => {
       learnStats.mockResolvedValue({
         matchCount: 2,
         maxScore: 5,
@@ -156,10 +161,11 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      expect(result.score).toBeCloseTo(0.323, 2);
+      // base = 0.35*(2/3.5) + 0.20*(5/7.5) + 0.25*(1/1.8) ≈ 0.4722, ×1.05 ≈ 0.496
+      expect(result.score).toBeCloseTo(0.496, 3);
     });
 
-    it('adds pattern bonus when pattern matches', async () => {
+    it('adds pattern factor when pattern matches (lone source discounted)', async () => {
       learnStats.mockResolvedValue({
         matchCount: 0,
         maxScore: 0,
@@ -173,7 +179,8 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      expect(result.score).toBe(0.20);
+      // base = 0.20 × 0.85 = 0.17
+      expect(result.score).toBeCloseTo(0.17, 3);
       expect(result.hasPatternMatch).toBe(true);
     });
 
@@ -256,7 +263,7 @@ describe('confidenceScorer (Tauri mode)', () => {
 
       const result = await computeConfidence(['kw'], 1);
 
-      // 0.8*0.35 + 0.7*0.20 + 0.667*0.25 + 1*0.20 = 0.28+0.14+0.167+0.20 = 0.787
+      // base = 0.35*(4/5.5) + 0.20*(7/9.5) + 0.25*(2/2.8) + 0.20 ≈ 0.7805, ×1.2 ≈ 0.9366
       expect(result.score).toBeGreaterThanOrEqual(0.7);
       expect(result.strategy).toBe('local');
     });

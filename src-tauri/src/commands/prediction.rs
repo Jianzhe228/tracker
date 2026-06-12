@@ -3,7 +3,8 @@ use tauri::State;
 
 use crate::db::AppState;
 use crate::services::prediction_engine::{
-    derive_time_fields, refresh_predictions as refresh_predictions_internal,
+    derive_time_fields, format_timestamp, refresh_predictions as refresh_predictions_internal,
+    ALGORITHM_VERSION,
 };
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ pub fn record_task_creation(
 #[serde(rename_all = "camelCase")]
 pub struct PredictionRefreshResult {
     pub created_count: i64,
+    pub created_ids: Vec<i64>,
     pub skipped: bool,
 }
 
@@ -103,13 +105,14 @@ pub fn get_pending_predictions(
                     project_id, title_key, score, score_breakdown, algorithm_version
              FROM pending_predictions
              WHERE status IN ('pending', 'notified')
+               AND algorithm_version = ?1
              ORDER BY score DESC, created_at DESC
-             LIMIT ?1",
+             LIMIT ?2",
         )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map(rusqlite::params![limit_val], |row| {
+        .query_map(rusqlite::params![ALGORITHM_VERSION, limit_val], |row| {
             Ok(PendingPredictionRow {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -140,13 +143,17 @@ pub fn refresh_predictions(
     force: Option<bool>,
 ) -> Result<PredictionRefreshResult, String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
-    let created = refresh_predictions_internal(&db, chrono::Local::now(), force.unwrap_or(false))?;
+    let outcome = refresh_predictions_internal(&db, chrono::Local::now(), force.unwrap_or(false))?;
 
     Ok(PredictionRefreshResult {
-        created_count: created.len() as i64,
-        skipped: created.is_empty(),
+        created_count: outcome.new_ids.len() as i64,
+        created_ids: outcome.new_ids,
+        skipped: outcome.throttled,
     })
 }
+
+const VALID_PREDICTION_STATUSES: [&str; 5] =
+    ["pending", "notified", "accepted", "rejected", "expired"];
 
 #[tauri::command]
 pub fn update_prediction_status(
@@ -154,23 +161,24 @@ pub fn update_prediction_status(
     id: i64,
     status: String,
 ) -> Result<(), String> {
-    let db = state.db().lock().map_err(|e| e.to_string())?;
-
-    let mut sets = vec!["status = ?1".to_string()];
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(status.clone())];
-
-    if status == "notified" {
-        sets.push("notified_at = CURRENT_TIMESTAMP".to_string());
+    if !VALID_PREDICTION_STATUSES.contains(&status.as_str()) {
+        return Err(format!("invalid prediction status: {}", status));
     }
 
-    params.push(Box::new(id));
-    let sql = format!(
-        "UPDATE pending_predictions SET {} WHERE id = ?",
-        sets.join(", ")
-    );
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let db = state.db().lock().map_err(|e| e.to_string())?;
+    let now_str = format_timestamp(chrono::Local::now());
 
-    db.execute(&sql, param_refs.as_slice())
+    // Stamp the transition: notified_at on notify, actioned_at on the user's
+    // accept/reject decision (feedback decay keys off this timestamp).
+    let sql = match status.as_str() {
+        "notified" => "UPDATE pending_predictions SET status = ?1, notified_at = ?3 WHERE id = ?2",
+        "accepted" | "rejected" => {
+            "UPDATE pending_predictions SET status = ?1, actioned_at = ?3 WHERE id = ?2"
+        }
+        _ => "UPDATE pending_predictions SET status = ?1 WHERE id = ?2",
+    };
+
+    db.execute(sql, rusqlite::params![status, id, now_str])
         .map_err(|e| e.to_string())?;
 
     Ok(())
@@ -244,11 +252,11 @@ pub fn get_recent_notification_keys(
 ) -> Result<Vec<String>, String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
     let hours_val = hours.unwrap_or(24);
-    let cutoff = chrono::Local::now()
-        .checked_sub_signed(chrono::Duration::hours(hours_val))
-        .ok_or("invalid date calculation")?
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+    let cutoff = format_timestamp(
+        chrono::Local::now()
+            .checked_sub_signed(chrono::Duration::hours(hours_val))
+            .ok_or("invalid date calculation")?,
+    );
 
     let mut stmt = db
         .prepare(

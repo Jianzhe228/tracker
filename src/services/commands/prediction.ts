@@ -25,6 +25,7 @@ export interface PredictionStats {
 
 export interface PredictionRefreshResult {
   createdCount: number;
+  createdIds: number[];
   skipped: boolean;
 }
 

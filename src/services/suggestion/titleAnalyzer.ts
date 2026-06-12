@@ -2,15 +2,20 @@
  * Title analyzer — produces structured TitleAnalysis from a task title.
  *
  * Phase 1 of the Suggestion Harness design.
- * Wraps the C3 keyword extractor and enriches its output with a full
- * segment trace and categorized hints.
+ * Wraps the C4 keyword extractor and enriches its output with a full
+ * segment trace and categorized hints. Intent hints are detected from a
+ * closed action-verb class (INTENT_VERBS) over content words and the
+ * verb+object pattern inside single-char runs.
  *
  * Delegates C3 passes to computeC3Passes() to avoid duplicating the algorithm.
  */
 import type { TitleAnalysis } from '../../types/domain';
-import { classifySegments, isNoiseNgram, FUNC_HEADS, isTemporalWord, computeC3Passes } from './keywordExtractor';
+import { classifySegments, FUNC_HEADS, isTemporalWord, computeC3Passes } from './keywordExtractor';
 import { extractKeywords } from './keywordExtractor';
-import { getKnownKeywords } from './keywordCache';
+
+// ── Intent verbs (closed action-word class) ───────────────────────
+
+const INTENT_VERBS = new Set(['写','做','改','买','订','学','看','读','背','刷','修','聊','开','交','送','取','还','装','洗','练','跑','复习','预习','准备','完成','整理','处理','学习','撰写','编写','开发','修复','优化','重构','测试','部署','设计','调研','研究','安排','预约','提交','汇报','评审','审查','购买','采购','联系','沟通','跟进','检查','核对','录入','导出','分析','总结','规划','梳理']);
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -46,9 +51,8 @@ export function analyzeTitle(title: string): TitleAnalysis {
     };
   }
 
-  // Get final keywords (the deduped, prioritized result)
+  // Get final keywords (the deduped, scored-ranked result)
   const keywords = extractKeywords(normalized);
-  const known = getKnownKeywords();
 
   // Classify segments to get the trace structure
   const { segInfos, contentWords, runs } = classifySegments(normalized);
@@ -94,22 +98,11 @@ export function analyzeTitle(title: string): TitleAnalysis {
     addTrace(traceMap, lower, 'english', 'segmenter');
   }
 
-  // ── Prioritize known keywords ─────────────────────────────────────
+  // ── Keyword order ────────────────────────────────────────────────
 
-  const priorityResult: string[] = [...keywords];
-  if (known.size > 0) {
-    const knownKw: string[] = [];
-    const unknownKw: string[] = [];
-    for (const kw of [...new Set(keywords)]) {
-      if (known.has(kw)) knownKw.push(kw);
-      else unknownKw.push(kw);
-    }
-    const combined = [...knownKw, ...unknownKw];
-    priorityResult.length = 0;
-    for (let i = 0; i < Math.min(combined.length, 12); i++) {
-      priorityResult.push(combined[i]);
-    }
-  }
+  // extractKeywords (C4) already applies known-keyword boosting in its
+  // scoring — consume the keywords in returned order
+  const priorityResult: string[] = keywords;
 
   // ── Categorize hints ─────────────────────────────────────────────
 
@@ -117,11 +110,47 @@ export function analyzeTitle(title: string): TitleAnalysis {
     .filter(([text, items]) => items.some(it => it.type === 'temporal'))
     .map(([text]) => text);
 
-  const entityHints = [...traceMap.entries()]
-    .filter(([text, items]) => items.some(it => it.type === 'content') && !isTemporalWord(text))
-    .map(([text]) => text);
+  // Intent hints: multi-char content words that are action verbs (复习/准备/…),
+  // plus the verb+object pattern inside single-char runs — split at functional
+  // particles exactly like computeC3Passes, a sub-run's first char is the verb slot
+  const intentCollected: string[] = [];
+  const intentSeen = new Set<string>();
+  const addIntent = (verb: string) => {
+    if (!intentSeen.has(verb)) {
+      intentSeen.add(verb);
+      intentCollected.push(verb);
+    }
+  };
 
-  const intentHints: string[] = [];
+  for (const w of contentWords) {
+    if (w.length >= 2 && INTENT_VERBS.has(w)) addIntent(w);
+  }
+
+  for (const r of runs) {
+    const subs: string[][] = [];
+    let cur: string[] = [];
+    for (const ch of r) {
+      if (FUNC_HEADS.has(ch)) {
+        if (cur.length > 0) subs.push([...cur]);
+        cur = [];
+      } else {
+        cur.push(ch);
+      }
+    }
+    if (cur.length > 0) subs.push([...cur]);
+
+    for (const sub of subs) {
+      if (sub.length >= 2 && INTENT_VERBS.has(sub[0])) addIntent(sub[0]);
+    }
+  }
+
+  const intentHints = intentCollected.slice(0, 3);
+  const intentSet = new Set(intentHints);
+
+  const entityHints = [...traceMap.entries()]
+    .filter(([text, items]) =>
+      items.some(it => it.type === 'content') && !isTemporalWord(text) && !intentSet.has(text))
+    .map(([text]) => text);
 
   const segmentTrace = buildSegmentTrace(traceMap, priorityResult);
 

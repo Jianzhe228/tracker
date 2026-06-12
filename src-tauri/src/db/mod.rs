@@ -56,7 +56,7 @@ fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
 /// When changing the schema later: fold the change into `BASELINE_SCHEMA`,
 /// add a single "previous -> new" upgrade arm in `run_migrations`, and bump
 /// this constant. Do not accumulate upgrade paths.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 /// Full schema as of `SCHEMA_VERSION`, applied to fresh databases in one
 /// transaction.
@@ -340,6 +340,7 @@ CREATE TABLE pending_predictions (
     predicted_for_date TEXT,
     created_at TEXT,
     notified_at TEXT,
+    actioned_at TEXT,
     status TEXT DEFAULT 'pending',
     project_id INTEGER,
     title_key TEXT,
@@ -477,6 +478,17 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
             tx.commit()?;
             Ok(())
         }
+        // v1 -> v2: prediction feedback needs the exact accept/reject time
+        // (created_at is the generation time, which can be days earlier).
+        1 => {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch("ALTER TABLE pending_predictions ADD COLUMN actioned_at TEXT;")
+                .map_err(|e| format!("failed to upgrade schema v1 -> v2: {}", e))?;
+            tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))
+                .map_err(|e| format!("failed to set user_version: {}", e))?;
+            tx.commit()?;
+            Ok(())
+        }
         v => Err(format!(
             "unsupported database schema version {}; this database was created by an \
              incompatible build — back up and remove tracker.db to start fresh",
@@ -517,6 +529,7 @@ mod tests {
         assert!(column_exists(&conn, "tasks", "start_at"));
         assert!(column_exists(&conn, "tasks", "rescheduled_to"));
         assert!(column_exists(&conn, "pending_predictions", "algorithm_version"));
+        assert!(column_exists(&conn, "pending_predictions", "actioned_at"));
 
         let inbox: i64 = conn
             .query_row(
@@ -554,6 +567,35 @@ mod tests {
         run_migrations(&conn).expect("first run");
         run_migrations(&conn).expect("second run");
         assert_eq!(user_version(&conn), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn v1_database_is_upgraded_to_v2() {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        // Recreate a v1 database: baseline minus the v2 actioned_at column.
+        conn.execute_batch(
+            "CREATE TABLE pending_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                reason TEXT,
+                predicted_for_date TEXT,
+                created_at TEXT,
+                notified_at TEXT,
+                status TEXT DEFAULT 'pending',
+                project_id INTEGER,
+                title_key TEXT,
+                score REAL,
+                score_breakdown TEXT,
+                algorithm_version TEXT
+            );
+            PRAGMA user_version = 1;",
+        )
+        .expect("create v1 table");
+
+        run_migrations(&conn).expect("upgrade v1 -> v2");
+
+        assert_eq!(user_version(&conn), SCHEMA_VERSION);
+        assert!(column_exists(&conn, "pending_predictions", "actioned_at"));
     }
 
     #[test]

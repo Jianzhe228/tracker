@@ -104,6 +104,7 @@ export async function runHarness(ctx: HarnessContext): Promise<HarnessOutput> {
   const ranked = rankCandidates(merged, analysis, {
     projectId: ctx.projectId,
     existingSubtaskTitles: ctx.existingSubtaskTitles,
+    taskTitle: ctx.taskTitle,
   }, rejectedTitles);
 
   // Determine final strategy

@@ -1,28 +1,18 @@
 use crate::db::AppState;
-use crate::services::prediction_engine::{
-    refresh_predictions as refresh_predictions_internal, should_refresh_predictions,
-    MIN_HISTORY_FOR_PREDICTION,
-};
+use crate::services::prediction_engine::{refresh_predictions as refresh_predictions_internal, RefreshOutcome};
 use rusqlite::params;
 use tauri::{AppHandle, Emitter, Manager};
 
 const ANALYSIS_INTERVAL_HOURS: u64 = 1;
 
-/// Get count of task creation history
-fn get_history_count(conn: &rusqlite::Connection) -> i64 {
-    conn.query_row(
-        "SELECT COUNT(*) FROM task_creation_history WHERE is_recurring_instance = 0",
-        [],
-        |row| row.get(0),
-    )
-    .unwrap_or(0)
-}
-
 /// Emit event to frontend after local prediction refresh.
-fn emit_prediction_update(app: &AppHandle, created_count: usize) {
+/// `new_ids` identifies the rows inserted this round — the frontend
+/// notifies exactly those instead of guessing from a count.
+fn emit_prediction_update(app: &AppHandle, outcome: &RefreshOutcome) {
     let payload = serde_json::json!({
-        "createdCount": created_count,
-        "triggeredAt": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        "createdCount": outcome.new_ids.len(),
+        "createdIds": outcome.new_ids,
+        "triggeredAt": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
     });
 
     if let Err(e) = app.emit("prediction:updated", payload) {
@@ -79,31 +69,23 @@ pub fn start_scheduler(app: AppHandle) {
                         // Cleanup old predictions first
                         let _ = cleanup_old_predictions(&conn);
 
+                        // The engine itself enforces the 1h throttle and the
+                        // minimum-history requirement.
                         let now = chrono::Local::now();
-                        if should_refresh_predictions(&conn, now).unwrap_or(true) {
-                            let history_count = get_history_count(&conn);
-                            if history_count >= MIN_HISTORY_FOR_PREDICTION as i64 {
-                                match refresh_predictions_internal(&conn, now, false) {
-                                    Ok(created) if !created.is_empty() => {
-                                        emit_prediction_update(&app, created.len());
-                                        println!(
-                                            "[prediction_scheduler] Generated {} predictions from {} history entries",
-                                            created.len(),
-                                            history_count
-                                        );
-                                    }
-                                    Ok(_) => {}
-                                    Err(error) => {
-                                        eprintln!(
-                                            "[prediction_scheduler] Failed to refresh predictions: {}",
-                                            error
-                                        );
-                                    }
-                                }
-                            } else {
+                        match refresh_predictions_internal(&conn, now, false) {
+                            Ok(outcome) if outcome.changed => {
+                                emit_prediction_update(&app, &outcome);
                                 println!(
-                                    "[prediction_scheduler] Skipping - only {} history entries (min: {})",
-                                    history_count, MIN_HISTORY_FOR_PREDICTION
+                                    "[prediction_scheduler] Refreshed predictions: {} new, {} live",
+                                    outcome.new_ids.len(),
+                                    outcome.predictions.len()
+                                );
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                eprintln!(
+                                    "[prediction_scheduler] Failed to refresh predictions: {}",
+                                    error
                                 );
                             }
                         }
