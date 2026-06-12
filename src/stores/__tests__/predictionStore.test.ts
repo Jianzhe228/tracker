@@ -28,6 +28,7 @@ vi.mock('../../services/commands/prediction', () => ({
   }),
   refreshPredictions: vi.fn().mockResolvedValue({
     createdCount: 1,
+    createdIds: [1],
     skipped: false,
   }),
   updatePredictionStatus: vi.fn().mockResolvedValue(undefined),
@@ -154,16 +155,16 @@ describe('predictionStore', () => {
         {
           id: 1,
           title: '本周计划',
-          reason: '过去 4 周里你有 3 次在周一上午创建过类似任务',
+          reason: '过去几周你常在周一创建这个任务，今天正是时候',
           predictedForDate: '2026-03-29',
-          createdAt: '2026-03-29 10:00:00',
+          createdAt: '2026-03-29T10:00:00+08:00',
           notifiedAt: null,
           status: 'pending',
           projectId: 1,
           titleKey: '本周计划',
-          score: 9.2,
-          scoreBreakdown: '{"frequency":4}',
-          algorithmVersion: 'local-v1',
+          score: 72.5,
+          scoreBreakdown: '{"dueness":1}',
+          algorithmVersion: 'local-v2',
         },
       ]);
 
@@ -175,6 +176,40 @@ describe('predictionStore', () => {
           title: '今日任务预测',
         })
       );
+    });
+
+    it('does not notify rows that persisted across the refresh (not in createdIds)', async () => {
+      setActivePinia(createPinia());
+      const store = usePredictionStore();
+
+      const predictionCommands = await import('../../services/commands/prediction');
+      const notificationModule = await import('../../services/notification');
+      vi.mocked(predictionCommands.refreshPredictions).mockResolvedValueOnce({
+        createdCount: 0,
+        createdIds: [],
+        skipped: false,
+      });
+      vi.mocked(predictionCommands.getPendingPredictions).mockResolvedValueOnce([
+        {
+          id: 3,
+          title: '写周报',
+          reason: null,
+          predictedForDate: '2026-03-29',
+          createdAt: '2026-03-28T09:00:00+08:00',
+          notifiedAt: null,
+          status: 'pending',
+          projectId: 1,
+          titleKey: '周报',
+          score: 55.0,
+          scoreBreakdown: null,
+          algorithmVersion: 'local-v2',
+        },
+      ]);
+
+      await store.refreshPredictions();
+
+      expect(notificationModule.sendNotification).not.toHaveBeenCalled();
+      expect(predictionCommands.updatePredictionStatus).not.toHaveBeenCalled();
     });
 
     it('resets isAnalyzing even when refresh fails', async () => {

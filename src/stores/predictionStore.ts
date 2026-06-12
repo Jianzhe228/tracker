@@ -21,6 +21,7 @@ function isTauriRuntime(): boolean {
 
 interface PredictionUpdatePayload {
   createdCount: number;
+  createdIds: number[];
   triggeredAt: string;
 }
 
@@ -51,17 +52,20 @@ export const usePredictionStore = defineStore('prediction', () => {
     }
   }
 
-  async function notifyFreshPredictions(createdCount: number): Promise<void> {
-    if (createdCount <= 0) return;
+  async function notifyFreshPredictions(createdIds: number[]): Promise<void> {
+    if (createdIds.length === 0) return;
 
     // 24h cooldown: don't re-notify the same title_key if we already pushed
     // it to the OS in the last day. Prevents "every hourly tick re-pings me
     // about 写周报".
     const recentKeys = new Set(await getRecentNotificationKeys(24).catch(() => [] as string[]));
 
-    const freshPredictions = pendingPredictions.value
-      .filter((prediction) => prediction.status === 'pending')
-      .slice(0, createdCount);
+    // The backend reports exactly which rows were inserted this round —
+    // notify those, never rows that merely persisted across a refresh.
+    const createdIdSet = new Set(createdIds);
+    const freshPredictions = pendingPredictions.value.filter(
+      (prediction) => prediction.status === 'pending' && createdIdSet.has(prediction.id),
+    );
 
     for (const prediction of freshPredictions) {
       const key = prediction.titleKey;
@@ -94,7 +98,7 @@ export const usePredictionStore = defineStore('prediction', () => {
       const result = await refreshPredictionsCmd(force);
       await loadPendingPredictions();
       await loadStats();
-      await notifyFreshPredictions(result.createdCount);
+      await notifyFreshPredictions(result.createdIds);
       lastAnalysisAt.value = new Date().toISOString();
     } catch (err) {
       console.error('[predictionStore] Refresh failed:', err);
@@ -149,7 +153,7 @@ export const usePredictionStore = defineStore('prediction', () => {
       unlistenFn = await listen<PredictionUpdatePayload>('prediction:updated', (event) => {
         console.log('[predictionStore] Received update event:', event.payload);
         void loadPendingPredictions()
-          .then(() => notifyFreshPredictions(event.payload.createdCount))
+          .then(() => notifyFreshPredictions(event.payload.createdIds ?? []))
           .then(() => loadStats())
           .then(() => {
             lastAnalysisAt.value = new Date().toISOString();

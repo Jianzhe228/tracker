@@ -900,6 +900,9 @@ export const useTaskStore = defineStore('task', () => {
       pomodoroDuration: original.pomodoroDuration,
       recurringRuleId: original.recurringRuleId,
       skipHistoryAutofill: true,
+      // Re-surfacing an existing task is not a fresh creation habit —
+      // recording it would inflate the prediction engine's frequency signal.
+      skipPredictionRecord: true,
     });
 
     // Clone only incomplete subtasks — 已完成/已取消子任务属于历史，不复制
@@ -915,6 +918,7 @@ export const useTaskStore = defineStore('task', () => {
         pomodoroCount: sub.pomodoroCount,
         pomodoroDuration: sub.pomodoroDuration,
         skipHistoryAutofill: true,
+        skipPredictionRecord: true,
       });
     }
   }
@@ -940,6 +944,9 @@ export const useTaskStore = defineStore('task', () => {
       pomodoroDuration: original.pomodoroDuration,
       recurringRuleId: original.recurringRuleId,
       skipHistoryAutofill: true,
+      // Postponing is not a fresh creation habit — keep it out of the
+      // prediction engine's history.
+      skipPredictionRecord: true,
     });
 
     // Clone incomplete subtasks
@@ -955,6 +962,7 @@ export const useTaskStore = defineStore('task', () => {
         pomodoroCount: sub.pomodoroCount,
         pomodoroDuration: sub.pomodoroDuration,
         skipHistoryAutofill: true,
+        skipPredictionRecord: true,
       });
     }
 

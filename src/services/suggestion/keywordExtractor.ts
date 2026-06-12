@@ -1,9 +1,12 @@
 /**
  * Keyword extractor for task titles.
  *
- * Algorithm C3 — evolved from C2 with two structural improvements:
- *   A: Rule 4b suppression (skip when recovered bigram covers run's last char)
- *   B: Composable temporal patterns (regex-based, not enumerated)
+ * Algorithm C4 — evolved from C3 with scored candidate ranking + fragment
+ * suppression. The C3 structural passes are unchanged; the fixed-priority
+ * assembly (content > joins > merges > run n-grams) is replaced by a
+ * per-candidate score (base score by origin + length / known-keyword
+ * bonuses), and run-n-gram fragments covered by an already-kept longer
+ * candidate are dropped.
  *
  * See __tests__/keywordExtractor.test.ts (baseline)
  *     __tests__/keywordExtractor.stress.ts (C2 vs C3 comparison)
@@ -16,7 +19,8 @@
  * 5. Boundary merges (菜+市场 → 菜市场, 开题+报告 → 开题报告)
  *    - 4b structurally suppressed when 4c covers the same boundary
  * 6. Filter noise n-grams (functional heads/tails, temporal prefixes)
- * 7. Known keywords (from learn_log) prioritized
+ * 7. Scored ranking: per-origin base + length bonus + known-keyword bonus
+ *    (from learn_log); run fragments covered by kept candidates suppressed
  * 8. Fallback to n-gram extraction when Segmenter unavailable
  */
 
@@ -265,45 +269,109 @@ export function computeC3Passes(
 
 // ── Main extraction ────────────────────────────────────────────────
 
-export function extractKeywords(title: string): string[] {
+export type KeywordOrigin = 'content' | 'join' | 'merge' | 'run' | 'english';
+
+export interface ScoredKeyword {
+  text: string;
+  score: number;
+  origin: KeywordOrigin;
+}
+
+const PURE_DIGIT_RE = /^[0-9]+$/;
+
+// Base score by origin: segmenter content words are the most trustworthy,
+// boundary merges / adjacent joins are recovered compounds, raw run n-grams
+// are the weakest guesses; pure-digit english tokens carry little meaning
+function baseScore(origin: KeywordOrigin, text: string): number {
+  switch (origin) {
+    case 'content': return 3.0;
+    case 'merge': return 2.8;
+    case 'join': return 2.7;
+    case 'run': return [...text].length === 3 ? 1.8 : 1.6;
+    case 'english': return PURE_DIGIT_RE.test(text) ? 1.2 : 2.4;
+  }
+}
+
+/**
+ * Extract keywords with per-candidate scores and origins (C4 assembly).
+ * Candidates from all C3 passes compete on score; run-n-gram fragments
+ * covered by an already-kept longer candidate are suppressed.
+ */
+export function extractKeywordsScored(title: string): ScoredKeyword[] {
   const normalized = title.trim();
   if (!normalized) return [];
 
   const known = getKnownKeywords();
   const { segInfos, contentWords, runs } = classifySegments(normalized);
 
-  // Empty segmenter fallback
+  // Empty segmenter fallback — flat bigrams at run score
   if (segInfos.length === 0 && runs.length === 0) {
     const chars = normalized.replace(/[^\u4e00-\u9fff]/g, '');
-    return extractNgrams(chars).filter(ng => !isNoiseNgram(ng)).slice(0, 10);
+    return extractNgrams(chars)
+      .filter(ng => !isNoiseNgram(ng))
+      .slice(0, 10)
+      .map(ng => ({ text: ng, score: 1.6, origin: 'run' as const }));
   }
 
   const { adjacentJoins, runNgrams, boundaryMerges } = computeC3Passes(segInfos, runs);
 
-  // ── Assemble with priority: content > adjacentJoins > boundaryMerges > runNgrams ──
+  // ── Collect candidates in stable first-seen order ──
 
-  const result = [...contentWords, ...adjacentJoins, ...boundaryMerges, ...runNgrams];
+  const pool: Array<{ text: string; origin: KeywordOrigin }> = [
+    ...contentWords.map(text => ({ text, origin: 'content' as const })),
+    ...adjacentJoins.map(text => ({ text, origin: 'join' as const })),
+    ...boundaryMerges.map(text => ({ text, origin: 'merge' as const })),
+    ...runNgrams.map(text => ({ text, origin: 'run' as const })),
+  ];
 
   const englishWords = normalized.match(/[a-zA-Z0-9]{2,}/g);
   if (englishWords) {
     for (const w of englishWords) {
-      const lower = w.toLowerCase();
-      if (!result.includes(lower)) result.push(lower);
+      pool.push({ text: w.toLowerCase(), origin: 'english' });
     }
   }
 
-  // Prioritize known keywords
-  if (known.size > 0) {
-    const knownKw: string[] = [];
-    const unknownKw: string[] = [];
-    for (const kw of [...new Set(result)]) {
-      if (known.has(kw)) knownKw.push(kw);
-      else unknownKw.push(kw);
+  // ── Score + dedupe (highest score wins, first-seen index kept) ──
+
+  const byText = new Map<string, ScoredKeyword & { index: number }>();
+  for (let i = 0; i < pool.length; i++) {
+    const { text, origin } = pool[i];
+    const charLen = [...text].length;
+    let score = baseScore(origin, text)
+      + 0.25 * Math.min(Math.max(charLen - 2, 0), 3); // longer = more specific
+    if (known.has(text)) score += 1.5;                 // seen in learn_log before
+
+    const existing = byText.get(text);
+    if (!existing) {
+      byText.set(text, { text, score, origin, index: i });
+    } else if (score > existing.score) {
+      existing.score = score;
+      existing.origin = origin;
     }
-    return [...knownKw, ...unknownKw].slice(0, 12);
   }
 
-  return [...new Set(result)].slice(0, 12);
+  // ── Rank (score desc, ties by first appearance) + fragment suppression ──
+
+  const ranked = [...byText.values()]
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+
+  const kept: ScoredKeyword[] = [];
+  for (const cand of ranked) {
+    // Drop run fragments strictly contained in an already-kept stronger
+    // candidate (菜市 when 菜市场 was kept, run bigrams inside a kept run
+    // trigram); content/join/merge/english candidates are never dropped
+    const covered = cand.origin === 'run' && kept.some(k =>
+      k.score >= cand.score && k.text.length > cand.text.length && k.text.includes(cand.text));
+    if (!covered) {
+      kept.push({ text: cand.text, score: cand.score, origin: cand.origin });
+    }
+  }
+
+  return kept.slice(0, 12);
+}
+
+export function extractKeywords(title: string): string[] {
+  return extractKeywordsScored(title).map(k => k.text);
 }
 
 /**

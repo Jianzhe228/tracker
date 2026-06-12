@@ -56,6 +56,7 @@ describe('prediction commands', () => {
     it('calls invokeCommand with force parameter', async () => {
       const mockResult = {
         createdCount: 2,
+        createdIds: [11, 12],
         skipped: false,
       };
       vi.mocked(invokeCommand).mockResolvedValueOnce(mockResult);
@@ -71,6 +72,7 @@ describe('prediction commands', () => {
     it('works without force parameter', async () => {
       vi.mocked(invokeCommand).mockResolvedValueOnce({
         createdCount: 0,
+        createdIds: [],
         skipped: true,
       });
 
