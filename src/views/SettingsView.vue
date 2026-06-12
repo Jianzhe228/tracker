@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUiStore } from '../stores/uiStore';
@@ -13,6 +13,8 @@ import { getAppVersion } from '../services/commands/health';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import type { SubtaskPattern } from '../types/domain';
+import type { ShortcutBinding, ShortcutModifier, ShortcutMode } from '../types/domain';
+import { DEFAULT_SHORTCUTS } from '../services/shortcutManager';
 
 const packageVersion = import.meta.env.PACKAGE_VERSION || '0.0.0';
 
@@ -190,6 +192,136 @@ async function removePattern(id: number): Promise<void> {
     uiStore.notify('删除失败：' + String(e));
   }
 }
+
+// ── Shortcut settings ────────────────────────────────────────────────
+
+const shortcuts = computed({
+  get: () => settingsStore.shortcuts,
+  set: (value: ShortcutBinding[]) => settingsStore.updateShortcuts(value),
+});
+
+const recordingId = ref<string | null>(null);
+let recordingCleanup: (() => void) | null = null;
+
+function modLabel(mod: ShortcutModifier): string {
+  const platform = navigator.platform.toLowerCase().includes('mac') ? 'mac' : 'other';
+  const map: Record<ShortcutModifier, string> = {
+    ctrl: platform === 'mac' ? 'Cmd' : 'Ctrl',
+    alt: platform === 'mac' ? 'Opt' : 'Alt',
+    shift: 'Shift',
+    meta: 'Win',
+  };
+  return map[mod];
+}
+
+function keyLabel(key: string): string {
+  const special: Record<string, string> = {
+    ' ': 'Space',
+    arrowup: 'Up',
+    arrowdown: 'Down',
+    arrowleft: 'Left',
+    arrowright: 'Right',
+    escape: 'Esc',
+  };
+  if (special[key.toLowerCase()]) return special[key.toLowerCase()];
+  if (key.length === 1) return key.toUpperCase();
+  // Capitalize first letter
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function startRecording(id: string): void {
+  if (recordingCleanup) {
+    recordingCleanup();
+    recordingCleanup = null;
+  }
+
+  recordingId.value = id;
+
+  const handler = (event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Ignore pure modifier key presses
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) {
+      return;
+    }
+
+    // Build modifier list from event
+    const modifiers: ShortcutModifier[] = [];
+    if (event.ctrlKey || event.metaKey) modifiers.push('ctrl');
+    if (event.altKey) modifiers.push('alt');
+    if (event.shiftKey) modifiers.push('shift');
+    // meta without ctrl (raw Windows key)
+    if (event.metaKey && !event.ctrlKey) {
+      // Already handled by ctrl above on macOS (Cmd = meta)
+      const isMac = navigator.platform.toLowerCase().includes('mac');
+      if (!isMac) modifiers.push('meta');
+    }
+
+    // Map the key
+    let key = event.key;
+    if (event.code === 'Space') {
+      key = 'Space';
+    } else if (key.length === 1) {
+      key = key.toLowerCase();
+    }
+
+    // Update the binding
+    const newShortcuts = [...shortcuts.value];
+    const bindingIndex = newShortcuts.findIndex((s) => s.id === id);
+    if (bindingIndex >= 0) {
+      newShortcuts[bindingIndex] = {
+        ...newShortcuts[bindingIndex],
+        key,
+        modifiers,
+      };
+    }
+
+    void settingsStore.updateShortcuts(newShortcuts);
+    cleanup();
+  };
+
+  window.addEventListener('keydown', handler, { capture: true });
+
+  const cleanup = () => {
+    window.removeEventListener('keydown', handler, { capture: true });
+    recordingId.value = null;
+    recordingCleanup = null;
+  };
+
+  recordingCleanup = cleanup;
+
+  // Auto-cancel after 10 seconds
+  setTimeout(cleanup, 10000);
+}
+
+function setShortcutMode(index: number, mode: ShortcutMode): void {
+  const binding = shortcuts.value[index];
+  if (binding.action === 'toggle_timer' && mode === 'global') {
+    uiStore.notify('Space 全局快捷键可能会影响在其他程序中的输入，建议仅在应用内使用', 4000);
+  }
+  const newShortcuts = [...shortcuts.value];
+  newShortcuts[index] = { ...newShortcuts[index], mode };
+  void settingsStore.updateShortcuts(newShortcuts);
+}
+
+function toggleShortcutEnabled(index: number): void {
+  const newShortcuts = [...shortcuts.value];
+  newShortcuts[index] = {
+    ...newShortcuts[index],
+    enabled: !newShortcuts[index].enabled,
+  };
+  void settingsStore.updateShortcuts(newShortcuts);
+}
+
+function resetShortcuts(): void {
+  void settingsStore.updateShortcuts(DEFAULT_SHORTCUTS);
+  uiStore.notify('快捷键已恢复默认');
+}
+
+onUnmounted(() => {
+  if (recordingCleanup) recordingCleanup();
+});
 
 function getWebDavParams() {
   return {
@@ -541,6 +673,80 @@ async function downloadAndInstall(): Promise<void> {
               <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countdown' ? 'bg-white text-[#1C1C1A] shadow-sm' : 'text-[#6F6F6B]'" @click="defaultTimerKind = 'countdown'">倒计时</button>
               <button class="rounded-full px-3 py-1 text-xs font-medium transition-colors" :class="defaultTimerKind === 'countup' ? 'bg-white text-[#1C1C1A] shadow-sm' : 'text-[#6F6F6B]'" @click="defaultTimerKind = 'countup'">正计时</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 快捷键 -->
+      <section>
+        <div class="mb-4 flex items-center justify-between">
+          <h2 class="text-base font-semibold text-[#1C1C1A]">快捷键</h2>
+          <button
+            class="rounded-lg border border-surface-border px-3 py-1.5 text-xs text-[#6F6F6B] hover:bg-surface-hover"
+            @click="resetShortcuts"
+          >恢复默认</button>
+        </div>
+
+        <div class="divide-y divide-surface-border">
+          <div
+            v-for="(binding, index) in shortcuts"
+            :key="binding.id"
+            class="flex items-center justify-between gap-4 py-3"
+          >
+            <!-- Label -->
+            <div class="min-w-0 w-32">
+              <span class="text-sm text-[#1C1C1A]">{{ binding.label }}</span>
+            </div>
+
+            <!-- Key combo display + Record button -->
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1">
+                <kbd
+                  v-for="mod in binding.modifiers"
+                  :key="mod"
+                  class="rounded border border-surface-border bg-surface-hover px-1.5 py-0.5 text-[11px] font-mono text-[#6F6F6B]"
+                >{{ modLabel(mod) }}</kbd>
+                <kbd
+                  class="rounded border border-surface-border bg-surface-hover px-1.5 py-0.5 text-[11px] font-mono text-[#6F6F6B]"
+                >{{ keyLabel(binding.key) }}</kbd>
+              </div>
+
+              <button
+                class="rounded-md border border-surface-border px-2.5 py-1 text-xs transition-colors"
+                :class="recordingId === binding.id ? 'bg-primary-50 text-primary-600 border-primary-300' : 'text-[#6F6F6B] hover:bg-surface-hover'"
+                @click="startRecording(binding.id)"
+              >
+                {{ recordingId === binding.id ? '按键中…' : '录制' }}
+              </button>
+            </div>
+
+            <!-- Mode toggle: In-app / Global -->
+            <div class="flex gap-1 rounded-full bg-surface-hover p-1 shrink-0">
+              <button
+                class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
+                :class="binding.mode === 'inapp' ? 'bg-white text-[#1C1C1A] shadow-sm' : 'text-[#6F6F6B]'"
+                @click="setShortcutMode(index, 'inapp')"
+              >应用内</button>
+              <button
+                class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors"
+                :class="binding.mode === 'global' ? 'bg-white text-[#1C1C1A] shadow-sm' : 'text-[#6F6F6B]'"
+                @click="setShortcutMode(index, 'global')"
+              >全局</button>
+            </div>
+
+            <!-- Enable/disable toggle -->
+            <button
+              role="switch"
+              :aria-checked="binding.enabled"
+              class="relative h-6 w-10 shrink-0 rounded-full transition-colors"
+              :class="binding.enabled ? 'bg-primary-600' : 'bg-surface-border'"
+              @click="toggleShortcutEnabled(index)"
+            >
+              <span
+                class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                :class="binding.enabled ? 'translate-x-4' : 'translate-x-0'"
+              />
+            </button>
           </div>
         </div>
       </section>

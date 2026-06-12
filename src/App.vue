@@ -17,13 +17,18 @@ import AppFeedbackLayer from './components/AppFeedbackLayer.vue';
 import ProjectContextMenu from './components/ProjectContextMenu.vue';
 import ProjectFormPopover from './components/ProjectFormPopover.vue';
 import NotificationCenter from './components/NotificationCenter.vue';
-import type { ProjectItem } from './types/domain';
+import type { ProjectItem, ShortcutAction } from './types/domain';
 import { ensureNotificationPermission } from './services/notification';
 import { webdavUpload, webdavDownload } from './services/commands/sync';
 import { setTrayTooltip } from './services/commands/tray';
 import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from './utils/date';
 import { isTaskActiveOnDate } from './utils/taskFilters';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  createInAppKeydownHandler,
+  registerGlobalShortcuts,
+  executeAction,
+} from './services/shortcutManager';
 
 const appWindow = getCurrentWindow();
 const isMaximized = ref(false);
@@ -54,6 +59,10 @@ onMounted(async () => {
   const data = await initPromise;
   console.timeEnd('[init] appInit');
   settingsStore.loadFromData(data.settings);
+  // ── Initialize shortcuts after settings are loaded ──
+  removeInAppHandler = installInAppHandler();
+  window.addEventListener('shortcut:global-triggered', handleGlobalShortcutTriggered);
+  void syncGlobalShortcuts();
   // Lazy-load: pull working set + status counts in parallel.
   await Promise.all([
     taskStore.loadWorkingSet(),
@@ -306,68 +315,93 @@ const focusButtonTone = computed(() => {
   };
 });
 
-function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.closest('input, textarea, select, button, a, [contenteditable="true"]') != null;
+// ── Config-driven keyboard shortcuts ──────────────────────────────────
+
+// In-app keydown handler: installed/updated when shortcut config changes
+let removeInAppHandler: (() => void) | null = null;
+
+function installInAppHandler(): () => void {
+  const handler = createInAppKeydownHandler(settingsStore.shortcuts, {
+    router,
+    timerStore,
+    focusModal: { open: openFocusModal },
+    route,
+  });
+  window.addEventListener('keydown', handler);
+  return () => window.removeEventListener('keydown', handler);
 }
 
-async function dispatchTaskShortcut(eventName: 'tracker:focus-new-task' | 'tracker:focus-task-search'): Promise<void> {
-  if (eventName === 'tracker:focus-task-search') {
-    if (route.name !== 'all') {
-      await router.push('/tasks/all');
+// Re-register global shortcuts from settings; surface failures (hotkey
+// occupied by another app / invalid combo) instead of dying in the console.
+async function syncGlobalShortcuts(): Promise<void> {
+  if (!isTauri) return;
+  const failures = await registerGlobalShortcuts(
+    settingsStore.shortcuts.filter((s) => s.mode === 'global'),
+  );
+  if (failures.length > 0) {
+    const detail = failures.map((f) => `${f.binding.label}（${f.accelerator}）`).join('、');
+    uiStore.notify(`全局快捷键注册失败：${detail}。可能已被其他程序占用或组合无效`, 6000);
+  }
+}
+
+// Deep-watch shortcut config to re-install the in-app handler and re-register globals
+watch(
+  () => settingsStore.shortcuts,
+  () => {
+    if (removeInAppHandler) removeInAppHandler();
+    removeInAppHandler = installInAppHandler();
+    void syncGlobalShortcuts();
+  },
+  { deep: true },
+);
+
+// Show and focus the app window (needed for global shortcuts when app is minimized/in tray)
+async function showAndFocusWindow(): Promise<void> {
+  if (!isTauri) return;
+
+  let shouldRestoreAlwaysOnTop = false;
+  try {
+    const wasAlwaysOnTop = await appWindow.isAlwaysOnTop();
+    if (!wasAlwaysOnTop) {
+      await appWindow.setAlwaysOnTop(true);
+      shouldRestoreAlwaysOnTop = true;
     }
-  } else if (!isTaskRoute() || route.name === 'all') {
-    await router.push('/tasks/today');
-  }
-  await nextTick();
-  window.setTimeout(() => {
-    window.dispatchEvent(new CustomEvent(eventName));
-  }, 0);
-}
-
-function handleAppGlobalKeydown(event: KeyboardEvent): void {
-  const key = event.key.toLowerCase();
-  const commandPressed = event.ctrlKey || event.metaKey;
-
-  if (commandPressed && key === 'n') {
-    event.preventDefault();
-    void dispatchTaskShortcut('tracker:focus-new-task');
-    return;
+  } catch {
+    // Keep the show/focus path working even if topmost is unavailable.
   }
 
-  if (commandPressed && key === 'f') {
-    event.preventDefault();
-    void dispatchTaskShortcut('tracker:focus-task-search');
-    return;
+  try {
+    await appWindow.show();
+    await appWindow.unminimize();
+    await appWindow.setFocus();
+  } catch {
+    // Ignore errors when window is already shown
   }
 
-  if (commandPressed && key === ',') {
-    event.preventDefault();
-    void router.push('/settings');
-    return;
-  }
-
-  if (event.code !== 'Space' || commandPressed || event.altKey || event.shiftKey || isEditableShortcutTarget(event.target)) {
-    return;
-  }
-
-  event.preventDefault();
-  if (timerStore.running) {
-    timerStore.pause();
-  } else if (timerStore.paused) {
-    timerStore.resume();
-  } else {
-    timerStore.start();
-    openFocusModal();
+  if (shouldRestoreAlwaysOnTop) {
+    window.setTimeout(() => {
+      appWindow.setAlwaysOnTop(false).catch(console.error);
+    }, 250);
   }
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', handleAppGlobalKeydown);
-});
+// Handle global shortcut triggers (from OS-level shortcut activation)
+async function handleGlobalShortcutTriggered(event: Event): Promise<void> {
+  const detail = (event as CustomEvent).detail as { action: string };
+  if (detail?.action) {
+    await showAndFocusWindow();
+    void executeAction(detail.action as ShortcutAction, {
+      router,
+      timerStore,
+      focusModal: { open: openFocusModal },
+      route,
+    });
+  }
+}
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleAppGlobalKeydown);
+  if (removeInAppHandler) removeInAppHandler();
+  window.removeEventListener('shortcut:global-triggered', handleGlobalShortcutTriggered);
 });
 </script>
 

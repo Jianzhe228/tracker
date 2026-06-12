@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
-import type { TimerSettings, NotificationSettings } from '../types/domain';
+import type { TimerSettings, NotificationSettings, ShortcutBinding } from '../types/domain';
 import { setSetting } from '../services/commands/settings';
+import { DEFAULT_SHORTCUTS } from '../services/shortcutManager';
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -55,6 +56,8 @@ export const useSettingsStore = defineStore('settings', () => {
   });
 
   const closeToTray = ref(true);
+
+  const shortcuts = ref<ShortcutBinding[]>(DEFAULT_SHORTCUTS);
 
   function loadFromData(entries: { key: string; value: string }[]): void {
     for (const { key, value } of entries) {
@@ -123,6 +126,16 @@ export const useSettingsStore = defineStore('settings', () => {
           break;
         case 'closeToTray':
           closeToTray.value = value !== 'false';
+          break;
+        case 'shortcuts':
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              shortcuts.value = parsed as ShortcutBinding[];
+            }
+          } catch {
+            // Keep defaults if JSON parse fails
+          }
           break;
       }
     }
@@ -232,6 +245,13 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function updateShortcuts(next: ShortcutBinding[]): Promise<void> {
+    shortcuts.value = next;
+    if (isTauri) {
+      await setSetting('shortcuts', JSON.stringify(next)).catch(console.error);
+    }
+  }
+
   async function updateCloseToTray(value: boolean): Promise<void> {
     closeToTray.value = value;
     if (isTauri) {
@@ -245,11 +265,13 @@ export const useSettingsStore = defineStore('settings', () => {
     webdav,
     ai,
     closeToTray,
+    shortcuts,
     loadFromData,
     updateTimer,
     updateNotification,
     updateWebDav,
     updateAi,
+    updateShortcuts,
     updateCloseToTray
   };
 });

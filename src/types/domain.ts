@@ -316,3 +316,19 @@ export interface RankedSuggestion {
   reasons: string[];
   children?: HistoryTemplateNode[];
 }
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────
+
+export type ShortcutModifier = 'ctrl' | 'alt' | 'shift' | 'meta';
+export type ShortcutMode = 'inapp' | 'global';
+export type ShortcutAction = 'focus_new_task' | 'focus_search' | 'open_settings' | 'toggle_timer';
+
+export interface ShortcutBinding {
+  id: string;
+  label: string;
+  key: string;
+  modifiers: ShortcutModifier[];
+  mode: ShortcutMode;
+  enabled: boolean;
+  action: ShortcutAction;
+}
