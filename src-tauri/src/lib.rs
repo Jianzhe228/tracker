@@ -153,6 +153,7 @@ pub fn run() {
             commands::task::task_restore,
             commands::settings::settings_get_all,
             commands::settings::settings_set,
+            commands::tray::set_tray_tooltip,
             commands::project::project_list,
             commands::project::project_create,
             commands::project::project_update,

@@ -373,7 +373,7 @@ pub fn task_completion_stats(state: State<'_, AppState>) -> Result<TaskCompletio
 
     let todo: i64 = db
     .query_row(
-      "SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL AND status IN ('todo', 'in_progress')",
+      "SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL AND status = 'todo'",
       [],
       |row| row.get(0),
     )
@@ -391,7 +391,7 @@ pub fn task_completion_stats(state: State<'_, AppState>) -> Result<TaskCompletio
         .query_row(
             "SELECT COUNT(*) FROM tasks
        WHERE deleted_at IS NULL
-         AND status IN ('todo', 'in_progress')
+         AND status = 'todo'
          AND due_at IS NOT NULL
          AND due_at < date('now', 'localtime')",
             [],

@@ -77,12 +77,10 @@ export const useTaskStore = defineStore('task', () => {
   // so the visible count doesn't grow as the user scrolls into the archive.
   const statusCounts = ref<TaskStatusCounts>({
     todo: 0,
-    inProgress: 0,
     done: 0,
     cancelled: 0,
     total: 0,
     rootTodo: 0,
-    rootInProgress: 0,
     rootDone: 0,
     rootCancelled: 0,
     rootTotal: 0,

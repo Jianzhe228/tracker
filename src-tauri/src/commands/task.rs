@@ -90,7 +90,7 @@ pub(crate) fn cleanup_expired_soft_deleted_tasks(conn: &Connection) -> Result<()
 
 fn validate_status(status: &str) -> Result<(), String> {
     match status {
-        "todo" | "in_progress" | "done" | "cancelled" => Ok(()),
+        "todo" | "done" | "cancelled" => Ok(()),
         _ => Err("Invalid task status".to_string()),
     }
 }
@@ -876,7 +876,7 @@ pub fn task_list_working_set(
              SELECT id FROM tasks
              WHERE deleted_at IS NULL
                AND (
-                 status IN ('todo', 'in_progress')
+                 status = 'todo'
                  OR (status IN ('done', 'cancelled')
                      AND completed_at >= datetime('now', 'localtime', ?1))
                )
@@ -1004,14 +1004,12 @@ pub fn task_list_archive(
 #[serde(rename_all = "camelCase")]
 pub struct TaskStatusCounts {
     pub todo: i64,
-    pub in_progress: i64,
     pub done: i64,
     pub cancelled: i64,
     pub total: i64,
     // Root-level (parent_id IS NULL) breakdown — used by sidebar / "All" view
     // counts that historically only include top-level tasks.
     pub root_todo: i64,
-    pub root_in_progress: i64,
     pub root_done: i64,
     pub root_cancelled: i64,
     pub root_total: i64,
@@ -1032,12 +1030,10 @@ pub fn task_status_counts(state: State<'_, AppState>) -> Result<TaskStatusCounts
 
     let mut counts = TaskStatusCounts {
         todo: 0,
-        in_progress: 0,
         done: 0,
         cancelled: 0,
         total: 0,
         root_todo: 0,
-        root_in_progress: 0,
         root_done: 0,
         root_cancelled: 0,
         root_total: 0,
@@ -1059,10 +1055,6 @@ pub fn task_status_counts(state: State<'_, AppState>) -> Result<TaskStatusCounts
             "todo" => {
                 counts.todo = count;
                 counts.root_todo = root_count;
-            }
-            "in_progress" => {
-                counts.in_progress = count;
-                counts.root_in_progress = root_count;
             }
             "done" => {
                 counts.done = count;

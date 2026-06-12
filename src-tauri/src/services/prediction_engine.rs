@@ -298,7 +298,7 @@ fn load_active_task_keys(conn: &Connection) -> Result<HashSet<String>, String> {
             "SELECT title
              FROM tasks
              WHERE deleted_at IS NULL
-               AND status IN ('todo', 'in_progress')",
+               AND status = 'todo'",
         )
         .map_err(|e| e.to_string())?;
 

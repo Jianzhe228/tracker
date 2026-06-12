@@ -5,6 +5,7 @@ import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useFocusModal } from '../composables/useFocusModal';
+import { useTaskToggle } from '../composables/useTaskToggle';
 import { validateTaskTitle } from '../utils/validation';
 import { createRecurringRule, updateRecurringRule, deactivateRecurringRule } from '../services/commands/recurring';
 import type { TaskItem, Priority, TaskStatus } from '../types/domain';
@@ -24,6 +25,7 @@ const taskStore = useTaskStore();
 const timerStore = useTimerStore();
 const settingsStore = useSettingsStore();
 const focusModal = useFocusModal();
+const { toggleTaskWithFlow } = useTaskToggle();
 
 const isTauri = '__TAURI_INTERNALS__' in window;
 const title = ref('');
@@ -145,7 +147,6 @@ function getSearchStatusLabel(status: TaskStatus): string {
   switch (status) {
     case 'done': return '已完成';
     case 'cancelled': return '已取消';
-    case 'in_progress': return '进行中';
     default: return '待办';
   }
 }
@@ -169,7 +170,7 @@ function getTaskSearchScore(task: TaskItem, query: string): number {
   if (title.startsWith(query)) score += 40;
   if (title.includes(query)) score += 24;
   if (notes.includes(query)) score += 8;
-  if (task.status === 'todo' || task.status === 'in_progress') score += 4;
+  if (task.status === 'todo') score += 4;
   if (task.parentId == null) score += 2;
   return score;
 }
@@ -259,7 +260,47 @@ const elapsedTime = computed(() => {
   return formatDuration(elapsedMinutes);
 });
 
-const completedTasks = computed(() => taskStore.statusCounts.rootDone);
+function isCompletedToday(task: TaskItem): boolean {
+  if (task.status !== 'done' || task.completedAt == null) return false;
+  const date = new Date(task.completedAt);
+  if (Number.isNaN(date.getTime())) return false;
+  return toDateKey(date) === getDateKeyFromToday(0);
+}
+
+// Today view: tasks completed today, shown in a collapsible section below the
+// todo list (outside the drag-sort group, so reorder logic stays todo-only).
+const todayCompletedTasks = computed(() => {
+  if (activeTaskFilter.value !== 'today') return [] as TaskItem[];
+  return taskStore.tasks
+    .filter((task) => task.parentId === null && isCompletedToday(task))
+    .sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''));
+});
+
+const todayCompletedCollapsed = ref(false);
+const showTodayCompleted = computed(() =>
+  !searchActive.value && activeTaskFilter.value === 'today' && todayCompletedTasks.value.length > 0
+);
+
+function formatCompletedTime(completedAt: string | null): string {
+  if (!completedAt) return '';
+  const date = new Date(completedAt);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+// "all" counts every completed root task; today/project count today's
+// completions within the current view scope — a number unrelated to the view
+// (global rootDone) reads as wrong.
+const completedTasksLabel = computed(() => (activeTaskFilter.value === 'all' ? '已完成任务' : '今日已完成'));
+
+const completedTasksCount = computed(() => {
+  if (activeTaskFilter.value === 'all') return taskStore.statusCounts.rootDone;
+  return taskStore.tasks.filter((task) => {
+    if (task.parentId !== null || !isCompletedToday(task)) return false;
+    if (route.name === 'project' && currentProjectId.value) return task.projectId === currentProjectId.value;
+    return true;
+  }).length;
+});
 
 const canDragSort = computed(() => !searchActive.value && activeTaskFilter.value !== 'all');
 
@@ -1793,8 +1834,8 @@ watch(activeTaskFilter, (filter) => {
             <div class="text-xs text-[#6F6F6B]">已用时间</div>
           </div>
           <div class="text-center">
-            <div class="text-xl font-semibold tabular-nums text-success-500">{{ completedTasks }}</div>
-            <div class="text-xs text-[#6F6F6B]">已完成任务</div>
+            <div class="text-xl font-semibold tabular-nums text-success-500">{{ completedTasksCount }}</div>
+            <div class="text-xs text-[#6F6F6B]">{{ completedTasksLabel }}</div>
           </div>
         </div>
       </div>
@@ -1941,10 +1982,20 @@ watch(activeTaskFilter, (filter) => {
         @scroll="handleTaskListScroll"
       >
         <div
-          v-if="displayTasks.length > 0"
+          v-if="displayTasks.length > 0 || showTodayCompleted"
           ref="taskListWrap"
           :class="activeTaskFilter === 'all' ? 'relative pb-10' : 'relative'"
         >
+            <!-- Today view: everything-done state -->
+            <div v-if="displayTasks.length === 0 && showTodayCompleted" class="flex flex-col items-center py-8">
+              <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-50">
+                <svg class="h-8 w-8 text-success-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p class="mt-3 text-sm font-medium text-[#1C1C1A]">今日待办已全部完成</p>
+              <p class="mt-1 text-xs text-[#9E9E9A]">休息一下，或在上方继续添加任务</p>
+            </div>
             <component
               :is="canDragSort ? TransitionGroup : 'div'"
               :name="canDragSort ? 'task-sort' : undefined"
@@ -2136,6 +2187,56 @@ watch(activeTaskFilter, (filter) => {
                 </div>
               </div>
             </component>
+
+            <!-- Today view: completed-today section (outside the drag group) -->
+            <div v-if="showTodayCompleted" :class="displayTasks.length > 0 ? 'mt-6' : 'mt-2'">
+              <button
+                class="flex w-full items-center gap-3 select-none rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                :aria-expanded="!todayCompletedCollapsed"
+                @click="todayCompletedCollapsed = !todayCompletedCollapsed"
+              >
+                <svg
+                  class="h-3.5 w-3.5 shrink-0 text-[#9E9E9A] transition-transform"
+                  :class="todayCompletedCollapsed ? '' : 'rotate-90'"
+                  viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
+                >
+                  <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                </svg>
+                <h3 class="text-sm font-semibold text-[#6F6F6B]">已完成</h3>
+                <span class="text-xs text-[#9E9E9A]">{{ todayCompletedTasks.length }} 项</span>
+                <div class="h-px flex-1 bg-surface-border" />
+              </button>
+
+              <div v-show="!todayCompletedCollapsed" class="mt-3 space-y-2">
+                <div
+                  v-for="task in todayCompletedTasks"
+                  :key="task.id"
+                  class="flex cursor-pointer items-center gap-3 rounded-xl border bg-white px-4 py-2.5 transition-all hover:border-surface-border-hover hover:shadow-sm"
+                  :class="selectedTaskId === task.id ? 'border-primary-300 ring-2 ring-primary-200/80' : 'border-success-200/70'"
+                  @click="selectTask(task.id)"
+                >
+                  <button
+                    role="checkbox"
+                    :aria-checked="true"
+                    aria-label="标记为未完成"
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-success-500 bg-success-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                    @click.stop="handleToggleTask(task.id)"
+                  >
+                    <svg class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                  </button>
+                  <span class="min-w-0 flex-1 truncate text-sm text-[#9E9E9A] line-through">{{ task.title }}</span>
+                  <span
+                    v-if="hasTaskSubtasks(task.id)"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full border border-surface-border px-2.5 py-1 text-xs text-[#6F6F6B]"
+                  >
+                    {{ getTaskSubtaskDoneCount(task.id) }}/{{ getTaskSubtasks(task.id).length }}
+                  </span>
+                  <span class="shrink-0 text-xs text-[#9E9E9A]">{{ formatCompletedTime(task.completedAt) }} 完成</span>
+                </div>
+              </div>
+            </div>
 
             <!-- "All" view: archive loading status row -->
             <div

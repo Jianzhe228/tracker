@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useSettingsStore } from './settingsStore';
 import { useUiStore } from './uiStore';
 import { sendNotification } from '../services/notification';
+import { playTone } from '../services/sound';
 import { createFocusSession } from '../services/commands/focusSession';
 import { toDateKey } from '../utils/date';
 
@@ -86,31 +87,6 @@ function getTodayKey(): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-function playTone(kind: 'start' | 'complete' | 'breakEnd'): void {
-  if (typeof window === 'undefined') return;
-  const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioCtx) return;
-  try {
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = kind === 'start' ? 880 : kind === 'complete' ? 660 : 520;
-    gain.gain.value = 0.0001;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const now = ctx.currentTime;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
-    osc.start(now);
-    osc.stop(now + 0.3);
-    osc.onended = () => ctx.close();
-  } catch (error) {
-    console.warn('[timer] failed to play tone', error);
-  }
 }
 
 export const useTimerStore = defineStore('timer', () => {

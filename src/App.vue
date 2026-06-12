@@ -20,6 +20,7 @@ import NotificationCenter from './components/NotificationCenter.vue';
 import type { ProjectItem } from './types/domain';
 import { ensureNotificationPermission } from './services/notification';
 import { webdavUpload, webdavDownload } from './services/commands/sync';
+import { setTrayTooltip } from './services/commands/tray';
 import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from './utils/date';
 import { isTaskActiveOnDate } from './utils/taskFilters';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -108,7 +109,7 @@ const getTaskCount = (filter: string) => {
       ).length;
     case 'all': {
       const c = taskStore.statusCounts;
-      return c.rootTodo + c.rootInProgress + c.rootDone;
+      return c.rootTodo + c.rootDone;
     }
     default:
       return 0;
@@ -253,6 +254,28 @@ watch(windowTitle, (title) => {
   if (isTauri) {
     appWindow.setTitle(title).catch(() => {});
   }
+}, { immediate: true });
+
+// Tray tooltip mirrors the timer at minute granularity — the computed string
+// only changes once per minute (or on state/task change), so the watch fires
+// roughly one IPC call per minute.
+const trayTooltip = computed(() => {
+  if (timerStore.idle) return APP_NAME;
+  const isCountup = timerStore.mode === 'focus' && timerStore.timerKind === 'countup';
+  const minutes = isCountup
+    ? Math.floor(timerStore.elapsedSeconds / 60)
+    : Math.max(1, Math.ceil(timerStore.remainingSeconds / 60));
+  const parts: string[] = [];
+  if (timerStore.mode !== 'focus') parts.push(timerStore.modeLabel);
+  if (timerStore.paused) parts.push('已暂停');
+  parts.push(isCountup ? `已专注 ${minutes} 分钟` : `剩余 ${minutes} 分钟`);
+  if (timerStore.mode === 'focus' && timerStore.currentTaskTitle) parts.push(timerStore.currentTaskTitle);
+  return parts.join(' · ');
+});
+
+watch(trayTooltip, (tooltip) => {
+  if (!isTauri) return;
+  setTrayTooltip(tooltip).catch(() => {});
 }, { immediate: true });
 
 const focusButtonTone = computed(() => {

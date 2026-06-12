@@ -4,11 +4,13 @@ import { useTimerStore } from '../stores/timerStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
 import { useFocusModal } from '../composables/useFocusModal';
+import { useTaskToggle } from '../composables/useTaskToggle';
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
 const { visible, close } = useFocusModal();
+const { toggleTaskWithFlow } = useTaskToggle();
 
 // 层级导航状态
 const selectedParentId = ref<number | null>(null);
@@ -101,12 +103,7 @@ function getSubtaskCounts(taskId: number): { done: number; total: number } {
   return { done, total: subs.length };
 }
 
-// 检查父任务的所有直接子任务是否都已完成
-function areAllSubtasksDone(parentId: number): boolean {
-  const subtasks = taskStore.tasks.filter(t => t.parentId === parentId);
-  if (subtasks.length === 0) return false;
-  return subtasks.every(t => t.status === 'done' || t.status === 'cancelled');
-}
+// 检查父任务的所有直接子任务是否都已完成 → 已收敛进 useTaskToggle 共享流程
 
 // 当前关联任务是否已完成
 const isCurrentTaskDone = computed(() => {
@@ -194,38 +191,7 @@ function priorityCheckboxClass(priority: number): string {
 
 async function toggleTask(e: Event, taskId: number): Promise<void> {
   e.stopPropagation();
-  const result = await taskStore.toggleTask(taskId);
-
-  if (!result.ok) {
-    if (result.reason === 'has_incomplete_subtasks') {
-      uiStore.notify('该任务还有未完成的子任务，请先完成子任务');
-    } else if (result.reason === 'sync_failed') {
-      uiStore.notify('更新任务状态失败，请重试');
-    }
-    return;
-  }
-
-  // 如果子任务全部完成，提示用户是否要完成父任务
-  const task = taskStore.tasks.find(t => t.id === taskId);
-  if (task?.status === 'done' && task.parentId != null && areAllSubtasksDone(task.parentId)) {
-    const parent = taskStore.tasks.find(t => t.id === task.parentId);
-    if (parent && parent.status !== 'done') {
-      const confirmed = await uiStore.confirm(
-        `「${parent.title}」的所有子任务已完成，是否将父任务也标记为完成？`,
-        { title: '子任务已全部完成' }
-      );
-      if (confirmed) {
-        await taskStore.toggleTask(result.parentId!);
-      }
-    }
-  }
-
-  // 如果任务完成且是当前计时器关联的任务，清空计时器任务状态
-  if (result.taskId === timerStore.currentTaskId) {
-    if (task?.status === 'done') {
-      timerStore.clearTask();
-    }
-  }
+  await toggleTaskWithFlow(taskId, (message) => uiStore.confirm(message, { title: '子任务已全部完成' }));
 }
 
 // Handle ESC key

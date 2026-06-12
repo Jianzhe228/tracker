@@ -1,4 +1,4 @@
-export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'cancelled';
+export type TaskStatus = 'todo' | 'done' | 'cancelled';
 export type Priority = 0 | 1 | 2 | 3;
 
 export interface TaskItem {
@@ -101,12 +101,10 @@ export interface TaskArchivePage {
 
 export interface TaskStatusCounts {
   todo: number;
-  inProgress: number;
   done: number;
   cancelled: number;
   total: number;
   rootTodo: number;
-  rootInProgress: number;
   rootDone: number;
   rootCancelled: number;
   rootTotal: number;

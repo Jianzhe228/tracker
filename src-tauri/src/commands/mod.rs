@@ -14,3 +14,4 @@ pub mod statistics;
 pub mod suggestion_trace;
 pub mod sync;
 pub mod task;
+pub mod tray;

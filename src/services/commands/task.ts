@@ -15,7 +15,7 @@ export function listTasks(options?: { limit?: number; offset?: number }): Promis
 
 /**
  * Lazy-load: load only the working set on app start.
- * Returns active tasks (todo / in_progress) + recently completed/cancelled
+ * Returns active (todo) tasks + recently completed/cancelled
  * tasks (last `archiveDays` days, default 30) + their full ancestor chain
  * and descendant subtree (so the task tree is never broken).
  */
