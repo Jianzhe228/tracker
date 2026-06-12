@@ -5,6 +5,7 @@ import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
 import { useFocusModal } from '../composables/useFocusModal';
 import { useTaskToggle } from '../composables/useTaskToggle';
+import { toDateKey, todayDateKey } from '../utils/date';
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
@@ -15,9 +16,17 @@ const { toggleTaskWithFlow } = useTaskToggle();
 // 层级导航状态
 const selectedParentId = ref<number | null>(null);
 
-// 获取今天的日期字符串 YYYY-MM-DD
+// 获取今天的日期字符串 YYYY-MM-DD（本地时区，与任务列表口径一致）
 function getTodayKey(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayDateKey();
+}
+
+// completedAt 是时间戳，需解析后按本地日期比较（与 TasksView.isCompletedToday 一致）
+function isCompletedOn(dateKey: string, completedAt: string | null): boolean {
+  if (completedAt == null) return false;
+  const date = new Date(completedAt);
+  if (Number.isNaN(date.getTime())) return false;
+  return toDateKey(date) === dateKey;
 }
 
 // 今日父任务（无父任务 + dueAt 是今天）
@@ -36,8 +45,7 @@ const todayDoneParentTasks = computed(() => {
   return taskStore.tasks.filter(t =>
     t.status === 'done' &&
     t.parentId === null &&
-    t.completedAt !== null &&
-    t.completedAt.slice(0, 10) === today
+    isCompletedOn(today, t.completedAt)
   );
 });
 
@@ -47,11 +55,7 @@ const todayInProgressParentTasks = computed(() => {
   return taskStore.tasks.filter(t => {
     if (t.status !== 'todo' || t.parentId !== null) return false;
     const subtasks = taskStore.tasks.filter(s => s.parentId === t.id);
-    return subtasks.some(s =>
-      s.status === 'done' &&
-      s.completedAt !== null &&
-      s.completedAt.slice(0, 10) === today
-    );
+    return subtasks.some(s => s.status === 'done' && isCompletedOn(today, s.completedAt));
   });
 });
 
@@ -59,11 +63,7 @@ const todayInProgressParentTasks = computed(() => {
 function getTodaySubtaskStats(parentId: number): { done: number; total: number; doneTitles: string[] } {
   const today = getTodayKey();
   const subtasks = taskStore.tasks.filter(t => t.parentId === parentId);
-  const doneToday = subtasks.filter(t =>
-    t.status === 'done' &&
-    t.completedAt !== null &&
-    t.completedAt.slice(0, 10) === today
-  );
+  const doneToday = subtasks.filter(t => t.status === 'done' && isCompletedOn(today, t.completedAt));
   return {
     done: doneToday.length,
     total: subtasks.length,

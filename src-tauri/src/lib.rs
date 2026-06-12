@@ -7,6 +7,7 @@ use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri::WindowEvent;
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 /// Platform-specific display optimizations.
 /// Called before the WebView is created so env vars take effect.
@@ -92,6 +93,23 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Surface fatal init errors in a native dialog: with `windows_subsystem =
+/// "windows"` there is no console, so a panic here would be invisible.
+fn show_startup_failure(app: &tauri::AppHandle, error: &str) {
+    let db_path = app
+        .path()
+        .app_data_dir()
+        .map(|dir| dir.join("tracker.db").display().to_string())
+        .unwrap_or_else(|_| "<应用数据目录>/tracker.db".to_string());
+    app.dialog()
+        .message(format!(
+            "应用初始化失败：\n{error}\n\n数据库文件位置：\n{db_path}\n\n如提示数据库版本不兼容，请先备份该文件，再将其移走后重新启动。"
+        ))
+        .title("Smart Focus Tracker 无法启动")
+        .kind(MessageDialogKind::Error)
+        .blocking_show();
+}
+
 pub fn run() {
     setup_display_env();
 
@@ -129,8 +147,13 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let state = AppState::new(app.handle().clone())
-                .map_err(|e| format!("failed to initialize app state: {}", e))?;
+            let state = match AppState::new(app.handle().clone()) {
+                Ok(state) => state,
+                Err(e) => {
+                    show_startup_failure(app.handle(), &e);
+                    std::process::exit(1);
+                }
+            };
             app.manage(state);
             setup_tray(app)?;
 

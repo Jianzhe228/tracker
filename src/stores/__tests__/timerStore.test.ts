@@ -3,7 +3,9 @@
  * task switching, and focus session persistence.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { nextTick } from 'vue';
 import { setActivePinia, createPinia } from 'pinia';
+import { useSettingsStore } from '../settingsStore';
 import { useTimerStore } from '../timerStore';
 
 // Mock Tauri environment
@@ -416,6 +418,42 @@ describe('timerStore', () => {
       timerStore.timerKind = 'countdown';
 
       expect(timerStore.progress).toBe(100);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TEST: Idle timer follows settings loaded after hydration
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('idle duration follows settings', () => {
+    it('applies focusMinutes loaded after hydrateFromStorage to the idle timer', async () => {
+      // App startup order: hydrateFromStorage runs before settings arrive from
+      // the DB, so the idle timer is first initialized with the 25min default.
+      timerStore.hydrateFromStorage();
+      expect(timerStore.status).toBe('idle');
+      expect(timerStore.totalSeconds).toBe(25 * 60);
+
+      const settingsStore = useSettingsStore();
+      settingsStore.timer.focusMinutes = 45;
+      await nextTick();
+
+      expect(timerStore.totalSeconds).toBe(45 * 60);
+      expect(timerStore.remainingSeconds).toBe(45 * 60);
+    });
+
+    it('does not clobber a running timer when focusMinutes changes', async () => {
+      timerStore.hydrateFromStorage();
+      timerStore.start();
+      vi.advanceTimersByTime(5000);
+      const remainingBefore = timerStore.remainingSeconds;
+
+      const settingsStore = useSettingsStore();
+      settingsStore.timer.focusMinutes = 45;
+      await nextTick();
+
+      expect(timerStore.status).toBe('running');
+      expect(timerStore.totalSeconds).toBe(25 * 60);
+      expect(timerStore.remainingSeconds).toBeLessThanOrEqual(remainingBefore);
     });
   });
 });

@@ -202,9 +202,13 @@ pub(crate) fn generate_export_json_from_db(db: &rusqlite::Connection) -> Result<
         focus_sessions.push(row.map_err(|e| e.to_string())?);
     }
 
-    // Collect settings
+    // Collect settings. Credentials must stay local: export files travel
+    // off-device (WebDAV upload, local backups, user-chosen export paths).
     let mut settings_stmt = db
-        .prepare("SELECT key, value FROM user_settings")
+        .prepare(
+            "SELECT key, value FROM user_settings
+             WHERE key NOT IN ('webdavPassword', 'aiApiKey')",
+        )
         .map_err(|e| e.to_string())?;
     let setting_rows = settings_stmt
         .query_map([], |row| {
@@ -959,6 +963,31 @@ mod tests {
         ],
       )
       .expect("insert focus session");
+    }
+
+    #[test]
+    fn export_json_excludes_credentials() {
+        let conn = setup_db();
+        conn.execute_batch(
+            "INSERT INTO user_settings (key, value) VALUES
+               ('webdavPassword', 'secret'),
+               ('aiApiKey', 'sk-test'),
+               ('closeToTray', 'true');",
+        )
+        .expect("seed settings");
+
+        let json = generate_export_json_from_db(&conn).expect("export");
+        let data: serde_json::Value = serde_json::from_str(&json).expect("parse export");
+        let keys: Vec<&str> = data["settings"]
+            .as_array()
+            .expect("settings array")
+            .iter()
+            .map(|s| s["key"].as_str().expect("setting key"))
+            .collect();
+
+        assert!(!keys.contains(&"webdavPassword"));
+        assert!(!keys.contains(&"aiApiKey"));
+        assert!(keys.contains(&"closeToTray"));
     }
 
     #[test]

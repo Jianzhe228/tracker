@@ -192,6 +192,20 @@ pub fn learn_record_batch(
     source: Option<String>,
 ) -> Result<(), String> {
     let db = state.db().lock().map_err(|e| e.to_string())?;
+    record_batch(&db, &keywords, &subtask_title, project_id, delta, source)
+}
+
+fn record_batch(
+    db: &rusqlite::Connection,
+    keywords: &[String],
+    subtask_title: &str,
+    project_id: Option<i64>,
+    delta: i64,
+    source: Option<String>,
+) -> Result<(), String> {
+    if keywords.is_empty() {
+        return Ok(());
+    }
     let src = source.unwrap_or_else(|| "user".to_string());
 
     // Batch query: find all existing keywords in one go
@@ -214,12 +228,12 @@ pub fn learn_record_batch(
     // Batch update existing ones
     let mut update_stmt = db
         .prepare(
-            "UPDATE subtask_learn_log SET score = score + ?3, last_used_at = CURRENT_TIMESTAMP
+            "UPDATE subtask_learn_log SET score = score + ?4, last_used_at = CURRENT_TIMESTAMP
        WHERE keyword = ?1 AND subtask_title = ?2 AND project_id IS ?3",
         )
         .map_err(|e| e.to_string())?;
 
-    for keyword in &keywords {
+    for keyword in keywords {
         if existing_keywords.contains(keyword) {
             update_stmt
                 .execute(rusqlite::params![keyword, subtask_title, project_id, delta])
@@ -235,7 +249,7 @@ pub fn learn_record_batch(
         )
         .map_err(|e| e.to_string())?;
 
-    for keyword in &keywords {
+    for keyword in keywords {
         if !existing_keywords.contains(keyword) {
             insert_stmt
                 .execute(rusqlite::params![
@@ -250,6 +264,64 @@ pub fn learn_record_batch(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::record_batch;
+    use rusqlite::Connection;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        crate::db::run_migrations(&conn).expect("apply schema");
+        conn
+    }
+
+    fn score_of(conn: &Connection, keyword: &str, subtask_title: &str) -> i64 {
+        conn.query_row(
+            "SELECT score FROM subtask_learn_log WHERE keyword = ?1 AND subtask_title = ?2",
+            rusqlite::params![keyword, subtask_title],
+            |row| row.get(0),
+        )
+        .expect("learn log row exists")
+    }
+
+    #[test]
+    fn repeated_feedback_accumulates_score() {
+        let conn = setup_db();
+        let keywords = vec!["周报".to_string()];
+
+        record_batch(&conn, &keywords, "整理数据", Some(1), 2, None).expect("first write");
+        record_batch(&conn, &keywords, "整理数据", Some(1), 1, None).expect("second write");
+        record_batch(&conn, &keywords, "整理数据", Some(1), -1, None).expect("third write");
+
+        assert_eq!(score_of(&conn, "周报", "整理数据"), 2);
+    }
+
+    #[test]
+    fn mixed_batch_updates_existing_and_inserts_new() {
+        let conn = setup_db();
+
+        record_batch(&conn, &["复习".to_string()], "做笔记", None, 1, None).expect("seed");
+        record_batch(
+            &conn,
+            &["复习".to_string(), "考试".to_string()],
+            "做笔记",
+            None,
+            1,
+            None,
+        )
+        .expect("mixed batch");
+
+        assert_eq!(score_of(&conn, "复习", "做笔记"), 2);
+        assert_eq!(score_of(&conn, "考试", "做笔记"), 1);
+    }
+
+    #[test]
+    fn empty_keywords_is_a_no_op() {
+        let conn = setup_db();
+        record_batch(&conn, &[], "任意子任务", None, 1, None).expect("empty batch");
+    }
 }
 
 /// Suggest subtasks based on keywords and project_id, ordered by score.

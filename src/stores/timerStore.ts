@@ -864,17 +864,22 @@ export const useTimerStore = defineStore('timer', () => {
     recoveryTargetStatus.value = null;
   }
 
-  // Synchronize timerKind with default setting in real-time when idle and in focus mode
-  watch(() => settingsStore.timer.defaultTimerKind, (newKind) => {
-    if (idle.value && mode.value === 'focus') {
-      timerKind.value = newKind;
-      // Also reset time values to match the new mode
-      totalSeconds.value = getDefaultSeconds('focus');
-      remainingSeconds.value = totalSeconds.value;
-      elapsedSeconds.value = 0;
-      saveState(true);
+  // Synchronize timer kind/duration with settings in real-time when idle and in
+  // focus mode. focusMinutes must be watched too: settings load from the DB
+  // after hydrateFromStorage has already initialized idle state with defaults.
+  watch(
+    () => [settingsStore.timer.defaultTimerKind, settingsStore.timer.focusMinutes] as const,
+    ([newKind]) => {
+      if (idle.value && mode.value === 'focus') {
+        timerKind.value = newKind;
+        // Also reset time values to match the new mode
+        totalSeconds.value = getDefaultSeconds('focus');
+        remainingSeconds.value = totalSeconds.value;
+        elapsedSeconds.value = 0;
+        saveState(true);
+      }
     }
-  });
+  );
 
   watch(status, (newStatus) => {
     if (newStatus === 'idle') {
