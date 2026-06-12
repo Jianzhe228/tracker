@@ -11,6 +11,7 @@ import type { TaskItem, Priority, TaskStatus } from '../types/domain';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from '../utils/date';
+import { isTaskActiveOnDate } from '../utils/taskFilters';
 import { useSuggestionPanel, type SidebarSuggestion } from '../composables/useSuggestionPanel';
 
 const props = defineProps<{
@@ -69,20 +70,16 @@ let resizeRafId = 0;
 // Check if a task is active on a given date:
 // - exact match on dueAt or startAt
 // - OR the date falls within [startAt, dueAt] range (for multi-day tasks)
-function isTaskActiveOnDate(task: TaskItem, dateKey: string): boolean {
-  if (task.dueAt === dateKey || task.startAt === dateKey) return true;
-  if (task.startAt && task.dueAt && task.startAt <= dateKey && dateKey <= task.dueAt) return true;
-  return false;
-}
+// (moved to utils/taskFilters.ts — shared with sidebar counts in App.vue)
 
-// Check if a task is active on any date within a range [fromKey, toKey]
-function isTaskActiveInRange(task: TaskItem, fromKey: string, toKey: string): boolean {
-  // Exact date falls within range
-  if (task.dueAt && task.dueAt >= fromKey && task.dueAt <= toKey) return true;
-  if (task.startAt && task.startAt >= fromKey && task.startAt <= toKey) return true;
-  // Task spans across the range: startAt before range and dueAt after range start
-  if (task.startAt && task.dueAt && task.startAt <= toKey && task.dueAt >= fromKey) return true;
-  return false;
+// ── Live focus state: which task is the timer currently attached to ──
+const focusedTaskId = computed(() => {
+  if (timerStore.mode !== 'focus' || timerStore.idle) return null;
+  return timerStore.currentTaskId;
+});
+
+function isTaskFocused(taskId: number): boolean {
+  return focusedTaskId.value === taskId;
 }
 
 const activeTaskFilter = computed(() => {
@@ -1097,6 +1094,15 @@ async function handleToggleTask(taskId: number): Promise<void> {
     return;
   }
 
+  // Completing the task the timer is attached to: detach it so the running
+  // session stops attributing time to a done task (mirrors FocusModal behavior).
+  if (taskId === timerStore.currentTaskId) {
+    const toggled = taskStore.tasks.find((task) => task.id === taskId);
+    if (toggled?.status === 'done') {
+      timerStore.clearTask();
+    }
+  }
+
   if (!result.shouldPromptCompleteParent || result.parentId == null) {
     return;
   }
@@ -1598,11 +1604,15 @@ async function undoDeleteTask(): Promise<void> {
 }
 
 function startFocusOnTask(taskId: number, taskTitle: string, projectId: number | null = null): void {
-  const success = timerStore.setTask(taskId, taskTitle, projectId);
-  if (!success) {
-    showInlineNotice('计时进行中，需先结束当前计时后再切换任务');
+  // Timer already attached to this task: resume if paused, then just open the panel
+  if (isTaskFocused(taskId)) {
+    if (timerStore.paused) {
+      timerStore.resume();
+    }
+    focusModal.open();
     return;
   }
+  timerStore.setTask(taskId, taskTitle, projectId);
   timerStore.start();
   focusModal.open();
 }
@@ -1979,6 +1989,7 @@ watch(activeTaskFilter, (filter) => {
                   class="group relative flex cursor-pointer overflow-hidden rounded-xl border border-surface-border bg-white transition-all"
                   :class="[
                     selectedTaskId === task.id ? 'border-primary-300 ring-2 ring-primary-200/80' : '',
+                    isTaskFocused(task.id) && selectedTaskId !== task.id ? 'border-success-300 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.12)]' : '',
                     isTaskDragging ? '' : 'hover:border-surface-border-hover hover:shadow-sm',
                     canDragSort
                       ? (draggingTaskId === task.id && isTaskDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing')
@@ -2024,6 +2035,21 @@ watch(activeTaskFilter, (filter) => {
                       ]"
                     >
                       {{ task.title }}
+                    </span>
+
+                    <!-- Live Focus Badge -->
+                    <span
+                      v-if="isTaskFocused(task.id)"
+                      class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+                      :class="timerStore.running
+                        ? 'bg-success-50 text-success-600 ring-1 ring-success-200'
+                        : 'bg-warning-50 text-warning-600 ring-1 ring-warning-200'"
+                    >
+                      <span
+                        class="h-1.5 w-1.5 rounded-full"
+                        :class="timerStore.running ? 'animate-pulse bg-success-500' : 'bg-warning-400'"
+                      />
+                      {{ timerStore.running ? `专注中 ${timerStore.display}` : '已暂停' }}
                     </span>
 
                     <!-- Rescheduled badge -->
@@ -2091,14 +2117,20 @@ watch(activeTaskFilter, (filter) => {
 
                     <!-- Quick Focus -->
                     <button
-                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium text-[#9E9E9A] transition-colors hover:bg-surface-hover hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
-                      aria-label="设为当前专注任务"
+                      class="flex items-center gap-1 shrink-0 rounded px-2 py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                      :class="isTaskFocused(task.id)
+                        ? 'text-success-600 hover:bg-success-50'
+                        : 'text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B]'"
+                      :aria-label="isTaskFocused(task.id) ? (timerStore.paused ? '继续专注' : '打开专注面板') : '设为当前专注任务'"
                       @click.stop="startFocusOnTask(task.id, task.title, task.projectId)"
                     >
-                      <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg v-if="!isTaskFocused(task.id) || timerStore.paused" class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M8 5v14l11-7z" />
                       </svg>
-                      专注
+                      <svg v-else class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {{ isTaskFocused(task.id) ? (timerStore.paused ? '继续' : '计时中') : '专注' }}
                     </button>
                   </div>
                 </div>
@@ -2179,6 +2211,19 @@ watch(activeTaskFilter, (filter) => {
               class="flex-1 rounded border border-surface-border px-2 py-1 font-medium text-[#1C1C1A] focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               placeholder="任务标题…"
             >
+            <span
+              v-if="isTaskFocused(selectedTask.id)"
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+              :class="timerStore.running
+                ? 'bg-success-50 text-success-600 ring-1 ring-success-200'
+                : 'bg-warning-50 text-warning-600 ring-1 ring-warning-200'"
+            >
+              <span
+                class="h-1.5 w-1.5 rounded-full"
+                :class="timerStore.running ? 'animate-pulse bg-success-500' : 'bg-warning-400'"
+              />
+              {{ timerStore.running ? `专注中 ${timerStore.display}` : '已暂停' }}
+            </span>
             <button class="text-[#9E9E9A] hover:text-[#6F6F6B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40" aria-label="关闭详情" @click="closeDetail">
               <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -2629,6 +2674,19 @@ watch(activeTaskFilter, (filter) => {
                     >
                       {{ subtask.title }}
                     </button>
+                    <span
+                      v-if="isTaskFocused(subtask.id)"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                      :class="timerStore.running
+                        ? 'bg-success-50 text-success-600 ring-1 ring-success-200'
+                        : 'bg-warning-50 text-warning-600 ring-1 ring-warning-200'"
+                    >
+                      <span
+                        class="h-1 w-1 rounded-full"
+                        :class="timerStore.running ? 'animate-pulse bg-success-500' : 'bg-warning-400'"
+                      />
+                      {{ timerStore.running ? '专注中' : '已暂停' }}
+                    </span>
                     <span
                       v-if="hasTaskSubtasks(subtask.id)"
                       class="shrink-0 rounded border border-surface-border bg-white px-1.5 py-0.5 text-[10px] text-[#6F6F6B]"

@@ -243,6 +243,28 @@ describe('timerStore', () => {
       expect(timerStore.status).toBe('running');
     });
 
+    it('start() from paused resumes without dropping segments', () => {
+      timerStore.setTask(1, 'Task A');
+      timerStore.start();
+      vi.advanceTimersByTime(60 * 1000); // 1 min of focus
+      timerStore.pause();
+      vi.advanceTimersByTime(30 * 1000); // 30s paused
+
+      // e.g. clicking 专注 on a task row while paused calls start(), not resume()
+      timerStore.start();
+
+      expect(timerStore.status).toBe('running');
+      // The original segment must survive — a full restart would wipe it and
+      // lose the already-elapsed minute from the persisted session.
+      expect(timerStore.segments).toHaveLength(1);
+      expect(timerStore.segments[0].taskId).toBe(1);
+
+      vi.advanceTimersByTime(60 * 1000); // 1 more min
+      timerStore.finalizeFocusSession('stopped', false);
+      expect(timerStore.focusSecondsToday).toBeGreaterThanOrEqual(118); // ~2 min, pause excluded
+      expect(timerStore.focusSecondsToday).toBeLessThan(150);
+    });
+
     it('resets to idle after stop()', () => {
       timerStore.start();
       timerStore.stop();

@@ -21,6 +21,7 @@ import type { ProjectItem } from './types/domain';
 import { ensureNotificationPermission } from './services/notification';
 import { webdavUpload, webdavDownload } from './services/commands/sync';
 import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from './utils/date';
+import { isTaskActiveOnDate } from './utils/taskFilters';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 const appWindow = getCurrentWindow();
@@ -100,8 +101,10 @@ const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(Str
 const getTaskCount = (filter: string) => {
   switch (filter) {
     case 'today':
+      // Same date semantics as TasksView's today filter (dueAt / startAt /
+      // multi-day range), so the sidebar badge matches the list length.
       return taskStore.tasks.filter(
-        (task) => task.parentId === null && task.status === 'todo' && task.dueAt === getDateKeyFromToday(0),
+        (task) => task.parentId === null && task.status === 'todo' && isTaskActiveOnDate(task, getDateKeyFromToday(0)),
       ).length;
     case 'all': {
       const c = taskStore.statusCounts;
@@ -233,6 +236,24 @@ const focusButtonSubLabel = computed(() => {
   if (timerStore.paused) return '已暂停，点击继续管理';
   return '打开专注面板';
 });
+
+// Reflect timer state in the window title so the taskbar / Alt-Tab / tray
+// still shows progress when the window is minimized or covered.
+const windowTitle = computed(() => {
+  if (timerStore.idle) return APP_NAME;
+  const parts: string[] = [timerStore.display];
+  if (timerStore.paused) parts.push('已暂停');
+  else if (timerStore.mode !== 'focus') parts.push(timerStore.modeLabel);
+  if (timerStore.mode === 'focus' && timerStore.currentTaskTitle) parts.push(timerStore.currentTaskTitle);
+  return `${parts.join(' · ')} — ${APP_NAME}`;
+});
+
+watch(windowTitle, (title) => {
+  document.title = title;
+  if (isTauri) {
+    appWindow.setTitle(title).catch(() => {});
+  }
+}, { immediate: true });
 
 const focusButtonTone = computed(() => {
   if (timerStore.running) {

@@ -504,6 +504,12 @@ export const useTimerStore = defineStore('timer', () => {
 
   function start(): void {
     if (running.value) return;
+    // Starting from paused must NOT reset segments/startedAt — that would drop
+    // the already-elapsed portion from the persisted focus session. Resume instead.
+    if (paused.value) {
+      resume();
+      return;
+    }
     syncDailyPomodoroCounter();
     ensureProgressBaseline();
     status.value = 'running';
