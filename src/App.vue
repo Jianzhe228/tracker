@@ -52,25 +52,39 @@ const uiStore = useUiStore();
 const aiStore = useAiStore();
 const predictionStore = usePredictionStore();
 
+// Fatal app_init failure — without data every view renders empty and lies to
+// the user, so we take over the window with an explicit error card instead.
+const initError = ref<string | null>(null);
+
+function reloadApp(): void {
+  window.location.reload();
+}
+
 onMounted(async () => {
   console.timeEnd('[app] script setup → mounted');
   timerStore.hydrateFromStorage();
   if (!initPromise) return;
-  const data = await initPromise;
-  console.timeEnd('[init] appInit');
-  settingsStore.loadFromData(data.settings);
-  // ── Initialize shortcuts after settings are loaded ──
-  removeInAppHandler = installInAppHandler();
-  window.addEventListener('shortcut:global-triggered', handleGlobalShortcutTriggered);
-  void syncGlobalShortcuts();
-  // Lazy-load: pull working set + status counts in parallel.
-  await Promise.all([
-    taskStore.loadWorkingSet(),
-    taskStore.reloadStatusCountsImmediate(),
-  ]);
-  taskStore.loadProjectsFromData(data.projects);
-  taskStore.loadRecurringRulesFromData(data.recurringRules);
-  taskStore.startDeadlineWatcher();
+  try {
+    const data = await initPromise;
+    console.timeEnd('[init] appInit');
+    settingsStore.loadFromData(data.settings);
+    // ── Initialize shortcuts after settings are loaded ──
+    removeInAppHandler = installInAppHandler();
+    window.addEventListener('shortcut:global-triggered', handleGlobalShortcutTriggered);
+    void syncGlobalShortcuts();
+    // Lazy-load: pull working set + status counts in parallel.
+    await Promise.all([
+      taskStore.loadWorkingSet(),
+      taskStore.reloadStatusCountsImmediate(),
+    ]);
+    taskStore.loadProjectsFromData(data.projects);
+    taskStore.loadRecurringRulesFromData(data.recurringRules);
+    taskStore.startDeadlineWatcher();
+  } catch (e) {
+    initError.value = e instanceof Error ? e.message : String(e);
+    console.error('[init] appInit failed', e);
+    return;
+  }
   ensureNotificationPermission().catch(console.error);
   aiStore.init().catch(console.error);
   predictionStore.init().catch(console.error);
@@ -407,6 +421,16 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-screen bg-surface-page text-[#1C1C1A] antialiased selection:bg-primary-100">
+    <!-- Fatal init failure overlay -->
+    <div v-if="initError" class="fixed inset-0 z-[200] flex items-center justify-center bg-surface-page px-6">
+      <div class="w-full max-w-md rounded-xl border border-surface-border bg-white p-6 text-center shadow-2xl">
+        <h2 class="text-base font-semibold text-[#1C1C1A]">应用初始化失败</h2>
+        <p class="mt-2 break-all text-sm text-[#6F6F6B]">{{ initError }}</p>
+        <p class="mt-2 text-xs text-[#9E9E9A]">数据未加载。可点击重试；若反复出现，请先备份应用数据目录中的 tracker.db 再排查。</p>
+        <button class="mt-4 rounded bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40" @click="reloadApp">重试</button>
+      </div>
+    </div>
+
     <!-- Sidebar -->
     <aside
       class="flex flex-col border-r border-surface-border bg-surface-page transition-[width] duration-300"

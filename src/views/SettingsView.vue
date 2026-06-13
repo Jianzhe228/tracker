@@ -10,6 +10,7 @@ import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialo
 import { enable as enableAutoStart, disable as disableAutoStart, isEnabled as isAutoStartEnabled } from '@tauri-apps/plugin-autostart';
 import { patternList, patternCreate, patternUpdate, patternDelete } from '../services/commands/pattern';
 import { getAppVersion } from '../services/commands/health';
+import { callChatCompletion } from '../services/ai/client';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import type { SubtaskPattern } from '../types/domain';
@@ -75,6 +76,11 @@ const notifyBreakEnd = computed({
 const notifyDeadline = computed({
   get: () => settingsStore.notification.notifyDeadline,
   set: (value: boolean) => settingsStore.updateNotification({ notifyDeadline: value })
+});
+
+const soundEnabled = computed({
+  get: () => settingsStore.notification.soundEnabled,
+  set: (value: boolean) => settingsStore.updateNotification({ soundEnabled: value })
 });
 
 const closeToTray = computed({
@@ -462,6 +468,30 @@ async function saveAiSettings(): Promise<void> {
   uiStore.notify('AI 设置已保存');
 }
 
+const aiTesting = ref(false);
+
+async function testAiConnection(): Promise<void> {
+  const { endpoint, apiKey, model } = settingsStore.ai;
+  if (!endpoint || !apiKey || !model) {
+    uiStore.notify('请先填写 Endpoint、API Key 和 Model');
+    return;
+  }
+  aiTesting.value = true;
+  try {
+    await callChatCompletion(endpoint, apiKey, model, [
+      { role: 'user', content: '连接测试，请只返回 JSON：{"ok": true}' },
+    ], 10_000);
+    uiStore.notify('AI 连接成功');
+  } catch (err) {
+    const message = err instanceof DOMException && err.name === 'AbortError'
+      ? '请求超时（10 秒）'
+      : String(err);
+    uiStore.notify('AI 连接失败：' + message);
+  } finally {
+    aiTesting.value = false;
+  }
+}
+
 async function testNotification(): Promise<void> {
   await ensureNotificationPermission();
   sendNotification({
@@ -812,6 +842,10 @@ async function downloadAndInstall(): Promise<void> {
             <div><span class="text-sm text-[#1C1C1A]">任务截止提醒</span><p class="text-xs text-[#9E9E9A]">临近截止时通知</p></div>
             <button role="switch" :aria-checked="notifyDeadline" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="notifyDeadline ? 'bg-primary-600' : 'bg-surface-border'" @click="notifyDeadline = !notifyDeadline"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="notifyDeadline ? 'translate-x-4' : 'translate-x-0'" /></button>
           </div>
+          <div class="flex items-center justify-between gap-4 py-3">
+            <div><span class="text-sm text-[#1C1C1A]">提示音</span><p class="text-xs text-[#9E9E9A]">计时开始/结束与完成任务时播放短音</p></div>
+            <button role="switch" :aria-checked="soundEnabled" class="relative h-6 w-10 shrink-0 rounded-full transition-colors" :class="soundEnabled ? 'bg-primary-600' : 'bg-surface-border'" @click="soundEnabled = !soundEnabled"><span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform" :class="soundEnabled ? 'translate-x-4' : 'translate-x-0'" /></button>
+          </div>
         </div>
         <div class="mt-3">
           <button class="rounded-lg border border-surface-border px-3 py-1.5 text-xs text-[#6F6F6B] hover:bg-surface-hover" @click="testNotification">发送测试通知</button>
@@ -886,9 +920,11 @@ async function downloadAndInstall(): Promise<void> {
             <span class="text-sm text-[#6F6F6B]">Model</span>
             <input v-model.trim="settingsStore.ai.model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
-          <div class="pt-2">
+          <div class="flex items-center gap-2 pt-2">
             <button class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="saveAiSettings">保存</button>
+            <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="aiTesting" @click="testAiConnection">{{ aiTesting ? '测试中…' : '测试连接' }}</button>
           </div>
+          <p class="text-xs text-[#9E9E9A]">用于任务智能拆解建议。兼容 OpenAI 接口格式（OpenAI / DeepSeek / Ollama 等均可）。</p>
         </div>
       </section>
 

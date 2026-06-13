@@ -115,6 +115,7 @@ export interface NotificationSettings {
   notifyFocusEnd: boolean;
   notifyBreakEnd: boolean;
   notifyDeadline: boolean;
+  soundEnabled: boolean;
 }
 
 export interface NotificationLogItem {

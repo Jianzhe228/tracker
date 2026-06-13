@@ -38,6 +38,7 @@ export const useSettingsStore = defineStore('settings', () => {
     notifyFocusEnd: true,
     notifyBreakEnd: true,
     notifyDeadline: false,
+    soundEnabled: true,
   });
 
   const webdav = ref<WebDavSettings>({
@@ -96,6 +97,9 @@ export const useSettingsStore = defineStore('settings', () => {
           break;
         case 'notifyDeadline':
           notification.value.notifyDeadline = value === 'true';
+          break;
+        case 'soundEnabled':
+          notification.value.soundEnabled = value !== 'false';
           break;
         case 'webdavUrl':
           webdav.value.url = value;
@@ -191,6 +195,9 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       if (next.notifyDeadline !== undefined) {
         promises.push(setSetting('notifyDeadline', String(next.notifyDeadline)));
+      }
+      if (next.soundEnabled !== undefined) {
+        promises.push(setSetting('soundEnabled', String(next.soundEnabled)));
       }
       await Promise.all(promises).catch(console.error);
     }

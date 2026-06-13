@@ -321,11 +321,6 @@ onUnmounted(() => {
               从右侧任务列表中选择…
             </span>
             <span v-else class="text-sm" :class="isCurrentTaskDone ? 'text-white/50 line-through' : 'text-white'">{{ timerStore.currentTaskTitle }}</span>
-            <div v-if="timerStore.currentTaskTitle" class="flex gap-1" aria-hidden="true">
-              <span class="h-2 w-2 rounded-full bg-red-400" />
-              <span class="h-2 w-2 rounded-full bg-red-400" />
-              <span class="h-2 w-2 rounded-full bg-red-400/30" />
-            </div>
             <button
               v-if="timerStore.currentTaskTitle"
               class="ml-2 text-white/60 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"

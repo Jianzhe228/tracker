@@ -891,7 +891,11 @@ onBeforeRouteLeave(async () => confirmDiscardDetailChanges());
 
 async function submitTask(): Promise<void> {
   const taskTitle = title.value.trim();
-  if (!validateTaskTitle(taskTitle)) return;
+  if (!taskTitle) return;
+  if (!validateTaskTitle(taskTitle)) {
+    showInlineNotice('任务标题不能超过 100 个字符');
+    return;
+  }
 
   // Due date priority: explicit date picker > view-inferred > null
   let dueAt: string | null = null;
@@ -913,8 +917,12 @@ async function submitTask(): Promise<void> {
     newTaskDate.value = '';
     showNewTaskCalendar.value = false;
 
-    selectedTaskId.value = createdTask.id;
-    requestSuggestions(createdTask.id, createdTask.title, projectId);
+    // Switching the detail panel to the new task rebuilds the draft — guard
+    // unsaved edits the same way selectTask does.
+    if (await confirmDiscardDetailChanges()) {
+      selectedTaskId.value = createdTask.id;
+      requestSuggestions(createdTask.id, createdTask.title, projectId);
+    }
   } catch (error) {
     console.error(error);
     showInlineNotice('创建任务失败，请重试');
@@ -1205,6 +1213,21 @@ async function submitSubtask(): Promise<void> {
 }
 
 // ── Suggestion panel actions (delegated to composable) ─────────────
+
+// History (last time's subtask tree) is the strongest signal and sibling the
+// weakest — labelling them all "学习" hides that difference from the user.
+const SUGGESTION_SOURCE_BADGES: Record<string, { label: string; cls: string }> = {
+  ai: { label: '远程', cls: 'bg-violet-100 text-violet-600' },
+  ai_generated: { label: '远程', cls: 'bg-violet-100 text-violet-600' },
+  pattern: { label: '模板', cls: 'bg-success-100 text-success-500' },
+  history: { label: '上次做法', cls: 'bg-amber-100 text-amber-600' },
+  sibling: { label: '同项目', cls: 'bg-surface-hover text-[#6F6F6B]' },
+  learning: { label: '学习', cls: 'bg-primary-100 text-primary-500' },
+};
+
+function suggestionSourceBadge(source: string): { label: string; cls: string } {
+  return SUGGESTION_SOURCE_BADGES[source] ?? SUGGESTION_SOURCE_BADGES.learning;
+}
 
 async function handleAcceptSuggestion(suggestion: { title: string; source: string; patternName?: string }): Promise<void> {
   if (!selectedTask.value) return;
@@ -1536,8 +1559,12 @@ async function saveTaskDetail(): Promise<void> {
   const hadRepeat = !!prevRuleId;
   const normalized = normalizeDraft(taskDraft.value);
 
-  if (!validateTaskTitle(normalized.title)) return;
+  if (!validateTaskTitle(normalized.title)) {
+    showInlineNotice(normalized.title ? '任务标题不能超过 100 个字符' : '任务标题不能为空');
+    return;
+  }
   if (normalized.repeatRule && !normalized.dueAt) {
+    showInlineNotice('请先设置截止日期作为重复锚点');
     openDatePicker('dueAt');
     return;
   }
@@ -2078,7 +2105,7 @@ watch(activeTaskFilter, (filter) => {
 
                     <!-- Task Title -->
                     <span
-                      class="min-w-0 flex-1 truncate text-sm"
+                      class="min-w-0 flex-1 select-text truncate text-sm"
                       :class="[
                         task.status === 'done' ? 'text-[#9E9E9A] line-through' : '',
                         task.rescheduledTo ? 'text-[#9E9E9A] line-through' : '',
@@ -2882,13 +2909,9 @@ watch(activeTaskFilter, (filter) => {
                       <div class="flex min-w-0 items-center gap-1.5">
                         <span
                           class="shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-none"
-                          :class="s.source === 'ai'
-                            ? 'bg-violet-100 text-violet-600'
-                            : s.source === 'pattern'
-                              ? 'bg-success-100 text-success-500'
-                              : 'bg-primary-100 text-primary-500'"
+                          :class="suggestionSourceBadge(s.source).cls"
                         >
-                          {{ s.source === 'ai' ? '远程' : s.source === 'pattern' ? '模板' : '学习' }}
+                          {{ suggestionSourceBadge(s.source).label }}
                         </span>
                         <div class="min-w-0">
                           <span class="block truncate text-xs text-[#1C1C1A]">{{ s.title }}</span>
@@ -2925,9 +2948,24 @@ watch(activeTaskFilter, (filter) => {
                       <span class="text-xs text-violet-600">正在生成建议…</span>
                     </div>
 
+                    <!-- AI unavailable / failed hints -->
+                    <div
+                      v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.aiStatus === 'unconfigured'"
+                      class="flex items-center justify-between gap-2 rounded-md bg-violet-50 px-2.5 py-2"
+                    >
+                      <span class="text-xs text-violet-600">配置 AI 服务后可获得智能拆解建议</span>
+                      <RouterLink class="shrink-0 text-xs font-medium text-violet-600 underline hover:text-violet-700" to="/settings">前往设置</RouterLink>
+                    </div>
+                    <p
+                      v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.aiStatus === 'failed'"
+                      class="rounded-md bg-danger-50 px-2.5 py-2 text-xs text-danger-400"
+                    >
+                      AI 建议获取失败：{{ currentSuggestionPanel.aiError || '未知错误' }}
+                    </p>
+
                     <!-- Empty state after all dismissed -->
                     <p
-                      v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.suggestions.length === 0"
+                      v-if="!currentSuggestionPanel.loading && currentSuggestionPanel.suggestions.length === 0 && currentSuggestionPanel.aiStatus !== 'unconfigured' && currentSuggestionPanel.aiStatus !== 'failed'"
                       class="py-1 text-center text-xs text-[#9E9E9A]"
                     >
                       暂无内容
@@ -3012,7 +3050,8 @@ watch(activeTaskFilter, (filter) => {
       <div
         v-if="inlineNoticeMessage"
         :key="inlineNoticeToken"
-        class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-surface-border bg-white px-4 py-2.5 text-sm text-[#1C1C1A] shadow-xl"
+        class="pointer-events-none fixed left-1/2 z-50 -translate-x-1/2 rounded-lg border border-surface-border bg-white px-4 py-2.5 text-sm text-[#1C1C1A] shadow-xl"
+        :class="pendingUndoDeletion ? 'bottom-20' : 'bottom-6'"
       >
         {{ inlineNoticeMessage }}
       </div>

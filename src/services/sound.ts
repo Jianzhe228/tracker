@@ -1,3 +1,5 @@
+import { useSettingsStore } from '../stores/settingsStore';
+
 export type ToneKind = 'start' | 'complete' | 'breakEnd' | 'taskDone';
 
 const TONE_FREQUENCY: Record<ToneKind, number> = {
@@ -9,6 +11,11 @@ const TONE_FREQUENCY: Record<ToneKind, number> = {
 
 export function playTone(kind: ToneKind): void {
   if (typeof window === 'undefined') return;
+  try {
+    if (!useSettingsStore().notification.soundEnabled) return;
+  } catch {
+    // Pinia not active yet (early startup / tests) — default to audible.
+  }
   const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtx) return;
   try {

@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
 
 const uiStore = useUiStore();
+// The undo-deletion toast owns the bottom-center spot — shift notices up
+// while it is visible so the 10s undo window never gets covered.
+const taskStore = useTaskStore();
 
 function handleOverlayClick(event: MouseEvent): void {
   if (event.target !== event.currentTarget) return;
@@ -21,7 +25,8 @@ function handleOverlayClick(event: MouseEvent): void {
     <div
       v-if="uiStore.notice"
       :key="uiStore.notice.id"
-      class="pointer-events-none fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-surface-border bg-white px-4 py-2.5 text-sm text-[#1C1C1A] shadow-xl"
+      class="pointer-events-none fixed left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-surface-border bg-white px-4 py-2.5 text-sm text-[#1C1C1A] shadow-xl"
+      :class="taskStore.pendingUndoDeletion ? 'bottom-20' : 'bottom-6'"
     >
       {{ uiStore.notice.message }}
     </div>

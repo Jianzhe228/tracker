@@ -41,6 +41,20 @@ fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
     conn.execute_batch("PRAGMA foreign_keys=ON;")
         .map_err(|e| format!("cannot enable foreign keys: {}", e))?;
 
+    // Snapshot the database before an in-place schema upgrade: older builds
+    // reject newer schemas, so this file is the only road back after a
+    // problematic update.
+    let version: i32 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap_or(0);
+    if version > 0 && version < SCHEMA_VERSION {
+        let backup_path = app_dir.join(format!("tracker.pre-v{}.db", version));
+        if !backup_path.exists() {
+            conn.execute("VACUUM INTO ?1", [backup_path.to_string_lossy().as_ref()])
+                .map_err(|e| format!("cannot back up database before upgrade: {}", e))?;
+        }
+    }
+
     run_migrations(&conn)?;
 
     Ok(conn)
@@ -421,7 +435,7 @@ const HISTORY_ANALYZER_USER_TEMPLATE: &str = "当前时间：{{currentTime}}（{
 
 /// Seed data every database must contain: the inbox project and the two
 /// builtin AI skills.
-fn seed_builtin_data(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn seed_builtin_data(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     conn.execute(
         "INSERT INTO projects (id, title, color, icon) VALUES (1, '收集箱', '#6b7280', 'inbox')",
         [],

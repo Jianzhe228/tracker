@@ -88,6 +88,29 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  /**
+   * Learning feedback for a resolved create_subtask action — shared by
+   * per-action and whole-job approve/reject so batch operations train the
+   * engine exactly like individual ones.
+   */
+  function recordActionLearning(job: AiJob, action: AiAction, accepted: boolean): void {
+    if (action.type !== 'create_subtask' || !action.params.title) return;
+    const taskTitle = String(job.inputContext.taskTitle ?? '');
+    const projectId = (job.inputContext.projectId as number | undefined) ?? null;
+    const taskId = (job.inputContext.taskId as number | undefined) ?? 0;
+    const keywords = extractKeywords(taskTitle);
+    recordFeedback(keywords, String(action.params.title), projectId, accepted, 'ai');
+    feedbackRecord({
+      taskId,
+      taskTitle,
+      projectId,
+      suggestionTitle: String(action.params.title),
+      source: 'ai',
+      action: accepted ? 'accepted' : 'rejected',
+      jobId: job.id,
+    }).catch((e) => console.warn('[ai-store] failed to record feedback', e));
+  }
+
   async function approveJob(jobId: number): Promise<void> {
     const job = pendingJobs.value.find((j) => j.id === jobId);
     if (!job || !job.actions) return;
@@ -100,12 +123,17 @@ export const useAiStore = defineStore('ai', () => {
         try {
           await executeAction(action, context, taskStore);
           action.status = 'executed';
+          recordActionLearning(job, action, true);
         } catch (e) {
           action.status = 'failed';
           failures++;
           console.error('[ai-store] failed to execute action', e);
         }
       }
+    }
+
+    if (job.actions.some((a) => a.status === 'executed' && a.type === 'create_subtask')) {
+      refreshKnownKeywords().catch((e) => console.warn('[ai-store] failed to refresh keywords', e));
     }
 
     try {
@@ -135,6 +163,7 @@ export const useAiStore = defineStore('ai', () => {
     for (const action of job.actions) {
       if (action.status === 'pending') {
         action.status = 'rejected';
+        recordActionLearning(job, action, false);
       }
     }
 
@@ -163,22 +192,8 @@ export const useAiStore = defineStore('ai', () => {
     }
 
     // Record positive learning feedback for create_subtask actions
+    recordActionLearning(job, action, true);
     if (action.type === 'create_subtask' && action.params.title) {
-      const taskTitle = String(job.inputContext.taskTitle ?? '');
-      const projectId = (job.inputContext.projectId as number | undefined) ?? null;
-      const taskId = (job.inputContext.taskId as number | undefined) ?? 0;
-      const keywords = extractKeywords(taskTitle);
-      recordFeedback(keywords, String(action.params.title), projectId, true, 'ai');
-      // Record to suggestion_feedback table
-      feedbackRecord({
-        taskId,
-        taskTitle,
-        projectId,
-        suggestionTitle: String(action.params.title),
-        source: 'ai',
-        action: 'accepted',
-        jobId: jobId,
-      }).catch((e) => console.warn('[ai-store] failed to record feedback', e));
       // Refresh keyword cache after feedback
       refreshKnownKeywords().catch((e) => console.warn('[ai-store] failed to refresh keywords', e));
     }
@@ -205,23 +220,7 @@ export const useAiStore = defineStore('ai', () => {
     action.status = 'rejected';
 
     // Record negative learning feedback for create_subtask actions
-    if (action.type === 'create_subtask' && action.params.title) {
-      const taskTitle = String(job.inputContext.taskTitle ?? '');
-      const projectId = (job.inputContext.projectId as number | undefined) ?? null;
-      const taskId = (job.inputContext.taskId as number | undefined) ?? 0;
-      const keywords = extractKeywords(taskTitle);
-      recordFeedback(keywords, String(action.params.title), projectId, false, 'ai');
-      // Record to suggestion_feedback table
-      feedbackRecord({
-        taskId,
-        taskTitle,
-        projectId,
-        suggestionTitle: String(action.params.title),
-        source: 'ai',
-        action: 'rejected',
-        jobId: jobId,
-      }).catch((e) => console.warn('[ai-store] failed to record rejection', e));
-    }
+    recordActionLearning(job, action, false);
 
     const allResolved = job.actions.every((a) => a.status !== 'pending');
     if (allResolved) {

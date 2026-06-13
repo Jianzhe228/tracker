@@ -277,7 +277,7 @@ pub(crate) fn generate_export_json_from_db(db: &rusqlite::Connection) -> Result<
 }
 
 /// Save a local backup JSON file before destructive operations.
-fn save_local_backup(app_handle: &AppHandle, json_data: &str) -> Result<(), String> {
+pub(crate) fn save_local_backup(app_handle: &AppHandle, json_data: &str) -> Result<(), String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()

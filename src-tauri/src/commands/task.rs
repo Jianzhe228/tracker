@@ -953,6 +953,7 @@ pub fn task_list_archive(
          FROM tasks
          WHERE deleted_at IS NULL
            AND status IN ('done', 'cancelled')
+           AND completed_at IS NOT NULL
            AND (
              ?1 IS NULL
              OR completed_at < ?1
@@ -985,11 +986,15 @@ pub fn task_list_archive(
     let next_cursor = if exhausted {
         None
     } else {
-        tasks.last().map(|t| ArchiveCursor {
-            completed_at: t.completed_at.clone().expect(
-                "done/cancelled task must have non-null completed_at (schema invariant)",
-            ),
-            id: t.id,
+        // completed_at is guarded NOT NULL in the query, but imported data has
+        // no schema-level guarantee — end pagination instead of panicking.
+        tasks.last().and_then(|t| {
+            t.completed_at
+                .clone()
+                .map(|completed_at| ArchiveCursor {
+                    completed_at,
+                    id: t.id,
+                })
         })
     };
 

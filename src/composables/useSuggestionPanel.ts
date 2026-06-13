@@ -47,10 +47,19 @@ export interface SuggestionPanelState {
   requested: boolean;  // true once user/system triggered suggestions
   runId?: number;     // suggestion_runs.id after trace is persisted
   rankedSuggestions: RankedSuggestion[]; // full ranked data for trace
+  aiStatus: 'idle' | 'unconfigured' | 'ok' | 'failed'; // why AI results are (not) present
+  aiError?: string;
 }
 
 function emptyState(): SuggestionPanelState {
-  return reactive({ suggestions: [], keywords: [], loading: false, collapsed: false, requested: false, rankedSuggestions: [] });
+  return reactive({ suggestions: [], keywords: [], loading: false, collapsed: false, requested: false, rankedSuggestions: [], aiStatus: 'idle' });
+}
+
+function humanizeAiError(e: unknown): string {
+  if (e instanceof DOMException && e.name === 'AbortError') return '请求超时';
+  const message = e instanceof Error ? e.message : String(e ?? '未知错误');
+  if (/abort|timeout/i.test(message)) return '请求超时';
+  return message.length > 140 ? `${message.slice(0, 140)}…` : message;
 }
 
 export function useSuggestionPanel() {
@@ -170,7 +179,10 @@ export function useSuggestionPanel() {
       // Fire AI if strategy requires it
       if (output.strategy !== 'local') {
         const settingsStore = useSettingsStore();
-        if (settingsStore.ai.endpoint && settingsStore.ai.apiKey) {
+        if (!settingsStore.ai.endpoint || !settingsStore.ai.apiKey) {
+          // Tell the user why AI suggestions are absent instead of staying silent.
+          state.aiStatus = 'unconfigured';
+        } else {
           try {
             const project = taskStore.projects?.find((p: { id: number }) => p.id === projectId);
             const aiContext = await buildAiContextFromAnalysis({
@@ -196,57 +208,65 @@ export function useSuggestionPanel() {
               siblingTasks: aiContext.siblingTasks,
             });
 
-            if (job?.actions?.length) {
-              // Refresh subtask titles (some may have been created while AI was running)
-              const currentSubtaskTitles = new Set(
-                taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
-              );
-              // Build existing titles map with normalized keys for better dedup
-              const existingByNormalized = new Map<string, string>();
-              [...currentSubtaskTitles, ...state.suggestions.map((s) => s.title)].forEach((title) => {
-                const normalized = normalizeSubtaskTitle(title);
-                if (normalized && !existingByNormalized.has(normalized)) {
-                  existingByNormalized.set(normalized, title);
-                }
-              });
-
-              for (const action of job.actions) {
-                if (
-                  action.type === 'create_subtask' &&
-                  action.params.title
-                ) {
-                  const title = String(action.params.title);
+            if (!job || job.status === 'failed') {
+              state.aiStatus = 'failed';
+              state.aiError = humanizeAiError(job?.error ?? 'AI 任务未能启动');
+            } else {
+              if (job.actions?.length) {
+                // Refresh subtask titles (some may have been created while AI was running)
+                const currentSubtaskTitles = new Set(
+                  taskStore.tasks.filter((t) => t.parentId === taskId).map((t) => t.title)
+                );
+                // Build existing titles map with normalized keys for better dedup
+                const existingByNormalized = new Map<string, string>();
+                [...currentSubtaskTitles, ...state.suggestions.map((s) => s.title)].forEach((title) => {
                   const normalized = normalizeSubtaskTitle(title);
+                  if (normalized && !existingByNormalized.has(normalized)) {
+                    existingByNormalized.set(normalized, title);
+                  }
+                });
 
-                  // Skip if normalized title already exists (covers exact and near-exact matches)
-                  if (normalized && existingByNormalized.has(normalized)) continue;
+                for (const action of job.actions) {
+                  if (
+                    action.type === 'create_subtask' &&
+                    action.params.title
+                  ) {
+                    const title = String(action.params.title);
+                    const normalized = normalizeSubtaskTitle(title);
 
-                  // Skip if semantically duplicate (more lenient check)
-                  const isDup = [...existingByNormalized.values()].some(
-                    (existing) => isSemanticDuplicateTitle(existing, title)
-                  );
-                  if (!isDup) {
-                    state.suggestions.push({
-                      title,
-                      source: 'ai',
-                    });
-                    if (normalized) {
-                      existingByNormalized.set(normalized, title);
+                    // Skip if normalized title already exists (covers exact and near-exact matches)
+                    if (normalized && existingByNormalized.has(normalized)) continue;
+
+                    // Skip if semantically duplicate (more lenient check)
+                    const isDup = [...existingByNormalized.values()].some(
+                      (existing) => isSemanticDuplicateTitle(existing, title)
+                    );
+                    if (!isDup) {
+                      state.suggestions.push({
+                        title,
+                        source: 'ai',
+                      });
+                      if (normalized) {
+                        existingByNormalized.set(normalized, title);
+                      }
                     }
                   }
+                  action.status = 'executed';
                 }
-                action.status = 'executed';
+                try {
+                  await updateAiJob(job.id, { actions: job.actions });
+                  useAiStore().loadPendingJobs().catch((e) => {
+                    console.warn('[suggestion-panel] failed to refresh pending AI jobs', e);
+                  });
+                } catch (e) {
+                  console.warn('[suggestion-panel] failed to persist AI job status', e);
+                }
               }
-              try {
-                await updateAiJob(job.id, { actions: job.actions });
-                useAiStore().loadPendingJobs().catch((e) => {
-                  console.warn('[suggestion-panel] failed to refresh pending AI jobs', e);
-                });
-              } catch (e) {
-                console.warn('[suggestion-panel] failed to persist AI job status', e);
-              }
+              state.aiStatus = 'ok';
             }
           } catch (e) {
+            state.aiStatus = 'failed';
+            state.aiError = humanizeAiError(e);
             console.error('[suggestion-panel] AI job failed', e);
           }
         }

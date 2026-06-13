@@ -93,6 +93,36 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// One-time hint when the app first hides to the tray, so users don't assume
+/// closing the window exited the app (the timer keeps running in background).
+fn notify_tray_hint_once(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    let Ok(db) = state.db().lock() else { return };
+    let seen = db
+        .query_row(
+            "SELECT value FROM user_settings WHERE key = 'trayHintShown'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .is_ok();
+    if seen {
+        return;
+    }
+    let _ = db.execute(
+        "INSERT OR REPLACE INTO user_settings (key, value) VALUES ('trayHintShown', 'true')",
+        [],
+    );
+    drop(db);
+
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("Smart Focus Tracker 仍在运行")
+        .body("应用已最小化到系统托盘，计时与提醒会继续。可从托盘图标重新打开或退出。")
+        .show();
+}
+
 /// Surface fatal init errors in a native dialog: with `windows_subsystem =
 /// "windows"` there is no console, so a panic here would be invisible.
 fn show_startup_failure(app: &tauri::AppHandle, error: &str) {
@@ -143,6 +173,7 @@ pub fn run() {
                 if read_close_to_tray(window.app_handle()) {
                     api.prevent_close();
                     let _ = window.hide();
+                    notify_tray_hint_once(window.app_handle());
                 }
             }
         })
