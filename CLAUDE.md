@@ -9,6 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - 仅推已提交内容：`./push.sh`
   - 提交并推送：`./push.sh -m "commit message"`（内部 `git add -A && git commit`）
   - 指定分支 / 推 tags：`./push.sh -b <branch>` / `./push.sh --tags`（PowerShell：`-m` / `-b` / `-Tags`）
+- **改版本号必须用脚本**：`./bump-version.sh`（Bash）或 `.\bump-version.ps1`（PowerShell）。版本号散落在 4 个文件（`package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.lock` 的 tracker 条目），脚本一次性同步并校验，**禁止**手改单个文件以免漏改。
+  - 发版一行流：`./bump-version.sh minor --commit --tag --push`（自增 → 改 4 处 → 提交 `chore(release): ...` → 打 tag `vX.Y.Z` → 双远端推送含 tags）
+  - 也可指定版本或自增级别：`./bump-version.sh 2.4.0 ...` / `major|minor|patch`
+  - 预览不写入：`./bump-version.sh patch -n`；选项 `--commit` / `--tag` / `--push` / `-n`（PowerShell：`-Commit` / `-Tag` / `-Push` / `-DryRun`）
+  - 当前版本以 `package.json` 为基准；若手动改乱可先 `-n` 看差异再一键拉齐
 
 ## Project Overview
 

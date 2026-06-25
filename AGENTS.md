@@ -266,11 +266,22 @@ Scope: `task`, `project`, `ai`, `sync`, `ui`, `db`, etc.
 
 When the user asks to tag, publish, or cut a release:
 - **Always update the app version before creating the tag or GitHub Release.**
-- Keep the release version synchronized across:
+- **Use the version-bump script — do not hand-edit version numbers.** It syncs all
+  files at once and verifies them, avoiding missed spots:
+
+  ```bash
+  ./bump-version.sh minor --commit --tag --push   # 2.2.0 -> 2.3.0, commit, tag v2.3.0, push both remotes
+  ./bump-version.sh 2.4.0 --commit --tag --push   # explicit version
+  ./bump-version.sh patch -n                       # dry-run preview, no writes
+  ```
+
+  PowerShell: `.\bump-version.ps1 minor -Commit -Tag -Push`. Accepts `major|minor|patch`
+  or an explicit `X.Y.Z`. Flags: `--commit` / `--tag` / `--push` / `-n` (dry-run).
+- The script keeps the release version synchronized across (current = `package.json`):
   - `package.json` (`version`)
   - `src-tauri/tauri.conf.json` (`version`)
   - `src-tauri/Cargo.toml` (`[package].version`)
-  - Any lockfile that exists and records the package version
+  - `src-tauri/Cargo.lock` (the `tracker` package entry)
 - The git tag must match the app version, using `vX.Y.Z` unless the user explicitly requests another tag format.
 - Do not create a tag that points at a commit where these version files still contain the previous release version.
 - GitHub Releases should be published immediately by default. Do **not** create draft releases unless the user explicitly asks for a draft.
