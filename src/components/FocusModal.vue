@@ -6,6 +6,7 @@ import { useUiStore } from '../stores/uiStore';
 import { useFocusModal } from '../composables/useFocusModal';
 import { useTaskToggle } from '../composables/useTaskToggle';
 import { toDateKey, todayDateKey } from '../utils/date';
+import { isTaskActiveOnDate } from '../utils/taskFilters';
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
@@ -29,13 +30,13 @@ function isCompletedOn(dateKey: string, completedAt: string | null): boolean {
   return toDateKey(date) === dateKey;
 }
 
-// 今日父任务（无父任务 + dueAt 是今天）
+// 今日父任务（无父任务 + 今天落在 [开始/创建日, 截止日] 区间内）
 const todayParentTasks = computed(() => {
   const today = getTodayKey();
   return taskStore.tasks.filter(t =>
     t.status === 'todo' &&
     t.parentId === null &&
-    t.dueAt === today
+    isTaskActiveOnDate(t, today)
   );
 });
 
