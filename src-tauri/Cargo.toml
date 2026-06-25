@@ -1,6 +1,6 @@
 [package]
 name = "tracker"
-version = "2.2.0"
+version = "2.3.0"
 description = "Smart Focus Tracker desktop app"
 authors = ["zjz"]
 edition = "2021"
