@@ -255,16 +255,38 @@ export interface GlobalShortcutFailure {
   error: string;
 }
 
+// Serialize all global-shortcut operations. registerGlobalShortcuts and
+// unregisterAllGlobalShortcuts each do unregisterAll()+register() internally;
+// if two calls interleave (e.g. onMounted + the settings watcher both firing on
+// startup), call B's unregisterAll() can wipe call A's freshly-registered hotkey
+// and then B's register() hits "HotKey already registered" — the app reporting
+// its *own* registration as "occupied by another program". A single in-flight
+// chain guarantees each op runs to completion before the next begins.
+let globalShortcutLock: Promise<unknown> = Promise.resolve();
+
+function withGlobalShortcutLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = globalShortcutLock.then(task, task);
+  // Keep the chain alive even if a task rejects; swallow here, callers handle errors.
+  globalShortcutLock = run.catch(() => undefined);
+  return run;
+}
+
 // Returns the bindings that failed to register (hotkey occupied by another
 // app, or the accelerator could not be parsed) so callers can surface them.
-export async function registerGlobalShortcuts(
+export function registerGlobalShortcuts(
+  bindings: ShortcutBinding[],
+): Promise<GlobalShortcutFailure[]> {
+  return withGlobalShortcutLock(() => registerGlobalShortcutsInner(bindings));
+}
+
+async function registerGlobalShortcutsInner(
   bindings: ShortcutBinding[],
 ): Promise<GlobalShortcutFailure[]> {
   const isTauri = '__TAURI_INTERNALS__' in window;
   if (!isTauri) return [];
 
-  // Unregister all existing global shortcuts first
-  await unregisterAllGlobalShortcuts();
+  // Unregister all existing global shortcuts first (inner: lock already held)
+  await unregisterAllGlobalShortcutsInner();
 
   const globals = bindings.filter((b) => b.mode === 'global' && b.enabled);
   if (globals.length === 0) return [];
@@ -308,7 +330,11 @@ export async function registerGlobalShortcuts(
   return failures;
 }
 
-export async function unregisterAllGlobalShortcuts(): Promise<void> {
+export function unregisterAllGlobalShortcuts(): Promise<void> {
+  return withGlobalShortcutLock(unregisterAllGlobalShortcutsInner);
+}
+
+async function unregisterAllGlobalShortcutsInner(): Promise<void> {
   const isTauri = '__TAURI_INTERNALS__' in window;
   if (!isTauri) return;
 

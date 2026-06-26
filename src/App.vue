@@ -223,7 +223,7 @@ function handleProjectContextAction(key: string) {
 async function confirmDeleteProject(project: ProjectItem): Promise<void> {
   const taskCount = taskStore.tasks.filter(t => t.projectId === project.id && t.status === 'todo').length;
   const message = taskCount > 0
-    ? `确定删除清单「${project.title}」吗？其中 ${taskCount} 个任务将移至收集箱。`
+    ? `确定删除清单「${project.title}」吗？其中 ${taskCount} 个任务将移至默认清单。`
     : `确定删除清单「${project.title}」吗？`;
   const confirmed = await uiStore.confirm(message, { title: '删除清单', confirmText: '删除' });
   if (!confirmed) return;
@@ -439,18 +439,17 @@ onUnmounted(() => {
       <!-- App Brand -->
       <div class="flex h-14 shrink-0 items-center px-3" :class="sidebarCollapsed ? 'justify-center' : 'gap-3 px-4'" data-tauri-drag-region>
         <button
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm transition-colors hover:bg-primary-700"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-white shadow-sm transition-colors hover:bg-red-700"
           aria-label="收起/展开侧边栏"
           @click="toggleSidebar"
         >
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" v-if="sidebarCollapsed" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7M19 19l-7-7 7-7" v-else />
+            <circle cx="12" cy="12" r="9" stroke-width="2" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M7 12l3.5 3.5L17 7.5" />
           </svg>
         </button>
         <div v-if="!sidebarCollapsed" class="flex-1 overflow-hidden" data-tauri-drag-region>
           <h1 class="truncate text-sm font-semibold tracking-tight text-[#1C1C1A]">{{ APP_NAME }}</h1>
-          <p class="truncate text-[11px] font-medium text-[#9E9E9A]">Focus & Flow</p>
         </div>
       </div>
 

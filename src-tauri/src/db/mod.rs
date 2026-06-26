@@ -70,7 +70,7 @@ fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
 /// When changing the schema later: fold the change into `BASELINE_SCHEMA`,
 /// add a single "previous -> new" upgrade arm in `run_migrations`, and bump
 /// this constant. Do not accumulate upgrade paths.
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 
 /// Full schema as of `SCHEMA_VERSION`, applied to fresh databases in one
 /// transaction.
@@ -437,7 +437,7 @@ const HISTORY_ANALYZER_USER_TEMPLATE: &str = "当前时间：{{currentTime}}（{
 /// builtin AI skills.
 pub(crate) fn seed_builtin_data(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     conn.execute(
-        "INSERT INTO projects (id, title, color, icon) VALUES (1, '收集箱', '#6b7280', 'inbox')",
+        "INSERT INTO projects (id, title, color, icon) VALUES (1, '默认', '#6b7280', 'inbox')",
         [],
     )
     .map_err(|e| format!("failed to seed inbox project: {}", e))?;
@@ -475,6 +475,17 @@ pub(crate) fn seed_builtin_data(conn: &Connection) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
+/// Rename the builtin default list (id=1) from its old name 收集箱 to 默认.
+/// Guarded on the old title so a user-renamed list is left untouched.
+fn rename_default_list(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    conn.execute(
+        "UPDATE projects SET title = '默认' WHERE id = 1 AND title = '收集箱'",
+        [],
+    )
+    .map_err(|e| format!("failed to rename default list: {}", e))?;
+    Ok(())
+}
+
 pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -492,12 +503,23 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), Box<dyn std::error
             tx.commit()?;
             Ok(())
         }
-        // v1 -> v2: prediction feedback needs the exact accept/reject time
-        // (created_at is the generation time, which can be days earlier).
+        // v1 -> current: add actioned_at (v1->v2) and rename the builtin
+        // default list 收集箱 -> 默认 (v2->v3). Each branch upgrades straight to
+        // SCHEMA_VERSION, so v1 databases must also pick up the rename.
         1 => {
             let tx = conn.unchecked_transaction()?;
             tx.execute_batch("ALTER TABLE pending_predictions ADD COLUMN actioned_at TEXT;")
                 .map_err(|e| format!("failed to upgrade schema v1 -> v2: {}", e))?;
+            rename_default_list(&tx)?;
+            tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))
+                .map_err(|e| format!("failed to set user_version: {}", e))?;
+            tx.commit()?;
+            Ok(())
+        }
+        // v2 -> v3: the builtin default list was renamed 收集箱 -> 默认.
+        2 => {
+            let tx = conn.unchecked_transaction()?;
+            rename_default_list(&tx)?;
             tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))
                 .map_err(|e| format!("failed to set user_version: {}", e))?;
             tx.commit()?;
@@ -547,7 +569,7 @@ mod tests {
 
         let inbox: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM projects WHERE id = 1 AND title = '收集箱'",
+                "SELECT COUNT(*) FROM projects WHERE id = 1 AND title = '默认'",
                 [],
                 |r| r.get(0),
             )
