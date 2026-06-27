@@ -11,7 +11,7 @@ import { enable as enableAutoStart, disable as disableAutoStart, isEnabled as is
 import { patternList, patternCreate, patternUpdate, patternDelete } from '../services/commands/pattern';
 import { getAppVersion } from '../services/commands/health';
 import { callChatCompletion } from '../services/ai/client';
-import { check } from '@tauri-apps/plugin-updater';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import type { SubtaskPattern } from '../types/domain';
 import type { ShortcutBinding, ShortcutModifier, ShortcutMode } from '../types/domain';
@@ -153,7 +153,8 @@ const updateStatus = ref<'idle' | 'checking' | 'available' | 'downloading' | 're
 const updateError = ref('');
 const updateInfo = ref<{ version: string; notes: string } | null>(null);
 const currentVersion = ref('');
-const downloadProgress = ref(0);
+const downloadProgress = ref(0); // -1 = indeterminate (contentLength unknown)
+const pendingUpdate = ref<Update | null>(null);
 
 // ── Pattern template management ────────────────────────────────────
 const patterns = ref<SubtaskPattern[]>([]);
@@ -642,9 +643,11 @@ async function checkForUpdates(): Promise<void> {
   updateStatus.value = 'checking';
   updateError.value = '';
   updateInfo.value = null;
+  pendingUpdate.value = null;
   try {
     const update = await check();
     if (update) {
+      pendingUpdate.value = update;
       updateInfo.value = {
         version: update.version,
         notes: update.body || '',
@@ -666,16 +669,17 @@ async function downloadAndInstall(): Promise<void> {
   updateStatus.value = 'downloading';
   downloadProgress.value = 0;
   try {
-    const update = await check();
+    const update = pendingUpdate.value ?? await check();
     if (update) {
       let totalLength = 0;
       let downloaded = 0;
       await update.downloadAndInstall((event) => {
         if (event.event === 'Started') {
           totalLength = event.data.contentLength ?? 0;
+          if (totalLength === 0) downloadProgress.value = -1; // indeterminate
         } else if (event.event === 'Progress') {
           downloaded += event.data.chunkLength;
-          downloadProgress.value = totalLength > 0 ? Math.round((downloaded / totalLength) * 100) : 0;
+          downloadProgress.value = totalLength > 0 ? Math.round((downloaded / totalLength) * 100) : -1;
         } else if (event.event === 'Finished') {
           downloadProgress.value = 100;
         }
@@ -1002,9 +1006,15 @@ async function downloadAndInstall(): Promise<void> {
                 <p v-if="updateInfo?.notes && updateStatus === 'available'" class="mt-1 text-xs text-primary-500 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
                 <template v-if="updateStatus === 'downloading'">
                   <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-primary-200">
-                    <div class="h-full rounded-full bg-primary-600 transition-all duration-200" :style="{ width: downloadProgress + '%' }" />
+                    <div
+                      class="h-full rounded-full bg-primary-600 transition-all duration-200"
+                      :class="downloadProgress < 0 ? 'w-full animate-pulse' : ''"
+                      :style="downloadProgress >= 0 ? { width: downloadProgress + '%' } : {}"
+                    />
                   </div>
-                  <p class="mt-1 text-xs text-primary-500">正在下载… {{ downloadProgress }}%</p>
+                  <p class="mt-1 text-xs text-primary-500">
+                    {{ downloadProgress < 0 ? '正在下载…' : `正在下载… ${downloadProgress}%` }}
+                  </p>
                 </template>
               </div>
               <button v-if="updateStatus === 'available'" class="shrink-0 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="downloadAndInstall">

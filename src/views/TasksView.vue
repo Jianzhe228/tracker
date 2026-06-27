@@ -628,7 +628,16 @@ const repeatOptions: { value: string; label: string }[] = [
 const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
 
 const taskDraft = ref<TaskDraft | null>(null);
-const reminderTimeOptions = ['09:00', '12:00', '18:00', '21:00'];
+function repeatRuleDescription(rule: string): string {
+  const map: Record<string, string> = {
+    daily: '每天',
+    weekdays: '每工作日',
+    weekly: '每周同一天',
+    monthly: '每月同一日',
+    custom: '按自定义规则',
+  };
+  return map[rule] ?? rule;
+}
 const activeDatePicker = ref<DateFieldKey | null>(null);
 const calendarViewYear = ref(new Date().getFullYear());
 const calendarViewMonth = ref(new Date().getMonth());
@@ -1570,13 +1579,15 @@ async function saveTaskDetail(): Promise<void> {
     showInlineNotice(normalized.title ? '任务标题不能超过 100 个字符' : '任务标题不能为空');
     return;
   }
-  if (normalized.repeatRule && !normalized.dueAt) {
-    showInlineNotice('请先设置截止日期作为重复锚点');
-    openDatePicker('dueAt');
+  if (normalized.repeatRule && !normalized.startAt) {
+    showInlineNotice('请先设置重复开始日期');
+    openDatePicker('startAt');
     return;
   }
 
-  const anchorDate = normalized.dueAt || toDateKey(new Date());
+  const anchorDate = normalized.repeatRule
+    ? (normalized.startAt || toDateKey(new Date()))
+    : (normalized.dueAt || toDateKey(new Date()));
   const newRepeatType = normalized.repeatRule;
   const reminderIso = toReminderIso(normalized.reminderDate, normalized.reminderTime);
   const repeatDaysJson = normalized.repeatDays.length > 0
@@ -2516,12 +2527,12 @@ watch(activeTaskFilter, (filter) => {
               </div>
 
               <!-- Due Date -->
-              <div class="rounded-lg border border-surface-border p-3">
+              <div v-if="!taskDraft.repeatRule" class="rounded-lg border border-surface-border p-3">
                 <label class="mb-2 flex items-center gap-2 text-sm text-[#1C1C1A]" for="task-due-at">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  本次截止日期
+                  截止日期
                 </label>
                 <div class="flex items-center gap-2">
                   <div ref="dueDatePickerWrap" class="relative min-w-0 flex-1">
@@ -2683,12 +2694,11 @@ watch(activeTaskFilter, (filter) => {
                     </div>
                   </div>
 
-                  <select
+                  <input
+                    type="time"
                     v-model="taskDraft.reminderTime"
-                    class="h-10 w-24 shrink-0 rounded border border-surface-border px-2 text-sm text-[#1C1C1A] focus:border-primary-500 focus:outline-none sm:w-28"
-                  >
-                    <option v-for="time in reminderTimeOptions" :key="time" :value="time">{{ time }}</option>
-                  </select>
+                    class="h-10 w-24 shrink-0 rounded border border-surface-border bg-white px-2 text-sm text-[#1C1C1A] focus:border-primary-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 sm:w-28"
+                  />
                   <button
                     v-if="taskDraft.reminderDate"
                     class="h-10 min-w-[52px] shrink-0 rounded border border-surface-border px-2 text-xs text-[#6F6F6B] hover:bg-surface-hover"
@@ -2731,11 +2741,11 @@ watch(activeTaskFilter, (filter) => {
                     {{ label }}
                   </button>
                 </div>
-                <p v-if="taskDraft.repeatRule && !taskDraft.dueAt" class="mt-2 text-xs text-warning-500">
-                  重复任务需要先设置本次截止日期（将作为重复锚点）
+                <p v-if="taskDraft.repeatRule && !taskDraft.startAt" class="mt-2 text-xs text-warning-500">
+                  请在上方设置「开始日期」，系统将从该日期起自动生成任务
                 </p>
                 <p v-else-if="taskDraft.repeatRule" class="mt-2 text-xs text-[#9E9E9A]">
-                  重复锚点：使用本次截止日期
+                  从 {{ formatDateInputLabel(taskDraft.startAt) }} 起{{ repeatRuleDescription(taskDraft.repeatRule) }}自动创建
                 </p>
               </div>
 
