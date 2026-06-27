@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUiStore } from '../stores/uiStore';
@@ -22,6 +22,41 @@ const packageVersion = import.meta.env.PACKAGE_VERSION || '0.0.0';
 const settingsStore = useSettingsStore();
 const uiStore = useUiStore();
 const isTauri = '__TAURI_INTERNALS__' in window;
+
+const NAV_ITEMS = [
+  { id: 'general', label: '通用' },
+  { id: 'pomodoro', label: '番茄钟' },
+  { id: 'shortcuts', label: '快捷键' },
+  { id: 'sync', label: '云同步' },
+  { id: 'notification', label: '通知' },
+  { id: 'patterns', label: '子任务模板' },
+  { id: 'ai', label: 'AI' },
+  { id: 'about', label: '关于与更新' },
+  { id: 'data', label: '数据管理' },
+];
+
+const contentRef = ref<HTMLElement | null>(null);
+const activeSection = ref('general');
+let scrollHandler: (() => void) | null = null;
+
+function updateActiveSection(): void {
+  const container = contentRef.value;
+  if (!container) return;
+  const containerTop = container.getBoundingClientRect().top;
+  for (let i = NAV_ITEMS.length - 1; i >= 0; i--) {
+    const el = document.getElementById(NAV_ITEMS[i].id);
+    if (el && el.getBoundingClientRect().top - containerTop <= 80) {
+      activeSection.value = NAV_ITEMS[i].id;
+      return;
+    }
+  }
+  activeSection.value = NAV_ITEMS[0].id;
+}
+
+function scrollToSection(id: string): void {
+  activeSection.value = id;
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 const focus = computed({
   get: () => settingsStore.timer.focusMinutes,
@@ -327,6 +362,8 @@ function resetShortcuts(): void {
 
 onUnmounted(() => {
   if (recordingCleanup) recordingCleanup();
+  if (scrollHandler) contentRef.value?.removeEventListener('scroll', scrollHandler);
+  if (aiSaveTimer !== null) clearTimeout(aiSaveTimer);
 });
 
 function getWebDavParams() {
@@ -409,25 +446,6 @@ async function handleDownload(): Promise<void> {
   }
 }
 
-async function syncNow(): Promise<void> {
-  if (!isTauri) {
-    uiStore.notify('同步功能仅在桌面端可用');
-    return;
-  }
-  if (!validateWebDavConfig()) return;
-
-  syncLoading.value = true;
-  try {
-    const { url, username, password, path } = getWebDavParams();
-    await webdavUpload(url, username, password, path);
-    uiStore.notify('同步完成');
-    await loadSyncStatus();
-  } catch (err) {
-    uiStore.notify('同步失败：' + String(err));
-  } finally {
-    syncLoading.value = false;
-  }
-}
 
 async function loadSyncStatus(): Promise<void> {
   if (!isTauri) return;
@@ -465,10 +483,21 @@ async function saveAiSettings(): Promise<void> {
     apiKey: settingsStore.ai.apiKey,
     model: settingsStore.ai.model,
   });
-  uiStore.notify('AI 设置已保存');
 }
 
 const aiTesting = ref(false);
+let aiSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(
+  () => [settingsStore.ai.endpoint, settingsStore.ai.apiKey, settingsStore.ai.model],
+  () => {
+    if (aiSaveTimer !== null) clearTimeout(aiSaveTimer);
+    aiSaveTimer = window.setTimeout(() => {
+      void saveAiSettings();
+      aiSaveTimer = null;
+    }, 800);
+  }
+);
 
 async function testAiConnection(): Promise<void> {
   const { endpoint, apiKey, model } = settingsStore.ai;
@@ -597,6 +626,12 @@ onMounted(() => {
     isAutoStartEnabled().then(v => { autoStart.value = v; }).catch(() => {});
     getAppVersion().then(v => { currentVersion.value = v; }).catch(() => {});
   }
+  const container = contentRef.value;
+  if (container) {
+    scrollHandler = updateActiveSection;
+    container.addEventListener('scroll', scrollHandler);
+    updateActiveSection();
+  }
 });
 
 async function checkForUpdates(): Promise<void> {
@@ -660,12 +695,22 @@ async function downloadAndInstall(): Promise<void> {
 </script>
 
 <template>
-  <div class="h-full px-6 py-6">
-    <h1 class="mb-8 text-2xl font-bold text-[#1C1C1A]">设置</h1>
-
-    <div class="space-y-10">
+  <div class="flex h-full">
+    <nav class="w-36 shrink-0 overflow-y-auto border-r border-surface-border py-6 pl-4 pr-2">
+      <ul class="space-y-0.5">
+        <li v-for="item in NAV_ITEMS" :key="item.id">
+          <a
+            href="#"
+            class="block cursor-pointer rounded-md px-2.5 py-1.5 text-sm transition-colors"
+            :class="activeSection === item.id ? 'bg-primary-50 text-primary-600 font-medium' : 'text-[#6F6F6B] hover:bg-surface-hover'"
+            @click.prevent="scrollToSection(item.id)"
+          >{{ item.label }}</a>
+        </li>
+      </ul>
+    </nav>
+    <div ref="contentRef" class="flex-1 overflow-y-auto space-y-10 px-8 py-6">
       <!-- 通用 -->
-      <section>
+      <section id="general">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通用</h2>
         <div class="divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
@@ -680,7 +725,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 番茄钟 -->
-      <section>
+      <section id="pomodoro">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">番茄钟</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label class="space-y-1.5">
@@ -720,7 +765,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 快捷键 -->
-      <section>
+      <section id="shortcuts">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-base font-semibold text-[#1C1C1A]">快捷键</h2>
           <button
@@ -794,7 +839,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 云同步 -->
-      <section>
+      <section id="sync">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">云同步</h2>
         <div class="space-y-4">
           <label class="block">
@@ -818,8 +863,6 @@ async function downloadAndInstall(): Promise<void> {
           <div class="flex flex-wrap items-center gap-3 pt-2">
             <button class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50" :disabled="syncLoading" @click="saveWebDavSettings">保存</button>
             <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncStatus === 'testing' || syncLoading" @click="testConnection">{{ syncStatus === 'testing' ? '测试中…' : '测试连接' }}</button>
-            <span class="text-xs text-[#9E9E9A]">|</span>
-            <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncLoading" @click="syncNow">{{ syncLoading ? '同步中…' : '立即同步' }}</button>
             <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncLoading" @click="handleUpload">上传到云端</button>
             <template v-if="!showDownloadConfirm">
               <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="syncLoading" @click="showDownloadConfirm = true">从云端下载</button>
@@ -835,7 +878,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 通知 -->
-      <section>
+      <section id="notification">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通知</h2>
         <div class="divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
@@ -865,7 +908,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 子任务模板 -->
-      <section>
+      <section id="patterns">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-base font-semibold text-[#1C1C1A]">子任务模板</h2>
           <button class="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700" @click="openNewPatternForm">新增模板</button>
@@ -917,7 +960,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- AI -->
-      <section>
+      <section id="ai">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">AI</h2>
         <div class="space-y-4">
           <label class="block space-y-1.5">
@@ -933,7 +976,6 @@ async function downloadAndInstall(): Promise<void> {
             <input v-model.trim="settingsStore.ai.model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
           </label>
           <div class="flex items-center gap-2 pt-2">
-            <button class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="saveAiSettings">保存</button>
             <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="aiTesting" @click="testAiConnection">{{ aiTesting ? '测试中…' : '测试连接' }}</button>
           </div>
           <p class="text-xs text-[#9E9E9A]">用于任务智能拆解建议。兼容 OpenAI 接口格式（OpenAI / DeepSeek / Ollama 等均可）。</p>
@@ -941,7 +983,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 关于与更新 -->
-      <section>
+      <section id="about">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">关于与更新</h2>
         <div class="space-y-3">
           <div class="flex items-center justify-between gap-4">
@@ -980,7 +1022,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 数据管理 -->
-      <section>
+      <section id="data">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">数据管理</h2>
         <div class="flex flex-wrap items-center gap-3">
           <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportToFile">{{ exportStatus === 'exporting' ? '导出中…' : '导出到文件' }}</button>
