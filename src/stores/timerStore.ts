@@ -541,6 +541,38 @@ export const useTimerStore = defineStore('timer', () => {
     saveState(true);
   }
 
+  function nextBreakMode(): Extract<TimerMode, 'shortBreak' | 'longBreak'> {
+    const longBreakInterval = settingsStore.timer.longBreakInterval || 4;
+    const useLongBreak = completedPomodoros.value > 0 && completedPomodoros.value % longBreakInterval === 0;
+    return useLongBreak ? 'longBreak' : 'shortBreak';
+  }
+
+  // After a focus countdown finishes with auto-start-break OFF, ask the user
+  // whether to take a break or skip it and keep going. The confirm is rendered
+  // app-globally (AppFeedbackLayer), so it shows even when the focus modal is
+  // closed — the OS notification alone is easy to miss.
+  async function promptBreakChoice(): Promise<void> {
+    const breakMode = nextBreakMode();
+    const isLong = breakMode === 'longBreak';
+    const breakMinutes = isLong
+      ? settingsStore.timer.longBreakMinutes
+      : settingsStore.timer.shortBreakMinutes;
+    const startNow = await uiStore.confirm(
+      `已完成一个专注时段，是否开始${isLong ? '长' : ''}休息（${breakMinutes} 分钟）？`,
+      {
+        title: '🍅 专注结束',
+        confirmText: '开始休息',
+        cancelText: '跳过休息',
+      },
+    );
+    // The user may have started a new timer while the dialog was open; only act
+    // if we're still in the idle-focus state set right after the session ended.
+    if (!idle.value || mode.value !== 'focus') return;
+    if (startNow) {
+      startBreakCountdown(breakMode);
+    }
+  }
+
   function finalizeFocusSession(statusLabel: SessionStatus, startBreak = true, note?: string): void {
     closeCurrentSegment();
     countClosedSegmentsInToday();
@@ -558,33 +590,33 @@ export const useTimerStore = defineStore('timer', () => {
     completedPomodoros.value += pomodorosEarned;
     recordSession(statusLabel, spentSeconds, pomodorosEarned, note);
 
-    const longBreakInterval = settingsStore.timer.longBreakInterval || 4;
     if (startBreak && settingsStore.timer.autoStartBreak !== false) {
-      const useLongBreak = completedPomodoros.value > 0 && completedPomodoros.value % longBreakInterval === 0;
-      const nextBreak: TimerMode = useLongBreak ? 'longBreak' : 'shortBreak';
+      const breakMode = nextBreakMode();
       if (settingsStore.notification.notifyFocusEnd) {
-        const breakMinutes = useLongBreak
+        const breakMinutes = breakMode === 'longBreak'
           ? settingsStore.timer.longBreakMinutes
           : settingsStore.timer.shortBreakMinutes;
         sendNotification({
           type: 'focusEnd',
           title: 'Tracker',
-          body: `专注结束，进入${useLongBreak ? '长休息' : '休息'} (${breakMinutes} 分钟)`,
+          body: `专注结束，进入${breakMode === 'longBreak' ? '长休息' : '休息'} (${breakMinutes} 分钟)`,
         });
       }
       playTone('complete');
-      startBreakCountdown(nextBreak);
+      startBreakCountdown(breakMode);
     } else if (startBreak) {
-      // autoStartBreak is off: notify and go idle
+      // autoStartBreak off: notify + sound, return to idle, then ask whether to
+      // start a break or skip it and keep going.
       if (settingsStore.notification.notifyFocusEnd) {
         sendNotification({
           type: 'focusEnd',
           title: 'Tracker',
-          body: '专注结束',
+          body: '专注结束，是否开始休息？',
         });
       }
       playTone('complete');
       resetToIdleFocus();
+      void promptBreakChoice();
     } else {
       resetToIdleFocus();
     }

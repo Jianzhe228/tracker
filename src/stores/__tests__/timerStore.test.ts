@@ -7,6 +7,7 @@ import { nextTick } from 'vue';
 import { setActivePinia, createPinia } from 'pinia';
 import { useSettingsStore } from '../settingsStore';
 import { useTimerStore } from '../timerStore';
+import { useUiStore } from '../uiStore';
 
 // Mock Tauri environment
 Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {} });
@@ -215,6 +216,81 @@ describe('timerStore', () => {
       const consumed = total - timerStore.remainingSeconds;
       expect(consumed).toBeGreaterThanOrEqual(38);
       expect(consumed).toBeLessThanOrEqual(42);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TEST: Focus-end break prompt (auto-start-break off)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('focus-end break prompt', () => {
+    function setUpCompletedFocus() {
+      timerStore.timerKind = 'countdown';
+      timerStore.mode = 'focus';
+      timerStore.totalSeconds = 25 * 60;
+      timerStore.remainingSeconds = 25 * 60; // spent 0 → avoids DB persistence path
+    }
+
+    it('prompts to start a break when the countdown completes and auto-break is off', async () => {
+      const settingsStore = useSettingsStore();
+      settingsStore.timer.autoStartBreak = false;
+      const uiStore = useUiStore();
+      const confirmSpy = vi.spyOn(uiStore, 'confirm').mockResolvedValue(true);
+
+      setUpCompletedFocus();
+      timerStore.finalizeFocusSession('completed', true);
+
+      // Returns to idle focus first, so it never re-triggers via the ticker.
+      expect(timerStore.status).toBe('idle');
+      expect(timerStore.mode).toBe('focus');
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+
+      // Accepting the prompt starts the break.
+      await vi.waitFor(() => expect(timerStore.mode).toBe('shortBreak'));
+      expect(timerStore.status).toBe('running');
+    });
+
+    it('stays idle in focus when the break prompt is dismissed', async () => {
+      const settingsStore = useSettingsStore();
+      settingsStore.timer.autoStartBreak = false;
+      const uiStore = useUiStore();
+      vi.spyOn(uiStore, 'confirm').mockResolvedValue(false);
+
+      setUpCompletedFocus();
+      timerStore.finalizeFocusSession('completed', true);
+
+      await vi.waitFor(() => expect(uiStore.confirm).toHaveBeenCalled());
+      await Promise.resolve();
+      expect(timerStore.mode).toBe('focus');
+      expect(timerStore.status).toBe('idle');
+    });
+
+    it('auto-starts the break without prompting when auto-break is on', () => {
+      const settingsStore = useSettingsStore();
+      settingsStore.timer.autoStartBreak = true;
+      const uiStore = useUiStore();
+      const confirmSpy = vi.spyOn(uiStore, 'confirm');
+
+      setUpCompletedFocus();
+      timerStore.finalizeFocusSession('completed', true);
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(timerStore.mode).toBe('shortBreak');
+      expect(timerStore.status).toBe('running');
+    });
+
+    it('does not prompt on a manual stop (startBreak = false)', () => {
+      const settingsStore = useSettingsStore();
+      settingsStore.timer.autoStartBreak = false;
+      const uiStore = useUiStore();
+      const confirmSpy = vi.spyOn(uiStore, 'confirm');
+
+      setUpCompletedFocus();
+      timerStore.finalizeFocusSession('stopped', false, 'manual_stop');
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(timerStore.status).toBe('idle');
+      expect(timerStore.mode).toBe('focus');
     });
   });
 
