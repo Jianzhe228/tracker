@@ -629,10 +629,22 @@ async function checkForUpdates(): Promise<void> {
 async function downloadAndInstall(): Promise<void> {
   if (!isTauri) return;
   updateStatus.value = 'downloading';
+  downloadProgress.value = 0;
   try {
     const update = await check();
     if (update) {
-      await update.downloadAndInstall();
+      let totalLength = 0;
+      let downloaded = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started') {
+          totalLength = event.data.contentLength ?? 0;
+        } else if (event.event === 'Progress') {
+          downloaded += event.data.chunkLength;
+          downloadProgress.value = totalLength > 0 ? Math.round((downloaded / totalLength) * 100) : 0;
+        } else if (event.event === 'Finished') {
+          downloadProgress.value = 100;
+        }
+      });
       updateStatus.value = 'ready';
       await relaunch();
     } else {
@@ -941,13 +953,19 @@ async function downloadAndInstall(): Promise<void> {
               {{ updateStatus === 'checking' ? '检查中…' : '检查更新' }}
             </button>
           </div>
-          <div v-if="updateStatus === 'available'" class="rounded-lg border border-primary-200 bg-primary-50 p-4">
+          <div v-if="updateStatus === 'available' || updateStatus === 'downloading'" class="rounded-lg border border-primary-200 bg-primary-50 p-4">
             <div class="flex items-start justify-between gap-4">
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium text-primary-700">发现新版本 v{{ updateInfo?.version }}</p>
-                <p v-if="updateInfo?.notes" class="mt-1 text-xs text-primary-500 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
+                <p v-if="updateInfo?.notes && updateStatus === 'available'" class="mt-1 text-xs text-primary-500 whitespace-pre-wrap">{{ updateInfo.notes }}</p>
+                <template v-if="updateStatus === 'downloading'">
+                  <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-primary-200">
+                    <div class="h-full rounded-full bg-primary-600 transition-all duration-200" :style="{ width: downloadProgress + '%' }" />
+                  </div>
+                  <p class="mt-1 text-xs text-primary-500">正在下载… {{ downloadProgress }}%</p>
+                </template>
               </div>
-              <button class="shrink-0 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="downloadAndInstall">
+              <button v-if="updateStatus === 'available'" class="shrink-0 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" @click="downloadAndInstall">
                 下载并安装
               </button>
             </div>
