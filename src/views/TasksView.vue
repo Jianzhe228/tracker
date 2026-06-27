@@ -12,7 +12,7 @@ import type { TaskItem, Priority, TaskStatus } from '../types/domain';
 import { extractKeywords, recordFeedback } from '../services/suggestion';
 import { refreshKnownKeywords } from '../services/suggestion/keywordCache';
 import { toDateKey, getDateKeyFromToday, isDateInRecent7Days } from '../utils/date';
-import { isTaskActiveOnDate } from '../utils/taskFilters';
+import { computeEffectivePomodoros, isTaskActiveOnDate } from '../utils/taskFilters';
 import { useSuggestionPanel, type SidebarSuggestion } from '../composables/useSuggestionPanel';
 
 const props = defineProps<{
@@ -247,7 +247,7 @@ function formatDuration(minutes: number): { value: string; unit: string } {
 const estimatedTime = computed(() => {
   const totalPomodoros = filteredTasks.value
     .filter(t => t.status === 'todo')
-    .reduce((sum, task) => sum + task.pomodoroCount, 0);
+    .reduce((sum, task) => sum + pomodorosOf(task.id), 0);
   return formatDuration(totalPomodoros * settingsStore.timer.focusMinutes);
 });
 
@@ -466,6 +466,13 @@ function hasTaskSubtasks(parentId: number): boolean {
 
 function getTaskSubtaskDoneCount(parentId: number): number {
   return getTaskSubtasks(parentId).filter((subtask) => subtask.status === 'done').length;
+}
+
+// A parent's pomodoro estimate is the sum of its subtasks' estimates; leaves use
+// their own count. Derived (not stored) so it stays in sync as subtasks change.
+const effectivePomodoros = computed(() => computeEffectivePomodoros(taskStore.tasks));
+function pomodorosOf(taskId: number): number {
+  return effectivePomodoros.value.get(taskId) ?? 1;
 }
 
 // Selected task
@@ -2162,15 +2169,15 @@ watch(activeTaskFilter, (filter) => {
                     <div class="flex items-center gap-1 text-xs text-[#9E9E9A]">
                       <div class="flex items-center gap-0.5">
                         <span
-                          v-for="dotIndex in Math.min(task.pomodoroCount || 1, 5)"
+                          v-for="dotIndex in Math.min(pomodorosOf(task.id), 5)"
                           :key="dotIndex"
                           class="h-2 w-2 rounded-full"
-                          :class="dotIndex <= (task.pomodoroCount || 1)
+                          :class="dotIndex <= pomodorosOf(task.id)
                             ? (task.status === 'done' ? 'bg-success-400' : 'bg-danger-400')
                             : (task.status === 'done' ? 'bg-success-200' : 'bg-danger-200')"
                         />
                       </div>
-                      <span v-if="(task.pomodoroCount || 1) > 5">+{{ (task.pomodoroCount || 1) - 5 }}</span>
+                      <span v-if="pomodorosOf(task.id) > 5">+{{ pomodorosOf(task.id) - 5 }}</span>
                     </div>
 
                     <!-- Due Date -->
@@ -2391,7 +2398,15 @@ watch(activeTaskFilter, (filter) => {
                   </svg>
                   番茄数量
                 </label>
-                <div class="flex items-center justify-between">
+                <!-- With subtasks the count is the sum of children — read-only -->
+                <div v-if="selectedTaskSubtasks.length > 0" class="flex items-center justify-between">
+                  <div class="flex items-center gap-2 text-sm text-[#1C1C1A]">
+                    <span class="tabular-nums font-medium">{{ pomodorosOf(selectedTask.id) }}</span>
+                    <span class="text-xs text-[#9E9E9A]">由子任务累加</span>
+                  </div>
+                  <div class="text-sm tabular-nums text-[#6F6F6B]">≈ {{ pomodorosOf(selectedTask.id) * settingsStore.timer.focusMinutes }} 分钟</div>
+                </div>
+                <div v-else class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <button
                       class="h-8 w-8 rounded border border-surface-border text-[#6F6F6B] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
@@ -2831,13 +2846,13 @@ watch(activeTaskFilter, (filter) => {
                     <div class="flex items-center gap-1 text-xs text-[#9E9E9A]">
                       <div class="flex items-center gap-0.5">
                         <span
-                          v-for="dotIndex in Math.min(subtask.pomodoroCount || 1, 5)"
+                          v-for="dotIndex in Math.min(pomodorosOf(subtask.id), 5)"
                           :key="dotIndex"
                           class="h-1.5 w-1.5 rounded-full"
-                          :class="dotIndex <= (subtask.pomodoroCount || 1) ? 'bg-danger-400' : 'bg-danger-200'"
+                          :class="dotIndex <= pomodorosOf(subtask.id) ? 'bg-danger-400' : 'bg-danger-200'"
                         />
                       </div>
-                      <span v-if="(subtask.pomodoroCount || 1) > 5">+{{ (subtask.pomodoroCount || 1) - 5 }}</span>
+                      <span v-if="pomodorosOf(subtask.id) > 5">+{{ pomodorosOf(subtask.id) - 5 }}</span>
                     </div>
                     <span class="text-xs" :class="isTaskOverdue(subtask) ? 'font-medium text-danger-500' : subtask.dueAt ? 'text-rose-500' : 'text-[#9E9E9A]'">
                       {{ formatDueAt(subtask.dueAt) }}

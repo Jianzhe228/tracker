@@ -20,6 +20,11 @@ export function playTone(kind: ToneKind): void {
   if (!AudioCtx) return;
   try {
     const ctx = new AudioCtx();
+    // A context created without a recent user gesture (e.g. the focus countdown
+    // finishing 25 min later) can start suspended — resume so the tone is heard.
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
