@@ -261,6 +261,16 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('keydown', handleTab);
 });
+
+// Stop white noise when focus session ends (manual stop / timeout → status goes idle)
+watch(() => timerStore.status, (next, prev) => {
+  if (next === 'idle' && prev !== 'idle') selectSound(null);
+});
+
+// Stop white noise when timer completes and auto-starts a break (mode leaves 'focus')
+watch(() => timerStore.mode, (next, prev) => {
+  if (prev === 'focus' && next !== 'focus') selectSound(null);
+});
 </script>
 
 <template>
