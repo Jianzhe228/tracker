@@ -17,9 +17,14 @@ export const SOUNDS: WhiteNoiseSound[] = [
   { id: 'river', label: '溪流', file: '/sounds/river.mp3' },
 ];
 
+const PREF_KEY = 'whiteNoisePref';
+const VOL_KEY = 'whiteNoiseVolume';
+
 // Module-level singleton — persists across modal open/close while app is running
 const activeSoundId = ref<string | null>(null);
-const volume = ref(0.6);
+// Last sound explicitly chosen by the user (null = user chose off); persisted to localStorage
+const lastUserSoundId = ref<string | null>(localStorage.getItem(PREF_KEY));
+const volume = ref<number>(parseFloat(localStorage.getItem(VOL_KEY) ?? '0.6'));
 let audioEl: HTMLAudioElement | null = null;
 
 function stopAudio(): void {
@@ -29,16 +34,7 @@ function stopAudio(): void {
   audioEl = null;
 }
 
-function selectSound(id: string | null): void {
-  // Clicking the active sound toggles it off
-  if (id === activeSoundId.value) {
-    activeSoundId.value = null;
-    stopAudio();
-    return;
-  }
-  stopAudio();
-  activeSoundId.value = id;
-  if (id === null) return;
+function startAudio(id: string): void {
   const sound = SOUNDS.find(s => s.id === id);
   if (!sound) return;
   audioEl = new Audio(sound.file);
@@ -47,11 +43,40 @@ function selectSound(id: string | null): void {
   audioEl.play().catch(() => {});
 }
 
+// Called by user action (chip click) — updates preference
+function selectSound(id: string | null): void {
+  // Clicking the active sound toggles it off
+  const target = id === activeSoundId.value ? null : id;
+  lastUserSoundId.value = target;
+  if (target !== null) {
+    localStorage.setItem(PREF_KEY, target);
+  } else {
+    localStorage.removeItem(PREF_KEY);
+  }
+  stopAudio();
+  activeSoundId.value = target;
+  if (target !== null) startAudio(target);
+}
+
+// Called by timer events — stops audio but preserves user preference
+function stopForTimer(): void {
+  stopAudio();
+  activeSoundId.value = null;
+}
+
+// Called when timer starts/resumes — restores last user preference
+function resumeLastSound(): void {
+  if (!lastUserSoundId.value) return;
+  activeSoundId.value = lastUserSoundId.value;
+  startAudio(lastUserSoundId.value);
+}
+
 function setVolume(v: number): void {
   volume.value = v;
+  localStorage.setItem(VOL_KEY, String(v));
   if (audioEl) audioEl.volume = v;
 }
 
 export function useWhiteNoise() {
-  return { activeSoundId, volume, SOUNDS, selectSound, setVolume };
+  return { activeSoundId, volume, SOUNDS, selectSound, setVolume, stopForTimer, resumeLastSound };
 }

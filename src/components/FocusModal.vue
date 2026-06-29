@@ -13,7 +13,7 @@ const timerStore = useTimerStore();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
 const { visible, close } = useFocusModal();
-const { activeSoundId, volume: soundVolume, selectSound, setVolume } = useWhiteNoise();
+const { activeSoundId, volume: soundVolume, selectSound, setVolume, stopForTimer, resumeLastSound } = useWhiteNoise();
 const { toggleTaskWithFlow } = useTaskToggle();
 
 // 层级导航状态
@@ -262,14 +262,15 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleTab);
 });
 
-// Stop white noise whenever the timer stops running (pause, manual stop, natural end)
+// Sync white noise with timer running state — stop on pause/end, resume on start/unpause
 watch(() => timerStore.running, (isRunning, wasRunning) => {
-  if (wasRunning && !isRunning) selectSound(null);
+  if (wasRunning && !isRunning) stopForTimer();
+  else if (!wasRunning && isRunning) resumeLastSound();
 });
 
-// Stop white noise when focus completes and auto-starts a break (running stays true, mode changes)
+// Stop when focus completes and auto-starts a break (running stays true, only mode changes)
 watch(() => timerStore.mode, (next, prev) => {
-  if (prev === 'focus' && next !== 'focus') selectSound(null);
+  if (prev === 'focus' && next !== 'focus') stopForTimer();
 });
 </script>
 
