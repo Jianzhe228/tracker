@@ -7,11 +7,13 @@ import { useFocusModal } from '../composables/useFocusModal';
 import { useTaskToggle } from '../composables/useTaskToggle';
 import { toDateKey, todayDateKey } from '../utils/date';
 import { isTaskActiveOnDate } from '../utils/taskFilters';
+import { useWhiteNoise, SOUNDS } from '../composables/useWhiteNoise';
 
 const timerStore = useTimerStore();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
 const { visible, close } = useFocusModal();
+const { activeSoundId, volume: soundVolume, selectSound, setVolume } = useWhiteNoise();
 const { toggleTaskWithFlow } = useTaskToggle();
 
 // 层级导航状态
@@ -236,6 +238,13 @@ watch(visible, (show) => {
     previousActive = document.activeElement as HTMLElement | null;
     document.addEventListener('keydown', handleKeydown);
     document.addEventListener('keydown', handleTab);
+    // Pre-select task from task list selection when timer is idle
+    if (timerStore.idle && uiStore.selectedTaskId) {
+      const task = taskStore.tasks.find(t => t.id === uiStore.selectedTaskId);
+      if (task) {
+        timerStore.setTask(task.id, task.title, task.projectId ?? null);
+      }
+    }
     nextTick(() => {
       const focusables = getFocusables();
       focusables[0]?.focus();
@@ -269,7 +278,7 @@ onUnmounted(() => {
       <div class="relative flex flex-1 flex-col items-center justify-center bg-[#1C1C1A]">
         <!-- Background Gradient -->
         <div
-          class="absolute inset-0 bg-gradient-to-br from-[#1C1C1A] via-[#252523] to-primary-950 opacity-80"
+          class="absolute inset-0 bg-gradient-to-br from-[#1C1C1A] via-[#252523] to-primary-950"
         />
 
         <!-- Timer Kind -->
@@ -462,7 +471,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Right Sidebar -->
-      <div class="flex w-80 flex-col bg-[#1C1C1A]/95 border-l border-white/5">
+      <div class="flex w-80 flex-col bg-[#1C1C1A] border-l border-white/5">
         <!-- Focus Time Today -->
         <section class="px-5 py-6 border-b border-white/5">
           <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
@@ -685,6 +694,60 @@ onUnmounted(() => {
             </div>
           </section>
         </div>
+
+        <!-- White Noise -->
+        <section class="shrink-0 border-t border-white/5 px-5 py-4">
+          <div class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/50">
+            <span
+              class="h-3 w-0.5 rounded-full transition-colors"
+              :class="activeSoundId ? 'bg-indigo-400/80' : 'bg-white/20'"
+              aria-hidden="true"
+            />
+            白噪音
+            <span v-if="activeSoundId" class="ml-auto normal-case tracking-normal text-[10px] text-indigo-400/70">
+              {{ SOUNDS.find(s => s.id === activeSoundId)?.label }} · 播放中
+            </span>
+          </div>
+          <div class="mt-2.5 flex flex-wrap gap-1.5">
+            <button
+              class="rounded-full px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+              :class="activeSoundId === null
+                ? 'bg-white/15 text-white'
+                : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'"
+              @click="selectSound(null)"
+            >
+              关闭
+            </button>
+            <button
+              v-for="sound in SOUNDS"
+              :key="sound.id"
+              class="rounded-full px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+              :class="activeSoundId === sound.id
+                ? 'bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-400/30'
+                : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70'"
+              @click="selectSound(sound.id)"
+            >
+              {{ sound.label }}
+            </button>
+          </div>
+          <div v-if="activeSoundId !== null" class="mt-2.5 flex items-center gap-2.5">
+            <svg class="h-3 w-3 shrink-0 text-white/30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M7 9v6h4l5 5V4l-5 5H7z"/>
+            </svg>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              class="sound-volume flex-1 cursor-pointer"
+              :value="soundVolume"
+              @input="setVolume(Number(($event.target as HTMLInputElement).value))"
+            />
+            <svg class="h-3.5 w-3.5 shrink-0 text-white/30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            </svg>
+          </div>
+        </section>
       </div>
     </div>
     </Transition>
@@ -692,6 +755,27 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.sound-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  outline: none;
+}
+.sound-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sound-volume::-webkit-slider-thumb:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
 .focus-modal-enter-active {
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
