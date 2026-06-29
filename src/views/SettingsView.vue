@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUiStore } from '../stores/uiStore';
@@ -154,7 +154,7 @@ const updateError = ref('');
 const updateInfo = ref<{ version: string; notes: string } | null>(null);
 const currentVersion = ref('');
 const downloadProgress = ref(0); // -1 = indeterminate (contentLength unknown)
-const pendingUpdate = ref<Update | null>(null);
+const pendingUpdate = shallowRef<Update | null>(null);
 
 // ── Pattern template management ────────────────────────────────────
 const patterns = ref<SubtaskPattern[]>([]);
