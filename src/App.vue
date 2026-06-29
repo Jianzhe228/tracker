@@ -252,12 +252,18 @@ const focusButtonLabel = computed(() => {
   if (timerStore.currentTaskTitle) return timerStore.currentTaskTitle;
   if (timerStore.running) return '专注中';
   if (timerStore.paused) return '已暂停';
+  const selectedId = uiStore.selectedTaskId;
+  if (selectedId) {
+    const task = taskStore.tasks.find(t => t.id === selectedId);
+    if (task) return task.title;
+  }
   return '开始专注';
 });
 
 const focusButtonSubLabel = computed(() => {
   if (timerStore.running) return '专注进行中';
   if (timerStore.paused) return '已暂停，点击继续管理';
+  if (uiStore.selectedTaskId) return '点击开始专注';
   return '打开专注面板';
 });
 

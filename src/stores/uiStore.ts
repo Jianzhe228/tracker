@@ -25,6 +25,11 @@ const NOTICE_DURATION_MS = 2600;
 export const useUiStore = defineStore('ui', () => {
   const notice = ref<NoticeState | null>(null);
   const confirmDialog = ref<ConfirmState | null>(null);
+  const selectedTaskId = ref<number | null>(null);
+
+  function setSelectedTaskId(id: number | null): void {
+    selectedTaskId.value = id;
+  }
 
   let noticeIdSeed = 0;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,6 +84,8 @@ export const useUiStore = defineStore('ui', () => {
   return {
     notice,
     confirmDialog,
+    selectedTaskId,
+    setSelectedTaskId,
     notify,
     dismissNotice,
     confirm,

@@ -23,9 +23,7 @@ const DayHourDistributionChart = defineAsyncComponent(() => import('../component
 const FocusTrendChart = defineAsyncComponent(() => import('../components/charts/FocusTrendChart.vue'));
 const HourlyDistributionChart = defineAsyncComponent(() => import('../components/charts/HourlyDistributionChart.vue'));
 const ProjectDistributionChart = defineAsyncComponent(() => import('../components/charts/ProjectDistributionChart.vue'));
-const EstVsActualChart = defineAsyncComponent(() => import('../components/charts/EstVsActualChart.vue'));
 const WeeklyFocusTrendChart = defineAsyncComponent(() => import('../components/charts/WeeklyFocusTrendChart.vue'));
-const TaskVelocityChart = defineAsyncComponent(() => import('../components/charts/TaskVelocityChart.vue'));
 
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
@@ -221,6 +219,14 @@ function getProjectTitle(projectId: number | null): string {
   if (projectId == null) return '未分类';
   return taskStore.projects.find(project => project.id === projectId)?.title ?? '未分类';
 }
+
+const projectColorMap = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  for (const p of taskStore.projects) {
+    if (p.color) map[String(p.id)] = p.color;
+  }
+  return map;
+});
 
 const displayedProjectDistribution = computed<ProjectTimeStat[]>(() => {
   const base = new Map<string, ProjectTimeStat>();
@@ -872,6 +878,24 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- ── Day-Hour Distribution (Phase 2, full width) ────────── -->
+      <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <div class="flex items-baseline gap-3">
+            <h3 class="font-semibold text-[#1C1C1A]">每日时段消耗分布</h3>
+            <span class="text-[11px] text-[#9E9E9A]">滚轮上下查看历史日期</span>
+          </div>
+        </div>
+        <DayHourDistributionChart
+          v-if="renderPhase >= 2"
+          :data="displayedDayHourDistribution"
+          :days="statisticsStore.dayHourWindowDays"
+        />
+        <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
+          加载中…
+        </div>
+      </div>
+
       <!-- ── Focus Trend + Hourly Distribution (Phase 1) ─────── -->
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
@@ -901,31 +925,14 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- ── Day-Hour Distribution (Phase 2, full width) ────────── -->
-      <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-        <div class="mb-3 flex items-center justify-between gap-3">
-          <div class="flex items-baseline gap-3">
-            <h3 class="font-semibold text-[#1C1C1A]">每日时段消耗分布</h3>
-            <span class="text-[11px] text-[#9E9E9A]">滚轮上下查看历史日期</span>
-          </div>
-        </div>
-        <DayHourDistributionChart
-          v-if="renderPhase >= 2"
-          :data="displayedDayHourDistribution"
-          :days="statisticsStore.dayHourWindowDays"
-        />
-        <div v-else class="flex h-[320px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
-          加载中…
-        </div>
-      </div>
-
-      <!-- ── Project Distribution + Estimation Accuracy (Phase 3) ── -->
+      <!-- ── Project Distribution + Weekly Focus Trend (Phase 3) ── -->
       <div class="grid gap-6 lg:grid-cols-2">
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
           <h3 class="font-semibold text-[#1C1C1A]">项目时间分布</h3>
           <ProjectDistributionChart
             v-if="renderPhase >= 3 && displayedProjectDistribution.length"
             :data="displayedProjectDistribution"
+            :colors="projectColorMap"
           />
           <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
@@ -933,42 +940,10 @@ onMounted(() => {
         </div>
 
         <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <div class="mb-1 flex items-baseline justify-between">
-            <h3 class="font-semibold text-[#1C1C1A]">估算准确度</h3>
-            <span class="text-xs text-[#9E9E9A]">今日完成</span>
-          </div>
-          <EstVsActualChart
-            v-if="renderPhase >= 3 && statisticsStore.estVsActual.length"
-            :data="statisticsStore.estVsActual"
-          />
-          <div v-else class="flex h-[200px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
-            {{ renderPhase < 3 ? '加载中…' : '今日暂无已完成任务' }}
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Weekly Focus Trend + Task Velocity (Phase 3) ────────── -->
-      <div class="grid gap-6 lg:grid-cols-2">
-        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <div class="mb-1 flex items-baseline justify-between">
-            <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
-          </div>
+          <h3 class="font-semibold text-[#1C1C1A]">每周专注趋势</h3>
           <WeeklyFocusTrendChart
             v-if="renderPhase >= 3 && statisticsStore.weeklyFocus.length"
             :data="statisticsStore.weeklyFocus"
-          />
-          <div v-else class="flex h-[220px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
-            {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}
-          </div>
-        </div>
-
-        <div class="dashboard-panel rounded-xl border border-surface-border bg-white p-5 shadow-card">
-          <div class="mb-1 flex items-baseline justify-between">
-            <h3 class="font-semibold text-[#1C1C1A]">任务完成速度</h3>
-          </div>
-          <TaskVelocityChart
-            v-if="renderPhase >= 3 && statisticsStore.weeklyTaskVelocity.length"
-            :data="statisticsStore.weeklyTaskVelocity"
           />
           <div v-else class="flex h-[220px] items-center justify-center rounded-lg bg-surface-hover text-sm text-[#9E9E9A]">
             {{ renderPhase < 3 ? '加载中…' : '暂无数据' }}

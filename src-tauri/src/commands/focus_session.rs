@@ -343,18 +343,18 @@ pub fn focus_session_project_distribution(
 
     let mut stmt = db
         .prepare(
-            "SELECT t.project_id,
-              COALESCE(p.title, '未分类'),
+            "SELECT p.id,
+              p.title,
               COALESCE(SUM(fs.duration_seconds), 0),
               COUNT(*)
        FROM focus_sessions fs
-       LEFT JOIN tasks t ON fs.task_id = t.id
-       LEFT JOIN projects p ON t.project_id = p.id
+       JOIN tasks t ON fs.task_id = t.id
+       JOIN projects p ON t.project_id = p.id
        WHERE fs.type = 'focus'
          AND fs.status IN ('completed', 'stopped')
          AND date(fs.start_time, 'localtime') >= date(?1)
          AND date(fs.start_time, 'localtime') <= date(?2)
-       GROUP BY t.project_id
+       GROUP BY p.id
        ORDER BY SUM(fs.duration_seconds) DESC",
         )
         .map_err(|e| e.to_string())?;

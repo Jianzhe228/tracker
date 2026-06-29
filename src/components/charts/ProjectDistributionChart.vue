@@ -6,6 +6,7 @@ import { formatMinutes } from '../../utils/date';
 
 const props = defineProps<{
   data: ProjectTimeStat[];
+  colors?: Record<string, string>;
 }>();
 
 const option = computed(() => {
@@ -34,10 +35,14 @@ const option = computed(() => {
       emphasis: {
         label: { show: true, fontSize: 14, fontWeight: 'bold' },
       },
-      data: items.map(d => ({
-        name: d.projectTitle,
-        value: Math.round(d.totalSeconds / 60),
-      })),
+      data: items.map(d => {
+        const color = props.colors?.[String(d.projectId ?? '')];
+        return {
+          name: d.projectTitle,
+          value: Math.round(d.totalSeconds / 60),
+          ...(color ? { itemStyle: { color } } : {}),
+        };
+      }),
     }],
   };
 });

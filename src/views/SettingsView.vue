@@ -712,9 +712,9 @@ async function downloadAndInstall(): Promise<void> {
         </li>
       </ul>
     </nav>
-    <div ref="contentRef" class="flex-1 overflow-y-auto space-y-10 px-8 py-6">
+    <div ref="contentRef" class="flex-1 overflow-y-auto space-y-5 bg-[#F5F5F3] px-6 py-6">
       <!-- 通用 -->
-      <section id="general">
+      <section id="general" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通用</h2>
         <div class="divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
@@ -729,7 +729,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 番茄钟 -->
-      <section id="pomodoro">
+      <section id="pomodoro" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">番茄钟</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label class="space-y-1.5">
@@ -769,7 +769,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 快捷键 -->
-      <section id="shortcuts">
+      <section id="shortcuts" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-base font-semibold text-[#1C1C1A]">快捷键</h2>
           <button
@@ -843,7 +843,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 云同步 -->
-      <section id="sync">
+      <section id="sync" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">云同步</h2>
         <div class="space-y-4">
           <label class="block">
@@ -882,7 +882,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 通知 -->
-      <section id="notification">
+      <section id="notification" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通知</h2>
         <div class="divide-y divide-surface-border">
           <div class="flex items-center justify-between gap-4 py-3">
@@ -912,7 +912,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 子任务模板 -->
-      <section id="patterns">
+      <section id="patterns" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-base font-semibold text-[#1C1C1A]">子任务模板</h2>
           <button class="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700" @click="openNewPatternForm">新增模板</button>
@@ -964,7 +964,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- AI -->
-      <section id="ai">
+      <section id="ai" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">AI</h2>
         <div class="space-y-4">
           <label class="block space-y-1.5">
@@ -987,7 +987,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 关于与更新 -->
-      <section id="about">
+      <section id="about" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">关于与更新</h2>
         <div class="space-y-3">
           <div class="flex items-center justify-between gap-4">
@@ -1032,7 +1032,7 @@ async function downloadAndInstall(): Promise<void> {
       </section>
 
       <!-- 数据管理 -->
-      <section id="data">
+      <section id="data" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">数据管理</h2>
         <div class="flex flex-wrap items-center gap-3">
           <button class="rounded-lg border border-surface-border px-4 py-2 text-sm text-[#6F6F6B] hover:bg-surface-hover disabled:opacity-50" :disabled="exportStatus === 'exporting'" @click="handleExportToFile">{{ exportStatus === 'exporting' ? '导出中…' : '导出到文件' }}</button>

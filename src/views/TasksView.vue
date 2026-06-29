@@ -4,6 +4,7 @@ import { onBeforeRouteLeave, useRoute } from 'vue-router';
 import { useTaskStore } from '../stores/taskStore';
 import { useTimerStore } from '../stores/timerStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useUiStore } from '../stores/uiStore';
 import { useFocusModal } from '../composables/useFocusModal';
 import { useTaskToggle } from '../composables/useTaskToggle';
 import { validateTaskTitle } from '../utils/validation';
@@ -24,6 +25,7 @@ const route = useRoute();
 const taskStore = useTaskStore();
 const timerStore = useTimerStore();
 const settingsStore = useSettingsStore();
+const uiStore = useUiStore();
 const focusModal = useFocusModal();
 const { toggleTaskWithFlow } = useTaskToggle();
 
@@ -1006,6 +1008,7 @@ function normalizeTask(task: TaskItem) {
 watch(selectedTask, (task) => {
   taskDraft.value = task ? buildTaskDraft(task) : null;
   subtaskTitle.value = '';
+  uiStore.setSelectedTaskId(task?.id ?? null);
 }, { immediate: true });
 
 watch(activeTaskFilter, () => {
@@ -1906,6 +1909,7 @@ function handleFocusSearchRequest(): void {
 }
 
 onUnmounted(() => {
+  uiStore.setSelectedTaskId(null);
   clearAllPanels();
   if (undoTickTimer) {
     clearInterval(undoTickTimer);
