@@ -116,33 +116,55 @@ pub fn generate_recurring_tasks(conn: &Connection, today: &str) -> Result<(), St
 
     let rule_ids: Vec<i64> = rules.iter().map(|r| r.id).collect();
 
-    // Batch fetch all existing recurring tasks for these rules
-    let mut existing_tasks: Vec<(i64, String)> = Vec::new();
+    // Batch fetch all existing (non-deleted) tasks for these rules. We derive two things:
+    //   1. existing_set: (rule_id, due_at) pairs → dedup so the same day is never created twice.
+    //   2. open_rule_ids: rules that still have an unfinished (status = 'todo') instance.
+    //      A daily task left incomplete must NOT spawn a second copy the next day — the next
+    //      occurrence is only generated once the current instance is done/cancelled.
+    let mut existing_set: std::collections::HashSet<(i64, String)> =
+        std::collections::HashSet::new();
+    let mut open_rule_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
     {
         let placeholders: String = rule_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT recurring_rule_id, due_at FROM tasks
+            "SELECT recurring_rule_id, due_at, status FROM tasks
        WHERE recurring_rule_id IN ({}) AND deleted_at IS NULL",
             placeholders
         );
         let mut check_stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let mut rows = check_stmt
             .query_map(rusqlite::params_from_iter(rule_ids.iter()), |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
-        while let Some(row) = rows.next().transpose().map_err(|e| e.to_string())? {
-            existing_tasks.push(row);
+        while let Some((rule_id, due_at, status)) =
+            rows.next().transpose().map_err(|e| e.to_string())?
+        {
+            if status == "todo" {
+                open_rule_ids.insert(rule_id);
+            }
+            if let Some(due) = due_at {
+                existing_set.insert((rule_id, due));
+            }
         }
     }
-
-    let existing_set: std::collections::HashSet<(i64, String)> =
-        existing_tasks.into_iter().collect();
 
     // Collect all tasks to insert
     let mut tasks_to_insert: Vec<(i64, String)> = Vec::new(); // (rule_id, due_at)
 
     for rule in &rules {
+        // Skip rules that still have an unfinished instance: don't stack a new copy on top
+        // of an incomplete one (the duplicate-daily-task bug). last_generated_date is still
+        // advanced for every rule below, so once the open instance is completed the next
+        // occurrence resumes from today without backfilling the skipped days.
+        if open_rule_ids.contains(&rule.id) {
+            continue;
+        }
+
         let start_date = if let Some(ref last) = rule.last_generated_date {
             match NaiveDate::parse_from_str(last, "%Y-%m-%d") {
                 Ok(d) => d.succ_opt().unwrap_or(d),
@@ -223,4 +245,117 @@ pub fn generate_recurring_tasks(conn: &Connection, today: &str) -> Result<(), St
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_recurring_tasks;
+    use crate::db::run_migrations;
+    use rusqlite::Connection;
+
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        run_migrations(&conn).expect("run migrations");
+        conn
+    }
+
+    fn insert_daily_rule(conn: &Connection, title: &str, anchor: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO recurring_rules (title, repeat_type, anchor_date, active)
+             VALUES (?1, 'daily', ?2, 1)",
+            rusqlite::params![title, anchor],
+        )
+        .expect("insert rule");
+        conn.last_insert_rowid()
+    }
+
+    fn open_task_count(conn: &Connection, rule_id: i64) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE recurring_rule_id = ?1 AND status = 'todo' AND deleted_at IS NULL",
+            rusqlite::params![rule_id],
+            |row| row.get(0),
+        )
+        .expect("count open tasks")
+    }
+
+    fn total_task_count(conn: &Connection, rule_id: i64) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM tasks
+             WHERE recurring_rule_id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![rule_id],
+            |row| row.get(0),
+        )
+        .expect("count tasks")
+    }
+
+    fn complete_all(conn: &Connection, rule_id: i64) {
+        conn.execute(
+            "UPDATE tasks SET status = 'done', completed_at = '2026-06-29T20:00:00Z'
+             WHERE recurring_rule_id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![rule_id],
+        )
+        .expect("complete tasks");
+    }
+
+    #[test]
+    fn daily_rule_does_not_duplicate_while_previous_is_incomplete() {
+        let conn = setup_db();
+        let rule = insert_daily_rule(&conn, "阅读", "2026-06-29");
+
+        // Day 1: the first instance is created.
+        generate_recurring_tasks(&conn, "2026-06-29").expect("gen day1");
+        assert_eq!(open_task_count(&conn, rule), 1, "day1 creates one instance");
+
+        // Day 2: the day-1 task is still open → no new instance should be created.
+        generate_recurring_tasks(&conn, "2026-06-30").expect("gen day2");
+        assert_eq!(
+            open_task_count(&conn, rule),
+            1,
+            "an incomplete daily task must not spawn a duplicate the next day"
+        );
+        assert_eq!(total_task_count(&conn, rule), 1);
+    }
+
+    #[test]
+    fn daily_rule_resumes_after_completion() {
+        let conn = setup_db();
+        let rule = insert_daily_rule(&conn, "阅读", "2026-06-29");
+
+        generate_recurring_tasks(&conn, "2026-06-29").expect("gen day1");
+        complete_all(&conn, rule);
+
+        // Next day: no open instance → a fresh one is generated.
+        generate_recurring_tasks(&conn, "2026-06-30").expect("gen day2");
+        assert_eq!(
+            open_task_count(&conn, rule),
+            1,
+            "completing the instance lets the next day generate again"
+        );
+        assert_eq!(total_task_count(&conn, rule), 2, "one done + one new todo");
+    }
+
+    #[test]
+    fn no_backfill_after_skipping_incomplete_days() {
+        let conn = setup_db();
+        let rule = insert_daily_rule(&conn, "阅读", "2026-06-29");
+
+        generate_recurring_tasks(&conn, "2026-06-29").expect("gen day1");
+        // Several days pass while the first instance stays open.
+        generate_recurring_tasks(&conn, "2026-06-30").expect("gen day2");
+        generate_recurring_tasks(&conn, "2026-07-01").expect("gen day3");
+        generate_recurring_tasks(&conn, "2026-07-02").expect("gen day4");
+        assert_eq!(open_task_count(&conn, rule), 1, "still a single open instance");
+
+        // Complete it, then run the next day: exactly one fresh instance — the skipped
+        // 06-30 / 07-01 / 07-02 days are NOT backfilled.
+        complete_all(&conn, rule);
+        generate_recurring_tasks(&conn, "2026-07-03").expect("gen day5");
+        assert_eq!(open_task_count(&conn, rule), 1, "exactly one fresh instance");
+        assert_eq!(
+            total_task_count(&conn, rule),
+            2,
+            "one done + one new; skipped days are not backfilled"
+        );
+    }
 }
