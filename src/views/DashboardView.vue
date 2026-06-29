@@ -699,7 +699,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-6">
+  <div class="h-full overflow-y-auto p-6 pb-20">
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-[#1C1C1A]">仪表盘</h1>
     </div>

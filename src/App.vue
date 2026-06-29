@@ -115,8 +115,6 @@ const smartLists = [
 const isActive = (path: string) => route.path === path;
 const isSmartListActive = () => route.path.startsWith('/tasks/');
 const isTaskRoute = () => ['today', 'all', 'project'].includes(String(route.name || ''));
-const noMainBottomPaddingRoutes = new Set(['today', 'all', 'project']);
-const mainNeedsBottomPadding = computed(() => !noMainBottomPaddingRoutes.has(String(route.name || '')));
 
 
 // Get task counts. "today" still scans in-memory (fast, working set already
@@ -626,7 +624,7 @@ onUnmounted(() => {
         </div>
       </div>
       <!-- Router View -->
-      <main ref="mainRef" class="relative flex-1 overflow-auto rounded-xl bg-white shadow-card" :class="mainNeedsBottomPadding ? 'pb-20' : 'pb-0'">
+      <main ref="mainRef" class="relative flex-1 overflow-auto rounded-xl bg-white shadow-card">
         <RouterView />
       </main>
     </div>

@@ -700,7 +700,7 @@ async function downloadAndInstall(): Promise<void> {
 
 <template>
   <div class="flex h-full">
-    <nav class="w-36 shrink-0 overflow-y-auto border-r border-surface-border py-6 pl-4 pr-2">
+    <nav class="w-36 shrink-0 overflow-y-auto border-r border-surface-border bg-[#F5F5F3] py-6 pl-4 pr-2">
       <ul class="space-y-0.5">
         <li v-for="item in NAV_ITEMS" :key="item.id">
           <a
@@ -712,7 +712,7 @@ async function downloadAndInstall(): Promise<void> {
         </li>
       </ul>
     </nav>
-    <div ref="contentRef" class="flex-1 overflow-y-auto space-y-5 bg-[#F5F5F3] px-6 py-6">
+    <div ref="contentRef" class="flex-1 overflow-y-auto space-y-5 bg-[#F5F5F3] px-6 pt-6 pb-20">
       <!-- 通用 -->
       <section id="general" class="rounded-xl border border-surface-border bg-white px-6 py-5 shadow-sm">
         <h2 class="mb-4 text-base font-semibold text-[#1C1C1A]">通用</h2>

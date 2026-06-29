@@ -2149,7 +2149,7 @@ watch(activeTaskFilter, (filter) => {
       <!-- Task List -->
       <div
         ref="taskScrollContainer"
-        class="flex-1 overflow-auto bg-surface-hover p-6"
+        class="flex-1 overflow-auto bg-surface-hover p-6 pb-20"
         @scroll="handleTaskListScroll"
       >
         <div
