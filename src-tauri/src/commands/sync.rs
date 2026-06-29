@@ -338,7 +338,10 @@ pub(crate) fn import_json_data_to_db(
 
     let tx = db.transaction().map_err(|e| e.to_string())?;
 
-    // Clear existing data
+    // Clear existing data. Credentials (webdavPassword, aiApiKey) are
+    // intentionally excluded from exports for security, so they must also be
+    // excluded from the clear to survive round-trips through WebDAV or file
+    // import/export.
     tx.execute_batch(
         "
     DELETE FROM focus_session_segments;
@@ -356,7 +359,7 @@ pub(crate) fn import_json_data_to_db(
     DELETE FROM recurring_rules;
     DELETE FROM projects;
     DELETE FROM ai_skills;
-    DELETE FROM user_settings;
+    DELETE FROM user_settings WHERE key NOT IN ('webdavPassword', 'aiApiKey');
     ",
     )
     .map_err(|e| format!("Failed to clear data: {}", e))?;
@@ -1081,5 +1084,63 @@ mod tests {
             .expect("select rescheduled_to");
 
         assert_eq!(rescheduled_to.as_deref(), Some("2026-03-22"));
+    }
+
+    #[test]
+    fn import_preserves_local_credentials_excluded_from_export() {
+        let mut db = setup_db();
+
+        // Seed local credentials that the export intentionally excludes.
+        db.execute_batch(
+            "INSERT INTO user_settings (key, value) VALUES
+               ('webdavPassword', 'my-secret'),
+               ('aiApiKey', 'sk-local'),
+               ('webdavUrl', 'https://dav.example.com/');",
+        )
+        .expect("seed credentials");
+
+        // Simulate a remote export that came from another device: it has no
+        // credentials (export always strips them) but carries non-sensitive
+        // settings.
+        let remote_json = serde_json::json!({
+            "version": 1,
+            "exportedAt": "2026-01-01T00:00:00Z",
+            "tasks": [],
+            "projects": [{"id": 1, "title": "默认", "color": "#6b7280", "icon": "inbox", "parentId": null, "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z"}],
+            "focusSessions": [],
+            "settings": [
+                {"key": "webdavUrl", "value": "https://dav.other.com/"},
+                {"key": "closeToTray", "value": "false"}
+            ],
+            "recurringRules": [],
+            "taskCompletionLogs": [],
+            "focusSessionSegments": [],
+            "aiSkills": [],
+            "aiJobs": [],
+            "subtaskPatterns": [],
+            "subtaskLearnLog": [],
+            "keywordClusters": [],
+            "suggestionFeedback": [],
+            "taskSubtaskHistory": []
+        });
+
+        import_json_data_to_db(&mut db, &remote_json).expect("import remote data");
+
+        let get = |key: &str| -> Option<String> {
+            db.query_row(
+                "SELECT value FROM user_settings WHERE key = ?1",
+                rusqlite::params![key],
+                |r| r.get(0),
+            )
+            .ok()
+        };
+
+        // Credentials must survive the import.
+        assert_eq!(get("webdavPassword").as_deref(), Some("my-secret"));
+        assert_eq!(get("aiApiKey").as_deref(), Some("sk-local"));
+
+        // Non-credential settings from the remote data must overwrite locals.
+        assert_eq!(get("webdavUrl").as_deref(), Some("https://dav.other.com/"));
+        assert_eq!(get("closeToTray").as_deref(), Some("false"));
     }
 }

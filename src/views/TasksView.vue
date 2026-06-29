@@ -302,7 +302,26 @@ const completedTasksCount = computed(() => {
   }).length;
 });
 
-const canDragSort = computed(() => !searchActive.value && activeTaskFilter.value !== 'all');
+// ── Today view: project group ordering & collapse ─────────────────
+const projectGroupOrder = ref<number[]>([]);
+const collapsedProjectGroups = ref(new Set<number>());
+const groupDragPreviewOrder = ref<number[] | null>(null);
+const draggingGroupProjectId = ref<number | null>(null);
+const isGroupDragActive = ref(false);
+
+const showProjectGroups = computed(() =>
+  activeTaskFilter.value === 'today' && !searchActive.value
+);
+
+function getEffectiveGroupOrder(presentProjectIds: number[]): number[] {
+  const current = groupDragPreviewOrder.value ?? projectGroupOrder.value;
+  return [
+    ...current.filter(id => presentProjectIds.includes(id)),
+    ...presentProjectIds.filter(id => !current.includes(id))
+  ];
+}
+
+const canDragSort = computed(() => !searchActive.value && activeTaskFilter.value !== 'all' && !showProjectGroups.value);
 
 function compareTimelineDateKey(a: string, b: string): number {
   if (a === b) return 0;
@@ -340,6 +359,18 @@ const displayTasks = computed(() => {
       return a.createdAt.localeCompare(b.createdAt);
     });
     return [...workingPart, ...archivePart];
+  }
+
+  // Today view: order tasks by project group
+  if (activeTaskFilter.value === 'today') {
+    const tasks = visibleTasks.value;
+    const presentProjectIds = [...new Set(tasks.map(t => t.projectId || 0))];
+    const orderedProjectIds = getEffectiveGroupOrder(presentProjectIds);
+    const result: TaskItem[] = [];
+    for (const projectId of orderedProjectIds) {
+      result.push(...tasks.filter(t => (t.projectId || 0) === projectId));
+    }
+    return result;
   }
 
   if (!dragPreviewIds.value || !isTaskDragging.value) return visibleTasks.value;
@@ -434,6 +465,97 @@ async function copySingleTaskToToday(taskId: number): Promise<void> {
     console.error('Failed to copy task to today:', error);
     alert('复制任务失败，请稍后重试');
   }
+}
+
+// ── Today view: project group collapse & drag helpers ────────────
+const projectGroupCounts = computed(() => {
+  if (!showProjectGroups.value) return new Map<number, number>();
+  const map = new Map<number, number>();
+  for (const task of displayTasks.value) {
+    const pid = task.projectId || 0;
+    map.set(pid, (map.get(pid) || 0) + 1);
+  }
+  return map;
+});
+
+function isProjectGroupCollapsed(projectId: number): boolean {
+  return collapsedProjectGroups.value.has(projectId);
+}
+
+function toggleProjectGroupCollapse(projectId: number): void {
+  const s = new Set(collapsedProjectGroups.value);
+  if (s.has(projectId)) s.delete(projectId); else s.add(projectId);
+  collapsedProjectGroups.value = s;
+}
+
+function shouldRenderProjectGroupHeader(taskIndex: number): boolean {
+  if (!showProjectGroups.value) return false;
+  if (taskIndex === 0) return true;
+  const cur = displayTasks.value[taskIndex];
+  const prev = displayTasks.value[taskIndex - 1];
+  return !!cur && !!prev && (cur.projectId || 0) !== (prev.projectId || 0);
+}
+
+function isTaskInCollapsedProjectGroup(task: TaskItem): boolean {
+  if (!showProjectGroups.value) return false;
+  return collapsedProjectGroups.value.has(task.projectId || 0);
+}
+
+function onGroupHeaderPointerDown(e: PointerEvent, projectId: number): void {
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  const startY = e.clientY;
+  let dragStarted = false;
+  const initialOrder: number[] = projectGroupOrder.value.length > 0
+    ? projectGroupOrder.value.slice()
+    : [...new Set(visibleTasks.value.map(t => t.projectId || 0))];
+
+  let rafId = 0;
+
+  function onMove(ev: PointerEvent): void {
+    const delta = Math.abs(ev.clientY - startY);
+    if (!dragStarted && delta < 8) return;
+    if (!dragStarted) {
+      dragStarted = true;
+      draggingGroupProjectId.value = projectId;
+      isGroupDragActive.value = true;
+      groupDragPreviewOrder.value = initialOrder.slice();
+    }
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      const headers = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-group-header]')
+      ).filter(el => Number(el.dataset.groupId) !== projectId);
+      const currentOrder = groupDragPreviewOrder.value ?? initialOrder;
+      const withoutDragged = currentOrder.filter(id => id !== projectId);
+      const insertBefore = headers.findIndex(el => {
+        const rect = el.getBoundingClientRect();
+        return ev.clientY < rect.top + rect.height / 2;
+      });
+      if (insertBefore === -1) {
+        groupDragPreviewOrder.value = [...withoutDragged, projectId];
+      } else {
+        const arr = withoutDragged.slice();
+        arr.splice(insertBefore, 0, projectId);
+        groupDragPreviewOrder.value = arr;
+      }
+    });
+  }
+
+  function onUp(): void {
+    cancelAnimationFrame(rafId);
+    if (dragStarted && groupDragPreviewOrder.value) {
+      projectGroupOrder.value = groupDragPreviewOrder.value.slice();
+    }
+    draggingGroupProjectId.value = null;
+    isGroupDragActive.value = false;
+    groupDragPreviewOrder.value = null;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+  }
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
 }
 
 const subtasksByParent = computed(() => {
@@ -825,7 +947,7 @@ function buildTaskDraft(task: TaskItem): TaskDraft {
     priority: task.priority ?? 0,
     pomodoroCount: Math.max(1, task.pomodoroCount || 1),
     dueAt: task.dueAt || '',
-    startAt: task.startAt || '',
+    startAt: task.startAt || (rule ? rule.anchorDate || '' : ''),
     projectId: task.projectId,
     reminderDate: reminder.date,
     reminderTime: reminder.time,
@@ -871,7 +993,7 @@ function normalizeTask(task: TaskItem) {
     priority: task.priority ?? 0,
     pomodoroCount: Math.min(10, Math.max(1, Math.round(task.pomodoroCount || 1))),
     dueAt: task.dueAt || '',
-    startAt: task.startAt || '',
+    startAt: task.startAt || (rule ? rule.anchorDate || '' : ''),
     projectId: task.projectId,
     reminderDate: reminder.date,
     reminderTime: reminder.time,
@@ -2079,8 +2201,42 @@ watch(activeTaskFilter, (filter) => {
                   <div class="h-px flex-1 bg-surface-border" />
                 </div>
 
+                <!-- Today view: project group header -->
                 <div
-                  v-show="!isTaskInCollapsedGroup(task)"
+                  v-if="shouldRenderProjectGroupHeader(taskIndex)"
+                  :data-group-id="task.projectId || 0"
+                  data-group-header
+                  :class="[taskIndex === 0 ? 'mb-3 mt-1' : 'mb-3 mt-4', 'flex items-center gap-2 select-none']"
+                >
+                  <div
+                    class="flex cursor-grab items-center rounded p-1 text-[#9E9E9A] hover:bg-surface-hover hover:text-[#6F6F6B] active:cursor-grabbing"
+                    :class="draggingGroupProjectId === (task.projectId || 0) && isGroupDragActive ? 'cursor-grabbing text-[#6F6F6B]' : ''"
+                    @pointerdown.stop="onGroupHeaderPointerDown($event, task.projectId || 0)"
+                  >
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16" />
+                    </svg>
+                  </div>
+                  <button
+                    class="flex flex-1 items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                    @click="toggleProjectGroupCollapse(task.projectId || 0)"
+                  >
+                    <svg
+                      class="h-3.5 w-3.5 shrink-0 text-[#9E9E9A] transition-transform"
+                      :class="isProjectGroupCollapsed(task.projectId || 0) ? '' : 'rotate-90'"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                    </svg>
+                    <h3 class="text-sm font-semibold text-[#1C1C1A]">{{ getProjectName(task.projectId || 0) }}</h3>
+                    <span class="text-xs text-[#9E9E9A]">{{ projectGroupCounts.get(task.projectId || 0) || 0 }} 项</span>
+                  </button>
+                  <div class="h-px flex-1 bg-surface-border" />
+                </div>
+
+                <div
+                  v-show="!isTaskInCollapsedGroup(task) && !isTaskInCollapsedProjectGroup(task)"
                   :data-task-id="task.id"
                   class="group relative flex cursor-pointer overflow-hidden rounded-xl border border-surface-border bg-white transition-all"
                   :class="[
